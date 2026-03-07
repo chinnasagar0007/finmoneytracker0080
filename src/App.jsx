@@ -35,10 +35,82 @@ const num = v => {
   return isNaN(n) ? 0 : n;
 };
 
+const normalizeLookupKey = value =>
+  String(value || "")
+    .replace(/[₹%]/g, " ")
+    .replace(/[()]/g, " ")
+    .replace(/[_./-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+function getField(row, ...candidates) {
+  if (!row || typeof row !== "object") return undefined;
+  const wants = candidates.flat().map(normalizeLookupKey).filter(Boolean);
+  if (wants.length === 0) return undefined;
+
+  for (const [key, value] of Object.entries(row)) {
+    if (value === "" || value == null) continue;
+    const normalizedKey = normalizeLookupKey(key);
+    if (!normalizedKey) continue;
+    if (wants.some(want => normalizedKey === want || normalizedKey.includes(want) || want.includes(normalizedKey))) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function hasField(row, ...candidates) {
+  const value = getField(row, ...candidates);
+  return value !== undefined && String(value).trim() !== "";
+}
+
+function unwrapCentralPayload(raw) {
+  if (!raw || typeof raw !== "object") return raw;
+  const expected = ["income", "lendenClub", "personalLending", "realEstate", "stocks", "loans"];
+  if (expected.some(key => key in raw)) return raw;
+  if (raw.data && typeof raw.data === "object") return unwrapCentralPayload(raw.data);
+  if (raw.result && typeof raw.result === "object") return unwrapCentralPayload(raw.result);
+  if (raw.payload && typeof raw.payload === "object") return unwrapCentralPayload(raw.payload);
+  return raw;
+}
+
+function hasUsableMappedData(mapped) {
+  if (!mapped) return false;
+
+  return Boolean(
+    mapped.income?.salary > 0 ||
+    mapped.salaryHistory?.length ||
+    mapped.dailyExpenses?.length ||
+    mapped.taxLog?.length ||
+    mapped.stocks?.mutualFunds?.length ||
+    mapped.stocks?.equity?.length ||
+    mapped.stocks?.options?.length ||
+    mapped.stocks?.crypto?.length ||
+    mapped.loans?.hdfc?.schedule?.length ||
+    mapped.loans?.idfc?.schedule?.length ||
+    mapped.loans?.sbi?.schedule?.length ||
+    mapped.lendenClub?.monthSummary?.length ||
+    mapped.lendenClub?.tabSummary?.length ||
+    mapped.lendenClub?.transactions?.length ||
+    mapped.personalLending?.borrowers?.length ||
+    mapped.personalLending?.repaymentLog?.length ||
+    mapped.realEstate?.totalCost > 0 ||
+    mapped.realEstate?.emiSchedule?.length ||
+    mapped.realEstate?.valuation?.length
+  );
+}
+
 function findSheet(sheetsObj, candidates) {
   if (!sheetsObj) return null;
+  const keys = Object.keys(sheetsObj);
   for (const cand of candidates) {
-    const key = Object.keys(sheetsObj).find(k => k.toLowerCase().includes(cand.toLowerCase()));
+    const want = normalizeLookupKey(cand);
+    const key = keys.find(k => {
+      const current = normalizeLookupKey(k);
+      return current === want || current.includes(want) || want.includes(current);
+    });
     if (key) return sheetsObj[key];
   }
   return null;
@@ -156,42 +228,44 @@ function mapStocksData(raw) {
   const foSheet      = findSheet(raw?.stocks, ["Option", "F&O", "FO", "Derivative"]);
   const cryptoSheet  = findSheet(raw?.stocks, ["Crypto", "Bitcoin", "₿"]);
 
-  const mf = (mfSheet || []).filter(r => r["Fund Name"] || r["Name"]).map(r => {
-    const inv = num(r["Invested"] || r["invested"] || r["Amount Invested"]);
-    const cur = num(r["Current"]  || r["current"]  || r["Current Value"]);
-    return { name:String(r["Fund Name"]||r["Name"]||""), amc:String(r["AMC"]||""), type:String(r["Type"]||""),
-      mode:String(r["Mode"]||"SIP"), startDate:String(r["Start Date"]||""), invested:inv, current:cur,
-      units:num(r["Units"]), nav:num(r["NAV"]),
-      returns:num(r["Returns"])||(cur-inv), returnsP:num(r["Returns%"])||(inv>0?+((cur-inv)/inv*100).toFixed(2):0),
-      xirr:r["XIRR"]||null, status:String(r["Status"]||"Active") };
+  const mf = (mfSheet || []).filter(r => hasField(r, "Fund Name", "Name")).map(r => {
+    const inv = num(getField(r, "Invested", "Amount Invested", "Investment"));
+    const cur = num(getField(r, "Current", "Current Value", "Market Value"));
+    return { name:String(getField(r, "Fund Name", "Name") || ""), amc:String(getField(r, "AMC") || ""), type:String(getField(r, "Type") || ""),
+      mode:String(getField(r, "Mode") || "SIP"), startDate:String(getField(r, "Start Date") || ""), invested:inv, current:cur,
+      units:num(getField(r, "Units")), nav:num(getField(r, "NAV")),
+      returns:num(getField(r, "Returns"))||(cur-inv), returnsP:num(getField(r, "Returns%"))||(inv>0?+((cur-inv)/inv*100).toFixed(2):0),
+      xirr:getField(r, "XIRR") || null, status:String(getField(r, "Status") || "Active") };
   });
 
-  const equity = (eqSheet || []).filter(r => r["Symbol"] || r["symbol"]).map(r => {
-    const inv = num(r["Invested"]); const cur = num(r["Current"]||r["Current Value"]);
-    return { symbol:String(r["Symbol"]||""), company:String(r["Company"]||r["Stock Name"]||""),
-      exchange:String(r["Exchange"]||"NSE"), buyDate:String(r["Buy Date"]||""),
-      qty:num(r["Qty"]||r["Quantity"]), avgBuy:num(r["Avg Buy"]||r["Buy Price"]),
-      invested:inv, cmp:num(r["CMP"]||r["Current Price"]), current:cur,
-      pl:num(r["P&L"])||(cur-inv), plP:num(r["P&L%"])||(inv>0?+((cur-inv)/inv*100).toFixed(2):0),
-      sector:String(r["Sector"]||"") };
+  const equity = (eqSheet || []).filter(r => hasField(r, "Symbol", "Ticker")).map(r => {
+    const inv = num(getField(r, "Invested", "Amount Invested"));
+    const cur = num(getField(r, "Current", "Current Value", "Market Value"));
+    return { symbol:String(getField(r, "Symbol", "Ticker") || ""), company:String(getField(r, "Company", "Stock Name", "Name") || ""),
+      exchange:String(getField(r, "Exchange") || "NSE"), buyDate:String(getField(r, "Buy Date") || ""),
+      qty:num(getField(r, "Qty", "Quantity")), avgBuy:num(getField(r, "Avg Buy", "Buy Price", "Average Buy")),
+      invested:inv, cmp:num(getField(r, "CMP", "Current Price")), current:cur,
+      pl:num(getField(r, "P&L"))||(cur-inv), plP:num(getField(r, "P&L%"))||(inv>0?+((cur-inv)/inv*100).toFixed(2):0),
+      sector:String(getField(r, "Sector") || "") };
   });
 
-  const options = (foSheet || []).filter(r => r["Index"]||r["index"]).map(r => ({
-    date:String(r["Date"]||""), index:String(r["Index"]||""), type:String(r["Type"]||""),
-    strike:num(r["Strike"]||r["Strike Price"]), expiry:String(r["Expiry"]||""),
-    lots:num(r["Lots"]), buyPremium:num(r["Buy Premium"]), sellPremium:num(r["Sell Premium"]),
-    lotSize:num(r["Lot Size"]), grossPL:num(r["Gross P&L"]||r["Gross PL"]),
-    brokerage:num(r["Brokerage"]), netPL:num(r["Net P&L"]||r["Net PL"]),
-    status:String(r["Status"]||""), notes:String(r["Notes"]||"") }));
+  const options = (foSheet || []).filter(r => hasField(r, "Index", "Underlying")).map(r => ({
+    date:String(getField(r, "Date") || ""), index:String(getField(r, "Index", "Underlying") || ""), type:String(getField(r, "Type") || ""),
+    strike:num(getField(r, "Strike", "Strike Price")), expiry:String(getField(r, "Expiry") || ""),
+    lots:num(getField(r, "Lots")), buyPremium:num(getField(r, "Buy Premium")), sellPremium:num(getField(r, "Sell Premium")),
+    lotSize:num(getField(r, "Lot Size")), grossPL:num(getField(r, "Gross P&L", "Gross PL")),
+    brokerage:num(getField(r, "Brokerage")), netPL:num(getField(r, "Net P&L", "Net PL")),
+    status:String(getField(r, "Status") || ""), notes:String(getField(r, "Notes") || "") }));
 
-  const crypto = (cryptoSheet || []).filter(r => r["Coin"]||r["Symbol"]).map(r => {
-    const inv = num(r["Invested"]); const cur = num(r["Current"]||r["Current Value"]);
-    return { coin:String(r["Coin"]||""), symbol:String(r["Symbol"]||""),
-      exchange:String(r["Exchange"]||""), buyDate:String(r["Buy Date"]||""),
-      qty:num(r["Qty"]||r["Quantity"]), buyPrice:num(r["Buy Price"]||r["Avg Buy Price"]),
-      invested:inv, currentPrice:num(r["Current Price"]||r["CMP"]), current:cur,
-      pl:num(r["P&L"])||(cur-inv), plP:num(r["P&L%"])||(inv>0?+((cur-inv)/inv*100).toFixed(2):0),
-      wallet:String(r["Wallet"]||r["Exchange"]||"") };
+  const crypto = (cryptoSheet || []).filter(r => hasField(r, "Coin", "Symbol", "Token")).map(r => {
+    const inv = num(getField(r, "Invested", "Amount Invested"));
+    const cur = num(getField(r, "Current", "Current Value", "Market Value"));
+    return { coin:String(getField(r, "Coin", "Name", "Token") || ""), symbol:String(getField(r, "Symbol") || ""),
+      exchange:String(getField(r, "Exchange") || ""), buyDate:String(getField(r, "Buy Date") || ""),
+      qty:num(getField(r, "Qty", "Quantity")), buyPrice:num(getField(r, "Buy Price", "Avg Buy Price", "Average Buy")),
+      invested:inv, currentPrice:num(getField(r, "Current Price", "CMP")), current:cur,
+      pl:num(getField(r, "P&L"))||(cur-inv), plP:num(getField(r, "P&L%"))||(inv>0?+((cur-inv)/inv*100).toFixed(2):0),
+      wallet:String(getField(r, "Wallet", "Exchange") || "") };
   });
 
   const s = (arr, k) => arr.reduce((t, x) => t + (x[k]||0), 0);
@@ -214,36 +288,36 @@ function mapLoansData(raw) {
     const rows = findSheet(sheetsObj, candidates);
     if (!rows || rows.length === 0) return null;
     const meta = rows[0];
-    const hasMeta = meta["Outstanding"] || meta["EMI"] || meta["Loan Name"] || meta["Loan Amount"];
+    const hasMeta = hasField(meta, "Outstanding", "EMI", "Loan Name", "Loan Amount");
     const schedule = (hasMeta ? rows.slice(1) : rows)
-      .filter(r => r["#"] || r["no"] || r["Date"])
+      .filter(r => hasField(r, "#", "no", "Date", "Due Date"))
       .map(r => ({
-        no:        num(r["#"]||r["no"]||r["EMI No."]),
-        date:      String(r["Date"]||r["Due Date"]||""),
-        emi:       num(r["EMI"]||r["EMI Amount"]),
-        principal: num(r["Principal"]),
-        interest:  num(r["Interest"]),
-        balance:   num(r["Balance"]||r["Closing Balance"]),
-        status:    String(r["Status"]||""),
+        no:        num(getField(r, "#", "no", "EMI No.")),
+        date:      String(getField(r, "Date", "Due Date") || ""),
+        emi:       num(getField(r, "EMI", "EMI Amount", "Instalment Amt")),
+        principal: num(getField(r, "Principal")),
+        interest:  num(getField(r, "Interest")),
+        balance:   num(getField(r, "Balance", "Closing Balance", "Outstanding")),
+        status:    String(getField(r, "Status") || ""),
       }));
     return {
-      name:                String(meta["Loan Name"]           || meta["Name"]           || ""),
-      emi:                 num(meta["EMI"]                    || meta["Monthly EMI"]),
-      outstanding:         num(meta["Outstanding"]            || meta["Balance Outstanding"]),
-      paid:                num(meta["EMIs Paid"]              || 0),
-      total:               num(meta["Total EMIs"]             || meta["Tenure"]          || 0),
-      originalLoan:        num(meta["Original Loan"]          || meta["Loan Amount"]),
-      interestRate:        num(meta["Interest Rate"]          || meta["Rate"]),
-      totalPrincipalPaid:  num(meta["Total Principal Paid"]   || 0),
-      totalInterestPaid:   num(meta["Total Interest Paid"]    || 0),
-      totalInterestOnLoan: num(meta["Total Interest on Loan"] || 0),
+      name:                String(getField(meta, "Loan Name", "Name") || ""),
+      emi:                 num(getField(meta, "EMI", "Monthly EMI")),
+      outstanding:         num(getField(meta, "Outstanding", "Balance Outstanding")),
+      paid:                num(getField(meta, "EMIs Paid")),
+      total:               num(getField(meta, "Total EMIs", "Tenure")),
+      originalLoan:        num(getField(meta, "Original Loan", "Loan Amount")),
+      interestRate:        num(getField(meta, "Interest Rate", "Rate")),
+      totalPrincipalPaid:  num(getField(meta, "Total Principal Paid")),
+      totalInterestPaid:   num(getField(meta, "Total Interest Paid")),
+      totalInterestOnLoan: num(getField(meta, "Total Interest on Loan")),
       schedule,
     };
   }
   return {
-    hdfc: readLoan(raw?.loans, ["HDFC"]) || SEED.loans.hdfc,
-    idfc: readLoan(raw?.loans, ["IDFC"]) || SEED.loans.idfc,
-    sbi:  readLoan(raw?.loans, ["SBI"])  || SEED.loans.sbi,
+    hdfc: readLoan(raw?.loans, ["HDFC"]),
+    idfc: readLoan(raw?.loans, ["IDFC"]),
+    sbi:  readLoan(raw?.loans, ["SBI"]),
   };
 }
 
@@ -254,39 +328,40 @@ function mapLendenClubData(raw) {
   const txSheet      = findSheet(sheets, ["Transaction","Investment Log"]);
   const loanSheet    = findSheet(sheets, ["Loan Sample","LC Loan","Loans","Loan Account"]);
 
-  const monthSummary = (sumSheet||[]).filter(r=>r["Month"]||r["month"]).map(r=>({
-    month:       String(r["Month"]||r["month"]||""),
-    netInvested: num(r["Net Invested"]||r["Invested"]),
-    closingPool: num(r["Closing Pool"]||r["Pool"]||r["Total Pool"]),
+  const monthSummary = (sumSheet||[]).filter(r=>hasField(r, "Month")).map(r=>({
+    month:       String(getField(r, "Month") || ""),
+    netInvested: num(getField(r, "Net Invested", "Invested")),
+    closingPool: num(getField(r, "Closing Pool", "Pool", "Total Pool")),
   }));
 
-  const tabSummary = (tabSheet||[]).filter(r=>r["Tab"]||r["Month"]||r["Batch"]).map(r=>({
-    tab:         String(r["Tab"]||r["Month"]||r["Batch"]||""),
-    disbursed:   num(r["Disbursed"]||r["Amount"]),
-    received:    num(r["Received"]||r["Total Received"]),
-    principal:   num(r["Principal"]||r["Principal Received"]),
-    interest:    num(r["Interest"]||r["Interest Received"]),
-    fee:         num(r["Fee"]),
-    outstanding: num(r["Outstanding"]||r["Pending"]),
-    npa:         num(r["NPA"]||0),
-    loans:       num(r["Loans"]||r["No. of Loans"]||r["Count"]),
+  const tabSummary = (tabSheet||[]).filter(r=>hasField(r, "Tab", "Month", "Batch")).map(r=>({
+    tab:         String(getField(r, "Tab", "Month", "Batch") || ""),
+    disbursed:   num(getField(r, "Disbursed", "Amount")),
+    received:    num(getField(r, "Received", "Total Received")),
+    principal:   num(getField(r, "Principal", "Principal Received")),
+    interest:    num(getField(r, "Interest", "Interest Received")),
+    fee:         num(getField(r, "Fee")),
+    outstanding: num(getField(r, "Outstanding", "Pending")),
+    npa:         num(getField(r, "NPA")),
+    loans:       num(getField(r, "Loans", "No. of Loans", "Count")),
   }));
 
-  const transactions = (txSheet||[]).filter(r=>r["Date"]||r["date"]).map(r=>({
-    date:     String(r["Date"]||r["date"]||""),
-    invested: num(r["Invested"]||r["Amount"]),
-    pool:     num(r["Pool"]||r["Closing Pool"]||r["Total Pool"]),
-    remark:   String(r["Remark"]||r["Remarks"]||r["Note"]||""),
+  const transactions = (txSheet||[]).filter(r=>hasField(r, "Date")).map(r=>({
+    date:     String(getField(r, "Date") || ""),
+    invested: num(getField(r, "Invested", "Amount")),
+    pool:     num(getField(r, "Pool", "Closing Pool", "Total Pool")),
+    remark:   String(getField(r, "Remark", "Remarks", "Note") || ""),
   }));
 
-  const loanSamples = (loanSheet||[]).filter(r=>r["Loan ID"]||r["ID"]).map(r=>{
-    const inv=num(r["Amount"]), recv=num(r["Total Recv"]||r["Total Received"]);
-    return { tab:String(r["Tab"]||r["Batch"]||""), id:String(r["Loan ID"]||r["ID"]||""),
-      rate:num(r["Rate"]||r["Rate%"]), tenure:num(r["Tenure"]), score:num(r["Score"]||r["Credit Score"]),
-      disbDate:String(r["Disb Date"]||r["Disbursement Date"]||""), amount:inv,
-      status:String(r["Status"]||""), principalRecv:num(r["Principal Recv"]||r["Principal Received"]),
-      interestRecv:num(r["Interest Recv"]||r["Interest Received"]), fee:num(r["Fee"]),
-      totalRecv:recv, pl:num(r["P&L"])||(recv-inv), closure:String(r["Closure"]||r["Closure Date"]||"-") };
+  const loanSamples = (loanSheet||[]).filter(r=>hasField(r, "Loan ID", "ID")).map(r=>{
+    const inv=num(getField(r, "Amount"));
+    const recv=num(getField(r, "Total Recv", "Total Received"));
+    return { tab:String(getField(r, "Tab", "Batch") || ""), id:String(getField(r, "Loan ID", "ID") || ""),
+      rate:num(getField(r, "Rate", "Rate%")), tenure:num(getField(r, "Tenure")), score:num(getField(r, "Score", "Credit Score")),
+      disbDate:String(getField(r, "Disb Date", "Disbursement Date") || ""), amount:inv,
+      status:String(getField(r, "Status") || ""), principalRecv:num(getField(r, "Principal Recv", "Principal Received")),
+      interestRecv:num(getField(r, "Interest Recv", "Interest Received")), fee:num(getField(r, "Fee")),
+      totalRecv:recv, pl:num(getField(r, "P&L"))||(recv-inv), closure:String(getField(r, "Closure", "Closure Date") || "-") };
   });
 
   const totalPooled = monthSummary.length > 0
@@ -301,30 +376,30 @@ function mapPersonalLendingData(raw) {
   const bSheet    = findSheet(sheets, ["Borrower","Personal Lending","Lending"]);
   const repSheet  = findSheet(sheets, ["Repayment","Payment"]);
 
-  const borrowers = (bSheet||[]).filter(r=>r["Name"]||r["name"]).map(r=>{
-    const amount  = num(r["Amount"]||r["Loan Amount"]);
-    let   rate    = num(r["Rate"]||r["Rate/Mo"]);
+  const borrowers = (bSheet||[]).filter(r=>hasField(r, "Name", "Borrower Name")).map(r=>{
+    const amount  = num(getField(r, "Amount", "Loan Amount", "Amount Lent"));
+    let   rate    = num(getField(r, "Rate", "Rate/Mo"));
     if (rate > 0 && rate <= 1) rate = +(rate*100).toFixed(2);
     const rateD   = rate/100;
-    const elapsed = num(r["Months Elapsed"]||r["Elapsed"]);
-    const monthly = num(r["Monthly Int"]||r["Monthly Interest"]) || +(amount*rateD).toFixed(2);
-    const accrued = num(r["Interest Accrued"]||r["Accrued"]) || +(monthly*elapsed).toFixed(2);
-    const recv    = num(r["Interest Received"]||r["Received"]);
-    return { id:num(r["ID"]||r["#"]), name:String(r["Name"]||""), phone:String(r["Phone"]||""),
-      amount, rate, dateLent:String(r["Date Lent"]||r["Date"]||""),
-      duration:num(r["Duration"]||r["Tenure"]||12), monthlyInt:monthly, monthsElapsed:elapsed,
+    const elapsed = num(getField(r, "Months Elapsed", "Elapsed"));
+    const monthly = num(getField(r, "Monthly Int", "Monthly Interest")) || +(amount*rateD).toFixed(2);
+    const accrued = num(getField(r, "Interest Accrued", "Accrued")) || +(monthly*elapsed).toFixed(2);
+    const recv    = num(getField(r, "Interest Received", "Received"));
+    return { id:num(getField(r, "ID", "#")), name:String(getField(r, "Name", "Borrower Name") || ""), phone:String(getField(r, "Phone") || ""),
+      amount, rate, dateLent:String(getField(r, "Date Lent", "Date") || ""),
+      duration:num(getField(r, "Duration", "Tenure")) || 12, monthlyInt:monthly, monthsElapsed:elapsed,
       interestAccrued:accrued, interestReceived:recv,
-      pendingInt:num(r["Pending Int"]||r["Pending"])||Math.max(0,accrued-recv),
-      status:String(r["Status"]||""), loanStatus:String(r["Loan Status"]||"Active"),
-      notes:String(r["Notes"]||"") };
+      pendingInt:num(getField(r, "Pending Int", "Pending"))||Math.max(0,accrued-recv),
+      status:String(getField(r, "Status") || ""), loanStatus:String(getField(r, "Loan Status") || "Active"),
+      notes:String(getField(r, "Notes") || "") };
   });
 
-  const repaymentLog = (repSheet||[]).filter(r=>r["Date"]||r["date"]).map(r=>({
-    date:String(r["Date"]||r["date"]||""), borrower:String(r["Borrower"]||r["Name"]||""),
-    amount:num(r["Amount"]), type:String(r["Type"]||"Interest"),
-    balance:num(r["Balance"]||r["Balance Remaining"]),
-    monthsPaid:num(r["Months Paid"]||r["Month No."]),
-    notes:String(r["Notes"]||""), mode:String(r["Mode"]||r["Payment Mode"]||"UPI"),
+  const repaymentLog = (repSheet||[]).filter(r=>hasField(r, "Date")).map(r=>({
+    date:String(getField(r, "Date") || ""), borrower:String(getField(r, "Borrower", "Name", "Borrower Name") || ""),
+    amount:num(getField(r, "Amount")), type:String(getField(r, "Type") || "Interest"),
+    balance:num(getField(r, "Balance", "Balance Remaining")),
+    monthsPaid:num(getField(r, "Months Paid", "Month No.")),
+    notes:String(getField(r, "Notes") || ""), mode:String(getField(r, "Mode", "Payment Mode") || "UPI"),
   }));
 
   const alerts = [];
@@ -362,7 +437,7 @@ function mapRealEstateData(raw) {
     const first = propSheet[0];
     const keys  = Object.keys(first);
     // Key-value: first column is label, second is value
-    if (keys.length === 2 && keys[0].toLowerCase().includes("field") || keys[0] === "") {
+    if (keys.length === 2 && (keys[0].toLowerCase().includes("field") || keys[0] === "")) {
       const kv = {};
       propSheet.forEach(r => { if (r[keys[0]]) kv[String(r[keys[0]]).trim()] = r[keys[1]]; });
       re = {
@@ -404,23 +479,23 @@ function mapRealEstateData(raw) {
     }
   }
 
-  re.emiSchedule = (emiSheet||[]).filter(r=>r["Due Date"]||r["#"]||r["Date"]).map(r=>({
-    no:      num(r["#"]||r["no"]||r["EMI No."]),
-    dueDate: String(r["Due Date"]||r["Date"]||""),
-    emiAmt:  num(r["EMI Amount"]||r["EMI"]),
-    paid:    num(r["Amount Paid"]||r["Paid"]||0),
-    balance: num(r["Outstanding Balance"]||r["Balance"]||r["Outstanding"]),
-    status:  String(r["Status"]||"⏳ Pending"),
-    daysLate:String(r["Days Late/Early"]||"—"),
-    receipt: String(r["Receipt No."]||"—"),
+  re.emiSchedule = (emiSheet||[]).filter(r=>hasField(r, "Due Date", "#", "Date")).map(r=>({
+    no:      num(getField(r, "#", "no", "EMI No.")),
+    dueDate: String(getField(r, "Due Date", "Date") || ""),
+    emiAmt:  num(getField(r, "EMI Amount", "EMI")),
+    paid:    num(getField(r, "Amount Paid", "Paid")),
+    balance: num(getField(r, "Outstanding Balance", "Balance", "Outstanding")),
+    status:  String(getField(r, "Status") || "⏳ Pending"),
+    daysLate:String(getField(r, "Days Late/Early") || "—"),
+    receipt: String(getField(r, "Receipt No.") || "—"),
   }));
 
-  re.valuation = (valSheet||[]).filter(r=>r["Year"]||r["year"]).map(r=>({
-    year:          num(r["Year"]||r["year"]),
-    marketValue:   num(r["Market Value"]||r["market_value"])||null,
-    totalInvested: num(r["Total Invested"]||r["Invested"]),
-    unrealisedGain:num(r["Unrealised Gain"]||r["unrealised_gain"])||null,
-    gainP:         num(r["Gain%"]||r["Gain %"]||r["gain_pct"])||null,
+  re.valuation = (valSheet||[]).filter(r=>hasField(r, "Year")).map(r=>({
+    year:          num(getField(r, "Year")),
+    marketValue:   num(getField(r, "Market Value", "market_value"))||null,
+    totalInvested: num(getField(r, "Total Invested", "Invested")),
+    unrealisedGain:num(getField(r, "Unrealised Gain", "unrealised_gain"))||null,
+    gainP:         num(getField(r, "Gain%", "Gain %", "gain_pct"))||null,
   }));
 
   return re;
@@ -429,20 +504,22 @@ function mapRealEstateData(raw) {
 // Master mapper — converts central API response → dashboard data shape
 function mapApiResponse(raw) {
   try {
-    const incomeData = mapIncomeData(raw);
-    return {
+    const payload = unwrapCentralPayload(raw);
+    const incomeData = mapIncomeData(payload);
+    const mapped = {
       income:          incomeData.income,
       budget:          incomeData.budget,
       dailyExpenses:   incomeData.dailyExpenses,
       taxLog:          incomeData.taxLog,
       salaryHistory:   incomeData.salaryHistory,
-      stocks:          mapStocksData(raw),
-      loans:           mapLoansData(raw),
-      lendenClub:      mapLendenClubData(raw),
-      personalLending: mapPersonalLendingData(raw),
-      realEstate:      mapRealEstateData(raw),
+      stocks:          mapStocksData(payload),
+      loans:           mapLoansData(payload),
+      lendenClub:      mapLendenClubData(payload),
+      personalLending: mapPersonalLendingData(payload),
+      realEstate:      mapRealEstateData(payload),
       settings:        SEED.settings,
     };
+    return hasUsableMappedData(mapped) ? mapped : null;
   } catch(err) {
     console.error("mapApiResponse error:", err);
     return null;
@@ -2022,7 +2099,7 @@ function APISettings({ apiUrl, setApiUrl, onSyncNow }) {
     if (!local.trim()) return;
     setTesting(true); setResult(null);
     try {
-      const data = await fetchScript("central", local.trim());
+      const data = unwrapCentralPayload(await fetchScript("central", local.trim()));
       if (data?.error) {
         setResult({ ok:false, msg:"Script error: " + data.error, data:null });
       } else {
@@ -2275,14 +2352,14 @@ export default function App() {
     const batchLabel = `${String(batchTs.getHours()).padStart(2,"0")}:${String(batchTs.getMinutes()).padStart(2,"0")}:${String(batchTs.getSeconds()).padStart(2,"0")}`;
     const t0 = Date.now();
     try {
-      const raw = await fetchScript("central", apiUrl);
+      const raw = unwrapCentralPayload(await fetchScript("central", apiUrl));
       const dur = Date.now() - t0;
 
       if (raw?.error) throw new Error("Script error: " + raw.error);
 
       // Map raw central API response → dashboard data
       const mapped = mapApiResponse(raw);
-      if (!mapped) throw new Error("Data mapping failed — check console");
+      if (!mapped) throw new Error("Central API returned no usable rows. Check sheet names, header rows, and Apps Script normalization.");
 
       // Apply all sections
       setData(prev => ({ ...prev, ...mapped }));
