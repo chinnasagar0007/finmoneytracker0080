@@ -6,7 +6,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 // Single Apps Script URL that reads all 6 spreadsheets
 const DEFAULT_API_URL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_CENTRAL_API_URL) ||
-  "";
+  "/api/central";
 
 function loadApiUrl() {
   try {
@@ -22,6 +22,19 @@ function saveApiUrl(url) {
   try {
     localStorage.setItem("pf_central_api", url);
   } catch (e) {}
+}
+
+function withCacheBust(url) {
+  return `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+}
+
+function isSameOriginRequest(url) {
+  try {
+    const resolved = new URL(url, window.location.origin);
+    return resolved.origin === window.location.origin;
+  } catch (e) {
+    return String(url || "").startsWith("/");
+  }
 }
 
 // ─── CENTRAL DATA MAPPER ──────────────────────────────────────────────────────
@@ -402,6 +415,24 @@ function mapPersonalLendingData(raw) {
     notes:String(getField(r, "Notes") || ""), mode:String(getField(r, "Mode", "Payment Mode") || "UPI"),
   }));
 
+  const datedRepayments = repaymentLog
+    .map(entry => ({ ...entry, parsedDate: parseDateValue(entry.date) }))
+    .filter(entry => entry.parsedDate);
+
+  let receivedThisMonth = 0;
+  let receivedMonthLabel = "";
+  if (datedRepayments.length > 0) {
+    const latestDate = datedRepayments.reduce((max, entry) => entry.parsedDate > max ? entry.parsedDate : max, datedRepayments[0].parsedDate);
+    receivedMonthLabel = latestDate.toLocaleDateString("en-IN", { month:"short", year:"numeric" });
+    receivedThisMonth = datedRepayments
+      .filter(entry =>
+        entry.parsedDate.getMonth() === latestDate.getMonth() &&
+        entry.parsedDate.getFullYear() === latestDate.getFullYear() &&
+        /interest/i.test(entry.type || "Interest")
+      )
+      .reduce((sum, entry) => sum + entry.amount, 0);
+  }
+
   const alerts = [];
   borrowers.forEach(b => {
     if (/not paying|no pay/i.test(b.status) && b.pendingInt>0)
@@ -421,6 +452,8 @@ function mapPersonalLendingData(raw) {
     regularPayers:   borrowers.filter(b=>/regular/i.test(b.status)).length,
     irregularPayers: borrowers.filter(b=>/irregular/i.test(b.status)).length,
     notPaying:       borrowers.filter(b=>/not paying|no pay/i.test(b.status)).length,
+    receivedThisMonth,
+    receivedMonthLabel,
     borrowers, repaymentLog, alerts,
   };
 }
@@ -714,6 +747,42 @@ const fmtF = v => `₹${n(v).toLocaleString("en-IN",{minimumFractionDigits:2,max
 const pct  = (a,b) => b>0?((a/b)*100).toFixed(1):0;
 const addMonths = (d,m) => { const r=new Date(d); r.setMonth(r.getMonth()+m); return r; };
 const fmtDate  = d => d.toLocaleDateString("en-IN",{month:"short",year:"numeric"});
+const JSONP_TIMEOUT_MS = 30000;
+const FETCH_TIMEOUT_MS = 15000;
+const AUTO_SYNC_SECONDS = 300;
+
+function parseDateValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const direct = new Date(raw);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const monthMap = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+  let match = raw.match(/^(\d{1,2})[-\/ ]([A-Za-z]{3})[-\/ ](\d{2,4})$/);
+  if (match) {
+    const day = Number(match[1]);
+    const month = monthMap[match[2].toLowerCase()];
+    let year = Number(match[3]);
+    if (month != null) {
+      if (year < 100) year += 2000;
+      const date = new Date(year, month, day);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+  }
+
+  match = raw.match(/^(\d{1,2})[-\/ ](\d{1,2})[-\/ ](\d{2,4})$/);
+  if (match) {
+    const day = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    let year = Number(match[3]);
+    if (year < 100) year += 2000;
+    const date = new Date(year, month, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  return null;
+}
 
 // ─── COLORS ──────────────────────────────────────────────────────────────────
 const P = {
@@ -731,7 +800,7 @@ const CC = [P.gold,P.emerald,P.sapphire,P.violet,P.orange,P.teal,P.ruby,P.rose];
 // JSONP injects a <script> tag which bypasses CORS entirely.
 // Requires scripts to support ?callback=xxx  (see updated doGet wrappers below).
 // Falls back to plain fetch() only if JSONP fails (e.g. CSP env).
-function fetchJSONP(url, timeout=12000) {
+function fetchJSONP(url, timeout=JSONP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const cb      = `_gsc_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
     let   settled = false;
@@ -797,6 +866,23 @@ function explainSyncIssue(err, key="central") {
 }
 
 async function fetchScript(key, url) {
+  if (isSameOriginRequest(url)) {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(withCacheBust(url), { signal: ctrl.signal });
+      const text = await res.text();
+      if (!res.ok) throw new Error(text || `HTTP_${res.status}`);
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        throw new Error(text || "Invalid JSON from proxy");
+      }
+    } finally {
+      clearTimeout(tid);
+    }
+  }
+
   // ① Try JSONP first — works for all Apps Script endpoints without CORS issues
   try {
     return await fetchJSONP(url);
@@ -804,8 +890,8 @@ async function fetchScript(key, url) {
     // ② JSONP failed (e.g. strict CSP) — try plain fetch as last resort
     try {
       const ctrl = new AbortController();
-      const tid  = setTimeout(()=>ctrl.abort(), 8000);
-      const res  = await fetch(`${url}?t=${Date.now()}`, { signal: ctrl.signal });
+      const tid  = setTimeout(()=>ctrl.abort(), FETCH_TIMEOUT_MS);
+      const res  = await fetch(withCacheBust(url), { signal: ctrl.signal });
       clearTimeout(tid);
       return await res.json();
     } catch(e2) {
@@ -934,12 +1020,12 @@ const CTip = ({ active, payload, label }) => active&&payload?.length?(
 ):null;
 
 function SyncBadge({ status, lastSync }) {
-  const cfg = {syncing:{color:P.gold,label:"Syncing…",anim:true},live:{color:P.emerald,label:"Live ✓",anim:false},error:{color:P.ruby,label:"Error",anim:false},idle:{color:P.muted,label:"Ready",anim:false},cors:{color:P.orange,label:"CORS — see tip",anim:false},hosted:{color:P.orange,label:"Host blocked — see tip",anim:false}}[status]||{};
+  const cfg = {syncing:{color:P.gold,label:"Syncing…",anim:true},live:{color:P.emerald,label:"Live ✓",anim:false},error:{color:P.ruby,label:lastSync?"Using last good data":"Error",anim:false},idle:{color:P.muted,label:"Ready",anim:false},cors:{color:P.orange,label:lastSync?"Using last good data":"CORS — see tip",anim:false},hosted:{color:P.orange,label:lastSync?"Using last good data":"Host blocked — see tip",anim:false}}[status]||{};
   return (
     <div style={{display:"flex",alignItems:"center",gap:7,background:"rgba(255,255,255,.03)",borderRadius:20,padding:"5px 12px",border:`1px solid ${P.border}`}}>
       <div style={{width:7,height:7,borderRadius:"50%",background:cfg.color,animation:cfg.anim?"pulse 1s infinite":"none",boxShadow:cfg.anim?`0 0 8px ${cfg.color}`:""}}/>
       <span style={{color:cfg.color,fontSize:11,fontWeight:600,fontFamily:"'Fira Code',monospace"}}>{cfg.label}</span>
-      {lastSync&&<span style={{color:P.muted,fontSize:9,fontFamily:"'Fira Code',monospace"}}>· {lastSync}</span>}
+      {lastSync&&<span style={{color:P.muted,fontSize:9,fontFamily:"'Fira Code',monospace"}}>· last ok {lastSync}</span>}
     </div>
   );
 }
@@ -2193,7 +2279,7 @@ function APISettings({ apiUrl, setApiUrl, onSyncNow }) {
           <input
             value={local}
             onChange={e => { setLocal(e.target.value); setResult(null); }}
-            placeholder="https://script.google.com/macros/s/.../exec"
+            placeholder="/api/central or https://script.google.com/macros/s/.../exec"
             style={{flex:1,background:P.card3,border:`1px solid ${result?.ok===true?P.emerald:result?.ok===false?P.ruby:P.border}`,borderRadius:10,padding:"11px 14px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:11,outline:"none",transition:"border-color .2s"}}
           />
           <button onClick={handleTest} disabled={testing||!local.trim()} style={{background:testing?P.border:`${P.sapphire}22`,border:`1px solid ${testing?P.border:P.sapphire}55`,borderRadius:10,padding:"11px 20px",color:testing?P.muted:P.sapphire,cursor:testing||!local.trim()?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,whiteSpace:"nowrap",transition:"all .15s"}}>
@@ -2282,7 +2368,7 @@ export default function App() {
   const [lastSync, setLastSync] = useState(null);
   const [syncLog,  setSyncLog]  = useState([]);  // [{ts,key,status,duration,summary,error}]
   const [syncLogOpen, setSyncLogOpen] = useState(false);
-  const [cd,       setCd]       = useState(30);
+  const [cd,       setCd]       = useState(AUTO_SYNC_SECONDS);
   const [corsWarn, setCorsWarn] = useState(false);
   const [syncHint, setSyncHint] = useState("");
   const [apiUrl,   setApiUrl]   = useState(loadApiUrl);  // ← single central API URL
@@ -2389,25 +2475,27 @@ export default function App() {
       setSyncSt(issue.status);
       if (issue.status === "cors" || issue.status === "hosted") {
         setCorsWarn(true);
-        setSyncHint(issue.message);
+        setSyncHint(lastSync ? `${issue.message} Showing last successful sync from ${lastSync}.` : issue.message);
+      } else if (lastSync) {
+        setSyncHint(`${issue.message} Showing last successful sync from ${lastSync}.`);
       }
     }
-  }, [apiUrl]);
+  }, [apiUrl, lastSync]);
 
   // Keep syncFnRef always pointing to latest syncAll
   useEffect(() => { syncFnRef.current = syncAll; }, [syncAll]);
 
   // Single stable interval — fixes auto-sync drift bug
   useEffect(() => {
-    let ticks = 30;
+    let ticks = AUTO_SYNC_SECONDS;
     syncFnRef.current(); // immediate first sync
     timerRef.current = setInterval(() => {
       ticks -= 1;
       setCd(ticks);
       if (ticks <= 0) {
         syncFnRef.current();
-        ticks = 30;
-        setCd(30);
+        ticks = AUTO_SYNC_SECONDS;
+        setCd(AUTO_SYNC_SECONDS);
       }
     }, 1000);
     return () => clearInterval(timerRef.current);
@@ -2469,7 +2557,7 @@ export default function App() {
             <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:P.text,letterSpacing:-0.5}}>
               {d.settings.name}
             </div>
-            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,letterSpacing:2,textTransform:"uppercase"}}>Personal Finance · {d.settings.city} · Auto-Sync 30s</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,letterSpacing:2,textTransform:"uppercase"}}>Personal Finance · {d.settings.city} · Auto-Sync 5m</div>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -2602,7 +2690,7 @@ export default function App() {
               <KPI label="Total Debt"        value={fmt(totalDebt)}                     sub="3 active loans"                           color={P.ruby}     icon="🏦"/>
               <KPI label="Stock Portfolio"   value={fmt(d.stocks.summary.total.current)}sub={`P&L +${fmt(d.stocks.summary.total.pl)}`} color={P.violet}   icon="📈"/>
               <KPI label="EMI Burden"        value={`${emiPct}%`}                       sub={`${fmt(emiTotal)}/month`}                  color={emiPct>50?P.ruby:P.orange} icon="💳"/>
-              <KPI label="Lending Income/mo" value={fmt(d.personalLending.monthlyInterest)} sub="24%/yr personal"                      color={P.teal}     icon="🤝"/>
+              <KPI label="Lending Received" value={fmt(d.income.lendingInterest || d.personalLending.receivedThisMonth || 0)} sub={d.income.month ? `Actual in ${d.income.month}` : (d.personalLending.receivedMonthLabel ? `Interest in ${d.personalLending.receivedMonthLabel}` : "Latest received month")} color={P.teal} icon="🤝"/>
               <KPI label="LendenClub Pool"   value={fmt(d.lendenClub.totalPooled)}      sub="P2P portfolio"                            color={P.rose}     icon="🏛"/>
             </div>
 
@@ -2709,18 +2797,17 @@ export default function App() {
         {tab==="income" && (
           <div className="fade" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
             <Card accent={P.gold}>
-              <SectionHead title="Income Sources — Mar 2026" icon="💰"/>
+              <SectionHead title={`Income Sources — ${d.income.month || "Current Month"}`} icon="💰"/>
               <table className="row-hover">
                 <thead><tr><TH left>Source</TH><TH>Monthly (₹)</TH><TH>Annual (₹)</TH><TH>Share</TH></tr></thead>
                 <tbody>
                   {[
                     {label:"Salary",                   v:d.income.salary,          color:P.gold   },
-                    {label:"DevOps Tutoring",           v:d.income.tutoring,        color:P.emerald},
-                    {label:"Personal Lending Interest", v:d.income.lendingInterest||15000, color:P.teal},
-                    {label:"LendenClub Returns",        v:d.income.lendenClub||140, color:P.rose   },
-                    {label:"Other Income",              v:d.income.otherIncome,     color:P.violet },
-                    {label:"Tax Refunded",              v:d.income.taxRefunded,     color:P.sapphire},
-                  ].map((r,i)=>(
+                    {label:"DevOps Tutoring",          v:d.income.tutoring,        color:P.emerald},
+                    {label:"Personal Lending Interest",v:d.income.lendingInterest, color:P.teal},
+                    {label:"Other Income",             v:d.income.otherIncome,     color:P.violet },
+                    {label:"Tax Refunded",             v:d.income.taxRefunded,     color:P.sapphire},
+                  ].filter(r => n(r.v) > 0).map((r,i)=>(
                     <tr key={i}><TD left bold color={P.text}>{r.label}</TD><TD color={r.color}>{fmtF(r.v)}</TD><TD color={r.color}>{fmtF(r.v*12)}</TD><TD>{pct(r.v,d.income.grossTotal)}%</TD></tr>
                   ))}
                   <tr style={{background:P.card2}}><TD left bold color={P.gold}>Gross Total</TD><TD bold color={P.gold}>{fmtF(d.income.grossTotal)}</TD><TD bold color={P.gold}>{fmtF(d.income.grossTotal*12)}</TD><TD bold color={P.gold}>100%</TD></tr>
@@ -3065,7 +3152,7 @@ export default function App() {
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
               <GlassKPI label="Total Capital Deployed" value={fmt(d.personalLending.totalCapital)}   sub="As direct loans"        color={P.teal}     icon="💰"/>
               <GlassKPI label="Monthly Interest"        value={fmt(d.personalLending.monthlyInterest)}sub="Expected every month"   color={P.emerald}  icon="📅"/>
-              <GlassKPI label="Received Till Now"        value={fmt(d.personalLending.receivedTillNow)}sub={`₹${d.personalLending.pendingInterest.toLocaleString("en-IN")} pending`} color={P.sapphire} icon="✅"/>
+              <GlassKPI label="Received Latest Month"   value={fmt(d.income.lendingInterest || d.personalLending.receivedThisMonth || 0)}sub={d.income.month || d.personalLending.receivedMonthLabel || "No repayment log month found"} color={P.sapphire} icon="✅"/>
               <GlassKPI label="Annual Interest Yield"   value={fmt(d.personalLending.annualInterest)} sub="24%/year return"        color={P.gold}     icon="📈"/>
             </div>
 
@@ -3079,7 +3166,7 @@ export default function App() {
                       {d.personalLending.borrowers.map((b,i)=>(
                         <tr key={i}>
                           <TD color={P.muted}>{b.id}</TD><TD left bold color={P.text}>{b.name}</TD>
-                          <TD color={P.gold}>{fmtF(b.amount)}</TD><TD color={P.sapphire}>{(b.rate*100).toFixed(0)}%</TD>
+                          <TD color={P.gold}>{fmtF(b.amount)}</TD><TD color={P.sapphire}>{n(b.rate).toFixed(2)}%</TD>
                           <TD color={P.muted}>{b.dateLent}</TD>
                           <TD color={P.emerald}>{fmtF(b.monthlyInt)}</TD><TD>{b.monthsElapsed} mo</TD>
                           <TD color={P.text}>{fmtF(b.interestAccrued)}</TD>
