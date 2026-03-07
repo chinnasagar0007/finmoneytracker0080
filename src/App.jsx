@@ -2378,7 +2378,9 @@ export default function App() {
         <div style={{display:"flex",alignItems:"center",gap:16}}>
           <div style={{width:38,height:38,borderRadius:12,background:`linear-gradient(135deg,${P.gold},${P.orange})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,boxShadow:`0 0 14px ${P.gold}55`}}>₹</div>
           <div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:P.text,letterSpacing:-0.5}}>{d.settings.name}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:P.text,letterSpacing:-0.5}}>
+              TEST DEPLOY 123
+          </div>
             <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,letterSpacing:2,textTransform:"uppercase"}}>Personal Finance · {d.settings.city} · Auto-Sync 30s</div>
           </div>
         </div>
