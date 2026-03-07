@@ -4,13 +4,24 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 
 // ─── CENTRAL API URL ─────────────────────────────────────────────────────────
 // Single Apps Script URL that reads all 6 spreadsheets
-const DEFAULT_API_URL = "";  // paste your /exec URL here or use the ⚙ Settings tab
+const DEFAULT_API_URL =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_CENTRAL_API_URL) ||
+  "";
 
 function loadApiUrl() {
-  try { return localStorage.getItem("pf_central_api") || DEFAULT_API_URL; } catch(e) { return DEFAULT_API_URL; }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get("apiUrl");
+    const stored = localStorage.getItem("pf_central_api");
+    return fromQuery || stored || DEFAULT_API_URL;
+  } catch (e) {
+    return DEFAULT_API_URL;
+  }
 }
 function saveApiUrl(url) {
-  try { localStorage.setItem("pf_central_api", url); } catch(e) {}
+  try {
+    localStorage.setItem("pf_central_api", url);
+  } catch (e) {}
 }
 
 // ─── CENTRAL DATA MAPPER ──────────────────────────────────────────────────────
@@ -2379,8 +2390,8 @@ export default function App() {
           <div style={{width:38,height:38,borderRadius:12,background:`linear-gradient(135deg,${P.gold},${P.orange})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,boxShadow:`0 0 14px ${P.gold}55`}}>₹</div>
           <div>
             <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:P.text,letterSpacing:-0.5}}>
-              TEST DEPLOY 123
-          </div>
+              {d.settings.name}
+            </div>
             <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,letterSpacing:2,textTransform:"uppercase"}}>Personal Finance · {d.settings.city} · Auto-Sync 30s</div>
           </div>
         </div>
