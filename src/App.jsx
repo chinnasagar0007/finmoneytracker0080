@@ -2807,11 +2807,7 @@ export default function App() {
                     {label:"Personal Lending Interest",v:d.income.lendingInterest, color:P.teal},
                     {label:"Other Income",             v:d.income.otherIncome,     color:P.violet },
                     {label:"Tax Refunded",             v:d.income.taxRefunded,     color:P.sapphire},
-<<<<<<< HEAD
                   ].map((r,i)=>(
-=======
-                  ].filter(r => n(r.v) > 0).map((r,i)=>(
->>>>>>> 66781635b8031920d0cd7f153ade4a979a28d4ae
                     <tr key={i}><TD left bold color={P.text}>{r.label}</TD><TD color={r.color}>{fmtF(r.v)}</TD><TD color={r.color}>{fmtF(r.v*12)}</TD><TD>{pct(r.v,d.income.grossTotal)}%</TD></tr>
                   ))}
                   <tr style={{background:P.card2}}><TD left bold color={P.gold}>Gross Total</TD><TD bold color={P.gold}>{fmtF(d.income.grossTotal)}</TD><TD bold color={P.gold}>{fmtF(d.income.grossTotal*12)}</TD><TD bold color={P.gold}>100%</TD></tr>
