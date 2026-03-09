@@ -389,16 +389,48 @@ function mapPersonalLendingData(raw) {
   const bSheet    = findSheet(sheets, ["Borrower","Personal Lending","Lending"]);
   const repSheet  = findSheet(sheets, ["Repayment","Payment"]);
 
+  const repaymentLog = (repSheet||[]).filter(r=>hasField(r, "Date")).map(r=>({
+    date:String(getField(r, "Date") || ""), borrower:String(getField(r, "Borrower", "Name", "Borrower Name") || ""),
+    amount:num(getField(r, "Amount", "Interest", "Interest Paid", "Interest Received", "Received")),
+    type:String(getField(r, "Type", "Payment Type") || "Interest"),
+    balance:num(getField(r, "Balance", "Balance Remaining")),
+    monthsPaid:num(getField(r, "Months Paid", "Month No.")),
+    notes:String(getField(r, "Notes") || ""), mode:String(getField(r, "Mode", "Payment Mode") || "UPI"),
+  }));
+
+  const repaymentStats = repaymentLog.reduce((acc, entry) => {
+    const borrowerKey = normalizeLookupKey(entry.borrower);
+    if (!borrowerKey) return acc;
+
+    const bucket = acc[borrowerKey] || { interestReceived:0, repaymentCount:0, monthsPaidMax:0 };
+    if (/interest/i.test(entry.type || "Interest")) {
+      bucket.interestReceived += num(entry.amount);
+      bucket.repaymentCount += 1;
+      bucket.monthsPaidMax = Math.max(bucket.monthsPaidMax, num(entry.monthsPaid));
+    }
+    acc[borrowerKey] = bucket;
+    return acc;
+  }, {});
+
   const borrowers = (bSheet||[]).filter(r=>hasField(r, "Name", "Borrower Name")).map(r=>{
+    const name    = String(getField(r, "Name", "Borrower Name") || "");
     const amount  = num(getField(r, "Amount", "Loan Amount", "Amount Lent"));
     let   rate    = num(getField(r, "Rate", "Rate/Mo"));
     if (rate > 0 && rate <= 1) rate = +(rate*100).toFixed(2);
     const rateD   = rate/100;
-    const elapsed = num(getField(r, "Months Elapsed", "Elapsed"));
     const monthly = num(getField(r, "Monthly Int", "Monthly Interest")) || +(amount*rateD).toFixed(2);
+    const borrowerStats = repaymentStats[normalizeLookupKey(name)] || {};
+    const elapsed = Math.max(
+      num(getField(r, "Months Elapsed", "Elapsed")),
+      num(borrowerStats.monthsPaidMax),
+      num(borrowerStats.repaymentCount)
+    );
     const accrued = num(getField(r, "Interest Accrued", "Accrued")) || +(monthly*elapsed).toFixed(2);
-    const recv    = num(getField(r, "Interest Received", "Received"));
-    return { id:num(getField(r, "ID", "#")), name:String(getField(r, "Name", "Borrower Name") || ""), phone:String(getField(r, "Phone") || ""),
+    const recv    = Math.max(
+      num(getField(r, "Interest Received", "Received")),
+      num(borrowerStats.interestReceived)
+    );
+    return { id:num(getField(r, "ID", "#")), name, phone:String(getField(r, "Phone") || ""),
       amount, rate, dateLent:String(getField(r, "Date Lent", "Date") || ""),
       duration:num(getField(r, "Duration", "Tenure")) || 12, monthlyInt:monthly, monthsElapsed:elapsed,
       interestAccrued:accrued, interestReceived:recv,
@@ -406,14 +438,6 @@ function mapPersonalLendingData(raw) {
       status:String(getField(r, "Status") || ""), loanStatus:String(getField(r, "Loan Status") || "Active"),
       notes:String(getField(r, "Notes") || "") };
   });
-
-  const repaymentLog = (repSheet||[]).filter(r=>hasField(r, "Date")).map(r=>({
-    date:String(getField(r, "Date") || ""), borrower:String(getField(r, "Borrower", "Name", "Borrower Name") || ""),
-    amount:num(getField(r, "Amount")), type:String(getField(r, "Type") || "Interest"),
-    balance:num(getField(r, "Balance", "Balance Remaining")),
-    monthsPaid:num(getField(r, "Months Paid", "Month No.")),
-    notes:String(getField(r, "Notes") || ""), mode:String(getField(r, "Mode", "Payment Mode") || "UPI"),
-  }));
 
   const datedRepayments = repaymentLog
     .map(entry => ({ ...entry, parsedDate: parseDateValue(entry.date) }))
@@ -455,6 +479,49 @@ function mapPersonalLendingData(raw) {
     receivedThisMonth,
     receivedMonthLabel,
     borrowers, repaymentLog, alerts,
+  };
+}
+
+function reconcileIncomeWithPersonalLending(incomeData, personalLendingData) {
+  if (!incomeData || !personalLendingData) return incomeData;
+
+  const fallbackLending = num(personalLendingData.receivedThisMonth);
+  if (num(incomeData.income?.lendingInterest) > 0 || fallbackLending <= 0) return incomeData;
+
+  const nextIncome = {
+    ...incomeData.income,
+    lendingInterest: fallbackLending,
+  };
+  const recomputedGross = num(nextIncome.salary) + num(nextIncome.tutoring) + num(nextIncome.lendingInterest) + num(nextIncome.otherIncome);
+  if (recomputedGross > num(nextIncome.grossTotal)) nextIncome.grossTotal = recomputedGross;
+
+  const nextHistory = [...(incomeData.salaryHistory || [])];
+  if (nextHistory.length > 0) {
+    const targetMonth = normalizeLookupKey(nextIncome.month);
+    let targetIndex = nextHistory.length - 1;
+    if (targetMonth) {
+      for (let i = nextHistory.length - 1; i >= 0; i -= 1) {
+        if (normalizeLookupKey(nextHistory[i].month) === targetMonth) {
+          targetIndex = i;
+          break;
+        }
+      }
+    }
+    if (targetIndex >= 0 && num(nextHistory[targetIndex].lendingInterest) <= 0) {
+      const updatedRow = {
+        ...nextHistory[targetIndex],
+        lendingInterest: fallbackLending,
+      };
+      const recomputedTotal = num(updatedRow.salary) + num(updatedRow.tutoring) + num(updatedRow.lendingInterest) + num(updatedRow.otherIncome);
+      if (recomputedTotal > num(updatedRow.totalIncome)) updatedRow.totalIncome = recomputedTotal;
+      nextHistory[targetIndex] = updatedRow;
+    }
+  }
+
+  return {
+    ...incomeData,
+    income: nextIncome,
+    salaryHistory: nextHistory,
   };
 }
 
@@ -538,7 +605,8 @@ function mapRealEstateData(raw) {
 function mapApiResponse(raw) {
   try {
     const payload = unwrapCentralPayload(raw);
-    const incomeData = mapIncomeData(payload);
+    const personalLendingData = mapPersonalLendingData(payload);
+    const incomeData = reconcileIncomeWithPersonalLending(mapIncomeData(payload), personalLendingData);
     const mapped = {
       income:          incomeData.income,
       budget:          incomeData.budget,
@@ -548,7 +616,7 @@ function mapApiResponse(raw) {
       stocks:          mapStocksData(payload),
       loans:           mapLoansData(payload),
       lendenClub:      mapLendenClubData(payload),
-      personalLending: mapPersonalLendingData(payload),
+      personalLending: personalLendingData,
       realEstate:      mapRealEstateData(payload),
       settings:        SEED.settings,
     };
