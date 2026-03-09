@@ -389,14 +389,56 @@ function mapPersonalLendingData(raw) {
   const bSheet    = findSheet(sheets, ["Borrower","Personal Lending","Lending"]);
   const repSheet  = findSheet(sheets, ["Repayment","Payment"]);
 
-  const repaymentLog = (repSheet||[]).filter(r=>hasField(r, "Date")).map(r=>({
-    date:String(getField(r, "Date") || ""), borrower:String(getField(r, "Borrower", "Name", "Borrower Name") || ""),
-    amount:num(getField(r, "Amount", "Interest", "Interest Paid", "Interest Received", "Received")),
-    type:String(getField(r, "Type", "Payment Type") || "Interest"),
-    balance:num(getField(r, "Balance", "Balance Remaining")),
-    monthsPaid:num(getField(r, "Months Paid", "Month No.")),
-    notes:String(getField(r, "Notes") || ""), mode:String(getField(r, "Mode", "Payment Mode") || "UPI"),
-  }));
+  const rawBorrowers = (bSheet||[]).filter(r=>hasField(r, "Name", "Borrower Name")).map(r=>{
+    const name    = String(getField(r, "Name", "Borrower Name") || "");
+    const amount  = num(getField(r, "Amount", "Loan Amount", "Amount Lent"));
+    let   rate    = num(getField(r, "Rate", "Rate/Mo"));
+    if (rate > 0 && rate <= 1) rate = +(rate*100).toFixed(2);
+    const rateD   = rate/100;
+    const monthly = num(getField(r, "Monthly Int", "Monthly Interest")) || +(amount*rateD).toFixed(2);
+    const rawLoanStatus = String(getField(r, "Loan Status", "Status") || "Active").trim();
+    const loanStatus = rawLoanStatus || "Active";
+    return {
+      id:num(getField(r, "ID", "#")),
+      name,
+      phone:String(getField(r, "Phone") || ""),
+      amount,
+      rate,
+      dateLent:String(getField(r, "Date Lent", "Date") || ""),
+      duration:num(getField(r, "Duration", "Tenure")) || 12,
+      monthlyInt:monthly,
+      monthsElapsed:num(getField(r, "Months Elapsed", "Elapsed")),
+      interestAccrued:num(getField(r, "Interest Accrued", "Accrued")),
+      interestReceived:num(getField(r, "Interest Received", "Received")),
+      pendingInt:num(getField(r, "Pending Int", "Pending")),
+      status:String(getField(r, "Status") || ""),
+      loanStatus,
+      notes:String(getField(r, "Notes") || ""),
+      isActiveLoan: !/closed|inactive|completed|settled|returned|done/i.test(loanStatus),
+    };
+  });
+
+  const borrowerMonthlyMap = rawBorrowers.reduce((acc, borrower) => {
+    acc[normalizeLookupKey(borrower.name)] = borrower.monthlyInt;
+    return acc;
+  }, {});
+
+  const repaymentLog = (repSheet||[]).filter(r=>hasField(r, "Date")).map(r=>{
+    const borrower = String(getField(r, "Borrower", "Name", "Borrower Name") || "");
+    const type = String(getField(r, "Type", "Payment Type") || "Interest");
+    let amount = num(getField(r, "Amount", "Payment", "Payment Amount", "Amount Paid", "Paid", "Interest", "Interest Amount", "Interest Paid", "Interest Received", "Received"));
+    if (amount <= 0 && /interest/i.test(type || "Interest")) {
+      amount = num(borrowerMonthlyMap[normalizeLookupKey(borrower)]);
+    }
+    return {
+      date:String(getField(r, "Date") || ""), borrower,
+      amount,
+      type,
+      balance:num(getField(r, "Balance", "Balance Remaining")),
+      monthsPaid:num(getField(r, "Months Paid", "Month No.")),
+      notes:String(getField(r, "Notes") || ""), mode:String(getField(r, "Mode", "Payment Mode") || "UPI"),
+    };
+  });
 
   const repaymentStats = repaymentLog.reduce((acc, entry) => {
     const borrowerKey = normalizeLookupKey(entry.borrower);
@@ -412,31 +454,23 @@ function mapPersonalLendingData(raw) {
     return acc;
   }, {});
 
-  const borrowers = (bSheet||[]).filter(r=>hasField(r, "Name", "Borrower Name")).map(r=>{
-    const name    = String(getField(r, "Name", "Borrower Name") || "");
-    const amount  = num(getField(r, "Amount", "Loan Amount", "Amount Lent"));
-    let   rate    = num(getField(r, "Rate", "Rate/Mo"));
-    if (rate > 0 && rate <= 1) rate = +(rate*100).toFixed(2);
-    const rateD   = rate/100;
-    const monthly = num(getField(r, "Monthly Int", "Monthly Interest")) || +(amount*rateD).toFixed(2);
-    const borrowerStats = repaymentStats[normalizeLookupKey(name)] || {};
+  const borrowers = rawBorrowers.map(b=>{
+    const borrowerStats = repaymentStats[normalizeLookupKey(b.name)] || {};
     const elapsed = Math.max(
-      num(getField(r, "Months Elapsed", "Elapsed")),
+      num(b.monthsElapsed),
       num(borrowerStats.monthsPaidMax),
       num(borrowerStats.repaymentCount)
     );
-    const accrued = num(getField(r, "Interest Accrued", "Accrued")) || +(monthly*elapsed).toFixed(2);
+    const accrued = num(b.interestAccrued) || +(b.monthlyInt*elapsed).toFixed(2);
     const recv    = Math.max(
-      num(getField(r, "Interest Received", "Received")),
+      num(b.interestReceived),
       num(borrowerStats.interestReceived)
     );
-    return { id:num(getField(r, "ID", "#")), name, phone:String(getField(r, "Phone") || ""),
-      amount, rate, dateLent:String(getField(r, "Date Lent", "Date") || ""),
-      duration:num(getField(r, "Duration", "Tenure")) || 12, monthlyInt:monthly, monthsElapsed:elapsed,
+    return { ...b,
+      monthsElapsed:elapsed,
       interestAccrued:accrued, interestReceived:recv,
-      pendingInt:num(getField(r, "Pending Int", "Pending"))||Math.max(0,accrued-recv),
-      status:String(getField(r, "Status") || ""), loanStatus:String(getField(r, "Loan Status") || "Active"),
-      notes:String(getField(r, "Notes") || "") };
+      pendingInt:num(b.pendingInt)||Math.max(0,accrued-recv),
+    };
   });
 
   const datedRepayments = repaymentLog
@@ -467,12 +501,12 @@ function mapPersonalLendingData(raw) {
 
   return {
     totalCapital:    borrowers.reduce((s,b)=>s+b.amount,0),
-    monthlyInterest: borrowers.filter(b=>b.loanStatus==="Active").reduce((s,b)=>s+b.monthlyInt,0),
-    annualInterest:  borrowers.filter(b=>b.loanStatus==="Active").reduce((s,b)=>s+b.monthlyInt,0)*12,
+    monthlyInterest: borrowers.filter(b=>b.isActiveLoan).reduce((s,b)=>s+b.monthlyInt,0),
+    annualInterest:  borrowers.filter(b=>b.isActiveLoan).reduce((s,b)=>s+b.monthlyInt,0)*12,
     receivedTillNow: borrowers.reduce((s,b)=>s+b.interestReceived,0),
     pendingInterest: borrowers.reduce((s,b)=>s+b.pendingInt,0),
     totalBorrowers:  borrowers.length,
-    activeBorrowers: borrowers.filter(b=>b.loanStatus==="Active").length,
+    activeBorrowers: borrowers.filter(b=>b.isActiveLoan).length,
     regularPayers:   borrowers.filter(b=>/regular/i.test(b.status)).length,
     irregularPayers: borrowers.filter(b=>/irregular/i.test(b.status)).length,
     notPaying:       borrowers.filter(b=>/not paying|no pay/i.test(b.status)).length,
