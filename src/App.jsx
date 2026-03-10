@@ -360,6 +360,7 @@ function mapLendenClubData(raw) {
   const tabSheet     = findSheet(sheets, ["Tab Summary","LC Tab","Batch","Monthly Breakdown","Performance"]);
   const txSheet      = findSheet(sheets, ["Transaction","Transactions","Investment Log","Pool Growth","Cashflow","Reinvestment"]);
   const loanSheet    = findSheet(sheets, ["Loan Sample","Loan Samples","LC Loan","Loans","Loan Account","Loan Details","Loan Book"]);
+  const monthTabPattern = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[- /\d]+$/i;
 
   let summaryMeta = {};
   if (sumSheet && sumSheet.length > 0) {
@@ -410,26 +411,47 @@ function mapLendenClubData(raw) {
     remark:   String(getField(r, "Remark", "Remarks", "Note", "Description") || ""),
   }));
 
-  const loanSamples = (loanSheet||[]).filter(r=>hasField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account")).map(r=>{
-    const inv = num(getField(r, "Amount", "Invested Amount", "Principal", "Loan Amount"));
-    const recv = num(getField(r, "Total Recv", "Total Received", "Received"));
-    return {
-      tab:String(getField(r, "Tab", "Batch", "Month") || ""),
-      id:String(getField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account") || ""),
-      rate:num(getField(r, "Rate", "Rate%", "Interest Rate")),
-      tenure:num(getField(r, "Tenure", "Duration", "Months")),
-      score:num(getField(r, "Score", "Credit Score", "CIBIL")),
-      disbDate:String(getField(r, "Disb Date", "Disbursement Date", "Date") || ""),
-      amount:inv,
-      status:String(getField(r, "Status", "Loan Status") || ""),
-      principalRecv:num(getField(r, "Principal Recv", "Principal Received", "Principal Collected")),
-      interestRecv:num(getField(r, "Interest Recv", "Interest Received", "Interest Earned")),
-      fee:num(getField(r, "Fee", "Fees")),
-      totalRecv:recv,
-      pl:num(getField(r, "P&L", "Profit", "Net P&L")) || (recv-inv),
-      closure:String(getField(r, "Closure", "Closure Date", "Closed On") || "-"),
-      expectedClose:String(getField(r, "Expected Close", "Expected Closure", "Due Date", "Maturity Date", "End Date") || ""),
-    };
+  const loanSources = [];
+  const directLoanSheetKey = Object.keys(sheets).find(k => sheets[k] === loanSheet);
+  if (loanSheet?.length) loanSources.push({ name: directLoanSheetKey || "Loan Samples", rows: loanSheet });
+  Object.entries(sheets).forEach(([name, rows]) => {
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    if (!monthTabPattern.test(String(name || "").trim())) return;
+    if (loanSources.some(source => source.rows === rows)) return;
+    loanSources.push({ name, rows });
+  });
+
+  const loanSamples = [];
+  const seenLoans = new Set();
+  loanSources.forEach(({ name, rows }) => {
+    (rows || [])
+      .filter(r => hasField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account"))
+      .forEach(r => {
+        const inv = num(getField(r, "Amount", "Invested Amount", "Principal", "Loan Amount"));
+        const recv = num(getField(r, "Total Recv", "Total Received", "Received"));
+        const tabLabel = String(getField(r, "Tab", "Batch", "Month") || name || "");
+        const id = String(getField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account") || "");
+        const dedupeKey = `${normalizeLookupKey(tabLabel)}::${normalizeLookupKey(id)}`;
+        if (seenLoans.has(dedupeKey)) return;
+        seenLoans.add(dedupeKey);
+        loanSamples.push({
+          tab:tabLabel,
+          id,
+          rate:num(getField(r, "Rate", "Rate%", "Interest Rate")),
+          tenure:num(getField(r, "Tenure", "Duration", "Months")),
+          score:num(getField(r, "Score", "Credit Score", "CIBIL")),
+          disbDate:String(getField(r, "Disb Date", "Disbursement Date", "Date") || ""),
+          amount:inv,
+          status:String(getField(r, "Status", "Loan Status") || ""),
+          principalRecv:num(getField(r, "Principal Recv", "Principal Received", "Principal Collected")),
+          interestRecv:num(getField(r, "Interest Recv", "Interest Received", "Interest Earned")),
+          fee:num(getField(r, "Fee", "Fees")),
+          totalRecv:recv,
+          pl:num(getField(r, "P&L", "Profit", "Net P&L")) || (recv-inv),
+          closure:String(getField(r, "Closure", "Closure Date", "Closed On") || "-"),
+          expectedClose:String(getField(r, "Expected Close", "Expected Closure", "Due Date", "Maturity Date", "End Date") || ""),
+        });
+      });
   });
 
   const totalPooledFromSummary = num(getField(summaryMeta,
