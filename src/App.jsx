@@ -336,50 +336,81 @@ function mapLoansData(raw) {
 
 function mapLendenClubData(raw) {
   const sheets       = raw?.lendenClub || {};
-  const sumSheet     = findSheet(sheets, ["LC Summary","Summary","Month Summary","Pool"]);
-  const tabSheet     = findSheet(sheets, ["Tab Summary","LC Tab","Batch"]);
-  const txSheet      = findSheet(sheets, ["Transaction","Investment Log"]);
-  const loanSheet    = findSheet(sheets, ["Loan Sample","LC Loan","Loans","Loan Account"]);
+  const sumSheet     = findSheet(sheets, ["LC Summary","LendenClub Summary","Summary","Month Summary","Monthly Summary","Pool","Overview"]);
+  const tabSheet     = findSheet(sheets, ["Tab Summary","LC Tab","Batch","Monthly Breakdown","Performance"]);
+  const txSheet      = findSheet(sheets, ["Transaction","Transactions","Investment Log","Pool Growth","Cashflow","Reinvestment"]);
+  const loanSheet    = findSheet(sheets, ["Loan Sample","Loan Samples","LC Loan","Loans","Loan Account","Loan Details","Loan Book"]);
 
-  const monthSummary = (sumSheet||[]).filter(r=>hasField(r, "Month")).map(r=>({
-    month:       String(getField(r, "Month") || ""),
-    netInvested: num(getField(r, "Net Invested", "Invested")),
-    closingPool: num(getField(r, "Closing Pool", "Pool", "Total Pool")),
+  let summaryMeta = {};
+  if (sumSheet && sumSheet.length > 0) {
+    const first = sumSheet[0];
+    const keys = Object.keys(first);
+    if (keys.length === 2 && (keys[0].toLowerCase().includes("field") || keys[0] === "")) {
+      sumSheet.forEach(r => {
+        if (r[keys[0]]) summaryMeta[String(r[keys[0]]).trim()] = r[keys[1]];
+      });
+    }
+  }
+
+  const monthSummary = (sumSheet||[]).filter(r=>hasField(r, "Month", "Tab", "Batch", "Date")).map(r=>({
+    month:       String(getField(r, "Month", "Tab", "Batch", "Date") || ""),
+    netInvested: num(getField(r, "Net Invested", "Invested", "Added", "Net Added", "Amount")),
+    closingPool: num(getField(r, "Closing Pool", "Pool", "Total Pool", "Current Pool", "Pool Size", "Outstanding")),
   }));
 
-  const tabSummary = (tabSheet||[]).filter(r=>hasField(r, "Tab", "Month", "Batch")).map(r=>({
-    tab:         String(getField(r, "Tab", "Month", "Batch") || ""),
-    disbursed:   num(getField(r, "Disbursed", "Amount")),
-    received:    num(getField(r, "Received", "Total Received")),
-    principal:   num(getField(r, "Principal", "Principal Received")),
-    interest:    num(getField(r, "Interest", "Interest Received")),
-    fee:         num(getField(r, "Fee")),
-    outstanding: num(getField(r, "Outstanding", "Pending")),
-    npa:         num(getField(r, "NPA")),
-    loans:       num(getField(r, "Loans", "No. of Loans", "Count")),
+  const tabSummary = (tabSheet||[]).filter(r=>
+    hasField(r, "Tab", "Month", "Batch", "Disbursed", "Received", "Interest", "Outstanding", "Loans")
+  ).map(r=>({
+    tab:         String(getField(r, "Tab", "Month", "Batch", "Date") || ""),
+    disbursed:   num(getField(r, "Disbursed", "Amount", "Disbursed Amount", "Invested")),
+    received:    num(getField(r, "Received", "Total Received", "Collection", "Collections")),
+    principal:   num(getField(r, "Principal", "Principal Received", "Principal Collected")),
+    interest:    num(getField(r, "Interest", "Interest Received", "Interest Earned", "Yield")),
+    fee:         num(getField(r, "Fee", "Fees", "Platform Fee")),
+    outstanding: num(getField(r, "Outstanding", "Pending", "Closing Pool", "Pool", "Current Pool")),
+    npa:         num(getField(r, "NPA", "Overdue", "Default")),
+    loans:       num(getField(r, "Loans", "No. of Loans", "Count", "Active Loans", "Total Loans")),
   }));
 
-  const transactions = (txSheet||[]).filter(r=>hasField(r, "Date")).map(r=>({
-    date:     String(getField(r, "Date") || ""),
-    invested: num(getField(r, "Invested", "Amount")),
-    pool:     num(getField(r, "Pool", "Closing Pool", "Total Pool")),
-    remark:   String(getField(r, "Remark", "Remarks", "Note") || ""),
+  const transactions = (txSheet||[]).filter(r=>hasField(r, "Date", "Month", "Tab", "Batch")).map(r=>({
+    date:     String(getField(r, "Date", "Month", "Tab", "Batch") || ""),
+    invested: num(getField(r, "Invested", "Amount", "Added", "Net Invested", "Reinvested")),
+    pool:     num(getField(r, "Pool", "Closing Pool", "Total Pool", "Current Pool", "Pool Size", "Outstanding")),
+    remark:   String(getField(r, "Remark", "Remarks", "Note", "Description") || ""),
   }));
 
-  const loanSamples = (loanSheet||[]).filter(r=>hasField(r, "Loan ID", "ID")).map(r=>{
-    const inv=num(getField(r, "Amount"));
-    const recv=num(getField(r, "Total Recv", "Total Received"));
-    return { tab:String(getField(r, "Tab", "Batch") || ""), id:String(getField(r, "Loan ID", "ID") || ""),
-      rate:num(getField(r, "Rate", "Rate%")), tenure:num(getField(r, "Tenure")), score:num(getField(r, "Score", "Credit Score")),
-      disbDate:String(getField(r, "Disb Date", "Disbursement Date") || ""), amount:inv,
-      status:String(getField(r, "Status") || ""), principalRecv:num(getField(r, "Principal Recv", "Principal Received")),
-      interestRecv:num(getField(r, "Interest Recv", "Interest Received")), fee:num(getField(r, "Fee")),
-      totalRecv:recv, pl:num(getField(r, "P&L"))||(recv-inv), closure:String(getField(r, "Closure", "Closure Date") || "-") };
+  const loanSamples = (loanSheet||[]).filter(r=>hasField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account")).map(r=>{
+    const inv = num(getField(r, "Amount", "Invested Amount", "Principal", "Loan Amount"));
+    const recv = num(getField(r, "Total Recv", "Total Received", "Received"));
+    return {
+      tab:String(getField(r, "Tab", "Batch", "Month") || ""),
+      id:String(getField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account") || ""),
+      rate:num(getField(r, "Rate", "Rate%", "Interest Rate")),
+      tenure:num(getField(r, "Tenure", "Duration", "Months")),
+      score:num(getField(r, "Score", "Credit Score", "CIBIL")),
+      disbDate:String(getField(r, "Disb Date", "Disbursement Date", "Date") || ""),
+      amount:inv,
+      status:String(getField(r, "Status", "Loan Status") || ""),
+      principalRecv:num(getField(r, "Principal Recv", "Principal Received", "Principal Collected")),
+      interestRecv:num(getField(r, "Interest Recv", "Interest Received", "Interest Earned")),
+      fee:num(getField(r, "Fee", "Fees")),
+      totalRecv:recv,
+      pl:num(getField(r, "P&L", "Profit", "Net P&L")) || (recv-inv),
+      closure:String(getField(r, "Closure", "Closure Date", "Closed On") || "-"),
+    };
   });
+
+  const totalPooledFromSummary = num(
+    summaryMeta["Closing Pool"] ||
+    summaryMeta["Total Pool"] ||
+    summaryMeta["Current Pool"] ||
+    summaryMeta["Pool"] ||
+    summaryMeta["Outstanding"]
+  );
 
   const totalPooled = monthSummary.length > 0
     ? monthSummary[monthSummary.length-1].closingPool
-    : tabSummary.reduce((s,t)=>s+t.outstanding,0);
+    : totalPooledFromSummary || (transactions.length > 0 ? n(transactions[transactions.length-1].pool) : tabSummary.reduce((s,t)=>s+t.outstanding,0));
 
   return { totalPooled, monthSummary, tabSummary, transactions, loanSamples };
 }
@@ -1718,8 +1749,8 @@ function LendenClubTab({ data }) {
 
   // ── Analytics calculations ──
   const allLoans      = d.lendenClub.loanSamples || [];
-  const activeLoans   = allLoans.filter(l=>l.status==="ACTIVE");
-  const closedLoans   = allLoans.filter(l=>l.status==="CLOSED");
+  const activeLoans   = allLoans.filter(l=>/active/i.test(String(l.status || "")));
+  const closedLoans   = allLoans.filter(l=>/closed/i.test(String(l.status || "")));
 
   // Interest earned per closed loan: interestRecv is actual earned interest
   const totalInterestEarned  = allLoans.reduce((s,l)=>s+l.interestRecv,0);
