@@ -361,6 +361,10 @@ function mapLendenClubData(raw) {
   const txSheet      = findSheet(sheets, ["Transaction","Transactions","Investment Log","Pool Growth","Cashflow","Reinvestment"]);
   const loanSheet    = findSheet(sheets, ["Loan Sample","Loan Samples","LC Loan","Loans","Loan Account","Loan Details","Loan Book"]);
   const monthTabPattern = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[- /\d]+$/i;
+  const oldCols = {
+    id:1, rate:2, tenure:3, score:5, disburseDate:6, amount:7, status:8, repayStart:10,
+    principalRecv:11, interestRecv:12, fee:13, totalRecv:14, pl:15, dpd:16, npa:17, closureDate:18,
+  };
 
   let summaryMeta = {};
   if (sumSheet && sumSheet.length > 0) {
@@ -411,48 +415,96 @@ function mapLendenClubData(raw) {
     remark:   String(getField(r, "Remark", "Remarks", "Note", "Description") || ""),
   }));
 
-  const loanSources = [];
-  const directLoanSheetKey = Object.keys(sheets).find(k => sheets[k] === loanSheet);
-  if (loanSheet?.length) loanSources.push({ name: directLoanSheetKey || "Loan Samples", rows: loanSheet });
-  Object.entries(sheets).forEach(([name, rows]) => {
-    if (!Array.isArray(rows) || rows.length === 0) return;
-    if (!monthTabPattern.test(String(name || "").trim())) return;
-    if (loanSources.some(source => source.rows === rows)) return;
-    loanSources.push({ name, rows });
-  });
+  const parseMonthlySheetRows = (rows, tabName) => {
+    if (!Array.isArray(rows) || rows.length === 0) return [];
 
-  const loanSamples = [];
-  const seenLoans = new Set();
-  loanSources.forEach(({ name, rows }) => {
-    (rows || [])
+    // Old HTML dashboard format: raw 2D arrays with fixed columns.
+    if (Array.isArray(rows[0])) {
+      let headerIndex = -1;
+      for (let i = 0; i < Math.min(rows.length, 35); i += 1) {
+        const row = rows[i] || [];
+        const headerCell = String(row[oldCols.id] || "").trim().toLowerCase();
+        if (headerCell === "loan id") {
+          headerIndex = i;
+          break;
+        }
+      }
+      if (headerIndex < 0) return [];
+
+      return rows.slice(headerIndex + 1).map(row => {
+        if (!Array.isArray(row) || row.length < 10) return null;
+        const rawId = String(row[oldCols.id] || "").trim().toUpperCase();
+        if (!rawId.includes("LOA")) return null;
+        const numAt = key => parseFloat(String(row[oldCols[key]] || "").replace(/[₹,\s]/g, "")) || 0;
+        const strAt = key => String(row[oldCols[key]] || "").trim();
+        return {
+          tab: tabName,
+          id: rawId,
+          rate: numAt("rate"),
+          tenure: parseInt(String(row[oldCols.tenure] || ""), 10) || 0,
+          score: parseInt(String(row[oldCols.score] || ""), 10) || 0,
+          disbDate: strAt("disburseDate"),
+          amount: numAt("amount"),
+          status: strAt("status").toUpperCase(),
+          repayStart: strAt("repayStart"),
+          principalRecv: numAt("principalRecv"),
+          interestRecv: numAt("interestRecv"),
+          fee: numAt("fee"),
+          totalRecv: numAt("totalRecv"),
+          pl: numAt("pl"),
+          dpd: numAt("dpd"),
+          npa: numAt("npa"),
+          closure: strAt("closureDate") || "-",
+          expectedClose: "",
+        };
+      }).filter(Boolean);
+    }
+
+    // Fallback for normalized object rows.
+    return rows
       .filter(r => hasField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account"))
-      .forEach(r => {
+      .map(r => {
         const inv = num(getField(r, "Amount", "Invested Amount", "Principal", "Loan Amount"));
         const recv = num(getField(r, "Total Recv", "Total Received", "Received"));
-        const tabLabel = String(getField(r, "Tab", "Batch", "Month") || name || "");
-        const id = String(getField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account") || "");
-        const dedupeKey = `${normalizeLookupKey(tabLabel)}::${normalizeLookupKey(id)}`;
-        if (seenLoans.has(dedupeKey)) return;
-        seenLoans.add(dedupeKey);
-        loanSamples.push({
-          tab:tabLabel,
-          id,
+        return {
+          tab:String(getField(r, "Tab", "Batch", "Month") || tabName || ""),
+          id:String(getField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account") || "").toUpperCase(),
           rate:num(getField(r, "Rate", "Rate%", "Interest Rate")),
           tenure:num(getField(r, "Tenure", "Duration", "Months")),
           score:num(getField(r, "Score", "Credit Score", "CIBIL")),
           disbDate:String(getField(r, "Disb Date", "Disbursement Date", "Date") || ""),
           amount:inv,
-          status:String(getField(r, "Status", "Loan Status") || ""),
+          status:String(getField(r, "Status", "Loan Status") || "").toUpperCase(),
+          repayStart:String(getField(r, "Repay Start", "Repayment Start", "EMI Start", "Start Date") || ""),
           principalRecv:num(getField(r, "Principal Recv", "Principal Received", "Principal Collected")),
           interestRecv:num(getField(r, "Interest Recv", "Interest Received", "Interest Earned")),
           fee:num(getField(r, "Fee", "Fees")),
           totalRecv:recv,
           pl:num(getField(r, "P&L", "Profit", "Net P&L")) || (recv-inv),
+          dpd:num(getField(r, "DPD", "Days Past Due")),
+          npa:num(getField(r, "NPA")),
           closure:String(getField(r, "Closure", "Closure Date", "Closed On") || "-"),
           expectedClose:String(getField(r, "Expected Close", "Expected Closure", "Due Date", "Maturity Date", "End Date") || ""),
-        });
+        };
       });
-  });
+  };
+
+  const monthLoanSources = Object.entries(sheets)
+    .filter(([name, rows]) => Array.isArray(rows) && rows.length > 0 && monthTabPattern.test(String(name || "").trim()))
+    .sort((a, b) => lendenTabKey(a[0]) - lendenTabKey(b[0]));
+
+  const monthlyLoans = monthLoanSources.flatMap(([name, rows]) => parseMonthlySheetRows(rows, name));
+  const sampleLoans = loanSheet?.length ? parseMonthlySheetRows(loanSheet, Object.keys(sheets).find(k => sheets[k] === loanSheet) || "Loan Samples") : [];
+
+  const dedupedLoanMap = new Map();
+  const sourceLoans = monthlyLoans.length > 0 ? monthlyLoans : sampleLoans;
+  sourceLoans
+    .sort((a, b) => lendenTabKey(a.tab) - lendenTabKey(b.tab))
+    .forEach(loan => {
+      const key = normalizeLookupKey(loan.id);
+      if (key) dedupedLoanMap.set(key, loan);
+    });
+  const loanSamples = [...dedupedLoanMap.values()];
 
   const totalPooledFromSummary = num(getField(summaryMeta,
     "Closing Pool",
@@ -992,6 +1044,17 @@ function diffMonthsBetweenDates(start, end) {
   if (!(start instanceof Date) || Number.isNaN(start.getTime()) || !(end instanceof Date) || Number.isNaN(end.getTime())) return 0;
   const msPerDay = 24 * 60 * 60 * 1000;
   return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (30 * msPerDay)));
+}
+
+function lendenTabKey(tab) {
+  const raw = String(tab || "").trim();
+  const match = raw.match(/^([A-Za-z]{3})[-/ ](\d{2,4})$/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  const monthMap = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 };
+  const monthIdx = monthMap[match[1].slice(0,1).toUpperCase() + match[1].slice(1,3).toLowerCase()];
+  let year = Number(match[2]);
+  if (year < 100) year += 2000;
+  return year * 100 + (monthIdx ?? 0);
 }
 
 // ─── COLORS ──────────────────────────────────────────────────────────────────
@@ -1827,23 +1890,33 @@ function LendenClubTab({ data }) {
 
   // ── Analytics calculations ──
   const allLoans = (d.lendenClub.loanSamples || []).map(loan => {
-    const rawStatus = String(loan.status || "").trim();
+    const rawStatus = String(loan.status || "").trim().toUpperCase();
     const disbursedOn = parseDateValue(loan.disbDate);
     const closedOn = parseDateValue(loan.closure);
+    const repayStartOn = parseDateValue(loan.repayStart);
     const dueOn = parseDateValue(loan.expectedClose) || (disbursedOn && loan.tenure ? addMonths(disbursedOn, loan.tenure) : null);
     const isClosed = /closed|completed|repaid|settled/i.test(rawStatus) || Boolean(closedOn);
     const isExplicitPending = /pending|processing|live|ongoing/i.test(rawStatus);
-    const isExplicitActive = /active/i.test(rawStatus);
-    const isOverdue = !isClosed && dueOn instanceof Date && !Number.isNaN(dueOn.getTime()) && dueOn < new Date();
     const derivedStatus = isClosed
       ? "CLOSED"
-      : isOverdue
-        ? "OVERDUE"
-        : isExplicitPending
-          ? "PENDING"
-          : isExplicitActive
-            ? "ACTIVE"
-            : "PENDING";
+      : isExplicitPending
+        ? "PENDING"
+        : "ACTIVE";
+    let repaymentStatus = "On Track";
+    if (derivedStatus === "CLOSED") {
+      repaymentStatus = "Closed";
+    } else if (n(loan.dpd) > 0 || n(loan.npa) > 0) {
+      repaymentStatus = "NPA";
+    } else if (dueOn instanceof Date && !Number.isNaN(dueOn.getTime()) && dueOn < new Date()) {
+      repaymentStatus = "OVERDUE";
+    } else if (repayStartOn instanceof Date && !Number.isNaN(repayStartOn.getTime())) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      repayStartOn.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((repayStartOn.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+      if (diffDays === 0) repaymentStatus = "DUE TODAY";
+      else if (diffDays > 0 && diffDays <= 7) repaymentStatus = "DUE SOON";
+    }
     const closedMonths = isClosed && disbursedOn && closedOn ? diffMonthsBetweenDates(disbursedOn, closedOn) : 0;
     const monthlyRateToClose = isClosed && loan.amount > 0 && closedMonths > 0
       ? +(((loan.interestRecv / loan.amount) / closedMonths) * 100).toFixed(2)
@@ -1855,12 +1928,13 @@ function LendenClubTab({ data }) {
       dueDate: dueOn ? fmtDate(dueOn) : "-",
       monthsToClose: closedMonths,
       monthlyRateToClose,
+      rs: repaymentStatus,
     };
   });
   const activeLoans = allLoans.filter(l=>l.status==="ACTIVE");
   const closedLoans = allLoans.filter(l=>l.status==="CLOSED");
   const pendingLoans = allLoans.filter(l=>l.status==="PENDING");
-  const overdueLoans = allLoans.filter(l=>l.status==="OVERDUE");
+  const overdueLoans = allLoans.filter(l=>l.rs==="OVERDUE");
 
   // Interest earned per closed loan: interestRecv is actual earned interest
   const totalInterestEarned  = allLoans.reduce((s,l)=>s+l.interestRecv,0);
