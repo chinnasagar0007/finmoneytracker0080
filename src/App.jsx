@@ -115,6 +115,26 @@ function hasUsableMappedData(mapped) {
   );
 }
 
+function hasUsableLendenClubData(section) {
+  if (!section) return false;
+  return Boolean(
+    num(section.totalPooled) > 0 ||
+    section.monthSummary?.length ||
+    section.tabSummary?.length ||
+    section.transactions?.length ||
+    section.loanSamples?.length
+  );
+}
+
+function hasUsablePersonalLendingData(section) {
+  if (!section) return false;
+  return Boolean(
+    num(section.totalCapital) > 0 ||
+    section.borrowers?.length ||
+    section.repaymentLog?.length
+  );
+}
+
 function findSheet(sheetsObj, candidates) {
   if (!sheetsObj) return null;
   const keys = Object.keys(sheetsObj);
@@ -2580,8 +2600,21 @@ export default function App() {
       const mapped = mapApiResponse(raw);
       if (!mapped) throw new Error("Central API returned no usable rows. Check sheet names, header rows, and Apps Script normalization.");
 
-      // Apply all sections
-      setData(prev => ({ ...prev, ...mapped }));
+      // Apply mapped sections, but do not wipe a working section with an empty payload.
+      setData(prev => ({
+        ...prev,
+        income: mapped.income?.salary > 0 ? mapped.income : prev.income,
+        budget: mapped.budget ? deepMerge(prev.budget, mapped.budget) : prev.budget,
+        dailyExpenses: mapped.dailyExpenses?.length ? mapped.dailyExpenses : prev.dailyExpenses,
+        taxLog: mapped.taxLog?.length ? mapped.taxLog : prev.taxLog,
+        salaryHistory: mapped.salaryHistory?.length ? mapped.salaryHistory : prev.salaryHistory,
+        stocks: mapped.stocks ? deepMerge(prev.stocks, mapped.stocks) : prev.stocks,
+        loans: mapped.loans ? deepMerge(prev.loans, mapped.loans) : prev.loans,
+        lendenClub: hasUsableLendenClubData(mapped.lendenClub) ? deepMerge(prev.lendenClub, mapped.lendenClub) : prev.lendenClub,
+        personalLending: hasUsablePersonalLendingData(mapped.personalLending) ? deepMerge(prev.personalLending, mapped.personalLending) : prev.personalLending,
+        realEstate: mapped.realEstate ? deepMerge(prev.realEstate, mapped.realEstate) : prev.realEstate,
+        settings: mapped.settings || prev.settings,
+      }));
 
       // Build sync log entries per section
       const sections = ["income","stocks","loans","lendenClub","personalLending","realEstate"];
