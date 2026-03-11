@@ -1895,6 +1895,14 @@ function LendenClubTab({ data }) {
   // ── Analytics calculations ──
   const allLoans = (d.lendenClub.loanSamples || []).map(loan => {
     const rawStatus = String(loan.status || "").trim().toUpperCase();
+    const rawPrincipalRecv = n(loan.principalRecv);
+    const rawInterestRecv = n(loan.interestRecv);
+    const rawTotalRecv = n(loan.totalRecv);
+    const principalLooksLikeTotal = rawTotalRecv > 0 && Math.abs(rawPrincipalRecv - rawTotalRecv) < 0.5 && rawInterestRecv > 0;
+    const principalOverCounts = rawTotalRecv > 0 && rawPrincipalRecv + rawInterestRecv > rawTotalRecv + 0.5;
+    const normalizedPrincipalRecv = (principalLooksLikeTotal || principalOverCounts)
+      ? Math.max(0, rawTotalRecv - rawInterestRecv)
+      : (rawPrincipalRecv || (rawTotalRecv > 0 ? Math.max(0, rawTotalRecv - rawInterestRecv) : 0));
     const disbursedOn = parseDateValue(loan.disbDate);
     const closedOn = parseDateValue(loan.closure);
     const repayStartOn = parseDateValue(loan.repayStart);
@@ -1923,11 +1931,14 @@ function LendenClubTab({ data }) {
     }
     const closedMonths = isClosed && disbursedOn && closedOn ? diffMonthsBetweenDates(disbursedOn, closedOn) : 0;
     const monthlyRateToClose = isClosed && loan.amount > 0 && closedMonths > 0
-      ? +(((loan.interestRecv / loan.amount) / closedMonths) * 100).toFixed(2)
+      ? +(((rawInterestRecv / loan.amount) / closedMonths) * 100).toFixed(2)
       : 0;
-    const outstandingAmount = Math.max(0, n(loan.amount) - n(loan.principalRecv));
+    const outstandingAmount = Math.max(0, n(loan.amount) - normalizedPrincipalRecv);
     return {
       ...loan,
+      principalRecv: normalizedPrincipalRecv,
+      interestRecv: rawInterestRecv,
+      totalRecv: rawTotalRecv,
       status: derivedStatus,
       rawStatus,
       dueDate: dueOn ? fmtDate(dueOn) : "-",
