@@ -362,7 +362,7 @@ function mapLendenClubData(raw) {
   const loanSheet    = findSheet(sheets, ["Loan Sample","Loan Samples","LC Loan","Loans","Loan Account","Loan Details","Loan Book"]);
   const monthTabPattern = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[- /\d]+$/i;
   const oldCols = {
-    id:1, rate:2, tenure:3, score:5, disburseDate:6, amount:7, status:8, repayStart:10,
+    id:1, rate:2, tenure:3, score:5, disburseDate:6, amount:7, status:8, totalRepay:9, repayStart:10,
     principalRecv:11, interestRecv:12, fee:13, totalRecv:14, pl:15, dpd:16, npa:17, closureDate:18,
   };
 
@@ -446,6 +446,7 @@ function mapLendenClubData(raw) {
           disbDate: strAt("disburseDate"),
           amount: numAt("amount"),
           status: strAt("status").toUpperCase(),
+          totalRepay: numAt("totalRepay"),
           repayStart: strAt("repayStart"),
           principalRecv: numAt("principalRecv"),
           interestRecv: numAt("interestRecv"),
@@ -475,6 +476,7 @@ function mapLendenClubData(raw) {
           disbDate:String(getField(r, "Disb Date", "Disbursement Date", "Date") || ""),
           amount:inv,
           status:String(getField(r, "Status", "Loan Status") || "").toUpperCase(),
+          totalRepay:num(getField(r, "Total Repay", "Total Repayment", "Repayment Amount", "Maturity Amount", "Total Due")),
           repayStart:String(getField(r, "Repay Start", "Repayment Start", "EMI Start", "Start Date") || ""),
           principalRecv:num(getField(r, "Principal Recv", "Principal Received", "Principal Collected")),
           interestRecv:num(getField(r, "Interest Recv", "Interest Received", "Interest Earned")),
@@ -1923,6 +1925,12 @@ function LendenClubTab({ data }) {
     const monthlyRateToClose = isClosed && loan.amount > 0 && closedMonths > 0
       ? +(((loan.interestRecv / loan.amount) / closedMonths) * 100).toFixed(2)
       : 0;
+    const outstandingAmount = Math.max(
+      0,
+      n(loan.totalRepay) > 0
+        ? n(loan.totalRepay) - n(loan.totalRecv)
+        : n(loan.amount) - n(loan.principalRecv)
+    );
     return {
       ...loan,
       status: derivedStatus,
@@ -1930,6 +1938,7 @@ function LendenClubTab({ data }) {
       dueDate: dueOn ? fmtDate(dueOn) : "-",
       monthsToClose: closedMonths,
       monthlyRateToClose,
+      outstandingAmount,
       rs: repaymentStatus,
     };
   });
@@ -1947,7 +1956,7 @@ function LendenClubTab({ data }) {
   const totalReceivedFromLoans  = allLoans.reduce((s,l)=>s+n(l.totalRecv),0);
   const totalFees               = allLoans.reduce((s,l)=>s+n(l.fee),0);
   const totalPL                 = allLoans.reduce((s,l)=>s+n(l.pl),0);
-  const outstandingFromLoans    = activeLoans.reduce((s,l)=>s+Math.max(0,n(l.amount)-n(l.principalRecv)),0);
+  const outstandingFromLoans    = activeLoans.reduce((s,l)=>s+n(l.outstandingAmount),0);
   const totalDisbursed       = d.lendenClub.tabSummary.reduce((s,t)=>s+t.disbursed,0);
   const totalReceived        = d.lendenClub.tabSummary.reduce((s,t)=>s+t.received,0);
   const totalOutstanding     = d.lendenClub.tabSummary.reduce((s,t)=>s+t.outstanding,0);
@@ -1955,6 +1964,7 @@ function LendenClubTab({ data }) {
   const displayTotalDisbursed = totalDisbursedFromLoans || totalDisbursed;
   const displayTotalReceived = totalReceivedFromLoans || totalReceived;
   const displayTotalOutstanding = outstandingFromLoans || totalOutstanding;
+  const currentCapitalDeployed = allLoans.length > 0 ? outstandingFromLoans : totalOutstanding;
   const displayTotalInterest = totalInterestEarned || totalInterestFromTab;
   const avgLoanDuration      = allLoans.length ? (allLoans.reduce((s,l)=>s+l.tenure,0)/allLoans.length).toFixed(1) : 0;
   const avgRate              = allLoans.length ? (allLoans.reduce((s,l)=>s+l.rate,0)/allLoans.length).toFixed(2) : 0;
@@ -2034,7 +2044,7 @@ function LendenClubTab({ data }) {
     const monthInterest = monthLoans.reduce((s, l) => s + n(l.interestRecv), 0) || t.interest;
     const monthFees = monthLoans.reduce((s, l) => s + n(l.fee), 0) || t.fee;
     const monthPrincipal = monthLoans.reduce((s, l) => s + n(l.principalRecv), 0);
-    const monthOutstanding = monthLoans.reduce((s, l) => s + Math.max(0, n(l.amount) - n(l.principalRecv)), 0) || t.outstanding;
+    const monthOutstanding = monthLoans.reduce((s, l) => s + n(l.outstandingAmount), 0) || t.outstanding;
     const monthNetRate = monthDisbursed > 0 ? (((monthInterest - monthFees) / monthDisbursed) * 100) : 0;
     return {
       ...t,
@@ -2088,8 +2098,9 @@ function LendenClubTab({ data }) {
       </div>
 
       {/* KPI grid */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}}>
         <GlassKPI label="Total Interest Earned"  value={fmtF(displayTotalInterest)} sub={`Across ${summaryTotalLoans} loans`} color={P.teal}     icon="💹"/>
+        <GlassKPI label="Current Capital Deployed" value={fmtF(currentCapitalDeployed)} sub="Sum of active principal outstanding" color={P.gold} icon="🏦"/>
         <GlassKPI label="Annualised ROI"          value={`${roi}%`}                  sub="On invested capital"            color={P.emerald}  icon="📈"/>
         <GlassKPI label="Avg Monthly Yield"       value={`${avgClosedMonthlyRate}%`} sub={`Closed in ${avgClosedDuration} mo avg · ${avgRate}% p.a.`} color={P.sapphire} icon="⏱"/>
         <GlassKPI label="Active / Closed / Pending" value={`${summaryActiveLoans} / ${summaryClosedLoans} / ${summaryPendingLoans}`} sub={`Overdue ${summaryOverdueLoans} · Recovery ${pct(displayTotalReceived,displayTotalDisbursed)}%`} color={P.violet} icon="🔄"/>
