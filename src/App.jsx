@@ -1952,6 +1952,10 @@ function LendenClubTab({ data }) {
   const totalReceived        = d.lendenClub.tabSummary.reduce((s,t)=>s+t.received,0);
   const totalOutstanding     = d.lendenClub.tabSummary.reduce((s,t)=>s+t.outstanding,0);
   const totalInterestFromTab = d.lendenClub.tabSummary.reduce((s,t)=>s+t.interest,0);
+  const displayTotalDisbursed = totalDisbursedFromLoans || totalDisbursed;
+  const displayTotalReceived = totalReceivedFromLoans || totalReceived;
+  const displayTotalOutstanding = outstandingFromLoans || totalOutstanding;
+  const displayTotalInterest = totalInterestEarned || totalInterestFromTab;
   const avgLoanDuration      = allLoans.length ? (allLoans.reduce((s,l)=>s+l.tenure,0)/allLoans.length).toFixed(1) : 0;
   const avgRate              = allLoans.length ? (allLoans.reduce((s,l)=>s+l.rate,0)/allLoans.length).toFixed(2) : 0;
   const avgClosedDuration    = closedLoans.length ? (closedLoans.reduce((s,l)=>s+(l.monthsToClose || l.tenure || 0),0)/closedLoans.length).toFixed(1) : 0;
@@ -1982,14 +1986,9 @@ function LendenClubTab({ data }) {
 
   // ROI = annualised return on invested capital
   const roi = d.lendenClub.totalPooled>0 
-    ? ((totalInterestFromTab / d.lendenClub.totalPooled) * (12 / 3) * 100).toFixed(2)  // 3 months of data
+    ? ((displayTotalInterest / d.lendenClub.totalPooled) * (12 / 3) * 100).toFixed(2)  // 3 months of data
     : 0;
 
-  // Monthly interest breakdown from tabSummary
-  const monthlyBreakdown = d.lendenClub.tabSummary.map(t=>({
-    month: t.tab, disbursed:t.disbursed, interest:t.interest, outstanding:t.outstanding, loans:t.loans,
-    roi: t.disbursed>0 ? ((t.interest/t.disbursed)*100*12).toFixed(1) : 0
-  }));
   const monthOptions = ["ALL_MONTHS", ...Array.from(new Set([
     ...d.lendenClub.tabSummary.map(t => String(t.tab || "").trim()).filter(Boolean),
     ...allLoans.map(l => String(l.tab || "").trim()).filter(Boolean),
@@ -2054,6 +2053,14 @@ function LendenClubTab({ data }) {
       monthNetRate,
     };
   });
+  const monthlyBreakdown = visibleMonthlyRows.map((t) => ({
+    month: t.tab,
+    disbursed: t.monthDisbursed,
+    interest: t.monthInterest,
+    outstanding: t.monthOutstanding,
+    loans: t.loans,
+    roi: t.monthDisbursed > 0 ? ((t.monthInterest / t.monthDisbursed) * 100 * 12).toFixed(1) : 0,
+  }));
 
   const FILTER_OPTIONS = [
     {id:"ALL",    label:"All Loans",    count:summaryTotalLoans || allLoans.length, color:P.muted   },
@@ -2082,10 +2089,10 @@ function LendenClubTab({ data }) {
 
       {/* KPI grid */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14}}>
-        <GlassKPI label="Total Interest Earned"  value={fmtF(totalInterestFromTab)} sub={`Across ${summaryTotalLoans} loans`} color={P.teal}     icon="💹"/>
+        <GlassKPI label="Total Interest Earned"  value={fmtF(displayTotalInterest)} sub={`Across ${summaryTotalLoans} loans`} color={P.teal}     icon="💹"/>
         <GlassKPI label="Annualised ROI"          value={`${roi}%`}                  sub="On invested capital"            color={P.emerald}  icon="📈"/>
         <GlassKPI label="Avg Monthly Yield"       value={`${avgClosedMonthlyRate}%`} sub={`Closed in ${avgClosedDuration} mo avg · ${avgRate}% p.a.`} color={P.sapphire} icon="⏱"/>
-        <GlassKPI label="Active / Closed / Pending" value={`${summaryActiveLoans} / ${summaryClosedLoans} / ${summaryPendingLoans}`} sub={`Overdue ${summaryOverdueLoans} · Recovery ${pct(totalReceived,totalDisbursed)}%`} color={P.violet} icon="🔄"/>
+        <GlassKPI label="Active / Closed / Pending" value={`${summaryActiveLoans} / ${summaryClosedLoans} / ${summaryPendingLoans}`} sub={`Overdue ${summaryOverdueLoans} · Recovery ${pct(displayTotalReceived,displayTotalDisbursed)}%`} color={P.violet} icon="🔄"/>
         <GlassKPI label="Net Rate Of Interest" value={`${netRate.toFixed(2)}%`} sub={`Gross ${grossRate.toFixed(2)}% · Fee drag ${feesDrag.toFixed(2)}%`} color={P.rose} icon="🧮"/>
       </div>
 
@@ -2144,9 +2151,9 @@ function LendenClubTab({ data }) {
         <SectionHead title="Net Rate Of Interest" icon="🧾" color={P.sapphire}/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
           {[
-            {label:"Disbursed", value:fmtF(totalDisbursedFromLoans || totalDisbursed), color:P.sapphire},
-            {label:"Received", value:fmtF(totalReceivedFromLoans || totalReceived), color:P.emerald},
-            {label:"Interest", value:fmtF(totalInterestEarned || totalInterestFromTab), color:P.teal},
+            {label:"Disbursed", value:fmtF(displayTotalDisbursed), color:P.sapphire},
+            {label:"Received", value:fmtF(displayTotalReceived), color:P.emerald},
+            {label:"Interest", value:fmtF(displayTotalInterest), color:P.teal},
             {label:"Fees", value:fmtF(totalFees), color:P.ruby},
             {label:"Net P&L", value:fmtF(totalPL), color:totalPL >= 0 ? P.emerald : P.ruby},
           ].map((item) => (
@@ -2204,12 +2211,12 @@ function LendenClubTab({ data }) {
                 <TD bold color={P.gold}>{summaryPendingLoans}</TD>
                 <TD bold color={P.ruby}>{summaryOverdueLoans}</TD>
                 <TD bold color={P.rose}>{npaLoans.length}</TD>
-                <TD bold color={P.sapphire}>{fmtF(totalDisbursed)}</TD>
+                <TD bold color={P.sapphire}>{fmtF(displayTotalDisbursed)}</TD>
                 <TD bold color={P.text}>{fmtF(allLoans.reduce((s,l)=>s+n(l.principalRecv),0))}</TD>
-                <TD bold color={P.teal}>{fmtF(totalInterestFromTab)}</TD>
+                <TD bold color={P.teal}>{fmtF(displayTotalInterest)}</TD>
                 <TD bold color={P.muted}>{fmtF(d.lendenClub.tabSummary.reduce((s,t)=>s+t.fee,0) || totalFees)}</TD>
-                <TD bold color={P.ruby}>{fmtF(totalOutstanding || outstandingFromLoans)}</TD>
-                <TD bold color={P.emerald}>{pct(totalReceived,totalDisbursed)}%</TD>
+                <TD bold color={P.ruby}>{fmtF(displayTotalOutstanding)}</TD>
+                <TD bold color={P.emerald}>{pct(displayTotalReceived,displayTotalDisbursed)}%</TD>
                 <TD bold color={P.emerald}>{netRate.toFixed(2)}%</TD>
               </tr>
             </tbody>
@@ -2217,9 +2224,9 @@ function LendenClubTab({ data }) {
         </div>
         <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
           {[
-            {label:"Total Interest",       v:fmtF(totalInterestFromTab), color:P.teal   },
+            {label:"Total Interest",       v:fmtF(displayTotalInterest), color:P.teal   },
             {label:"Avg Monthly Yield",    v:`${avgClosedMonthlyRate}%`, color:P.emerald},
-            {label:"Interest on Sample",   v:fmtF(totalInterestEarned),  color:P.rose   },
+            {label:"Pool-Level Monthly",   v:`${poolLevelMonthlyRate.toFixed(2)}%`,  color:P.rose   },
             {label:"Active / Closed / Pending", v:`${summaryActiveLoans} / ${summaryClosedLoans} / ${summaryPendingLoans}`, color:P.violet},
           ].map((s,i)=>(
             <div key={i} style={{background:`${s.color}0A`,border:`1px solid ${s.color}22`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
