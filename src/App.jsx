@@ -408,12 +408,17 @@ function mapLendenClubData(raw) {
     loans:       num(getField(r, "Loans", "No. of Loans", "Count", "Active Loans", "Total Loans")),
   }));
 
-  const transactions = (txSheet||[]).filter(r=>hasField(r, "Date", "Month", "Tab", "Batch")).map(r=>({
-    date:     String(getField(r, "Date", "Month", "Tab", "Batch") || ""),
-    invested: num(getField(r, "Invested", "Amount", "Added", "Net Invested", "Reinvested")),
-    pool:     num(getField(r, "Pool", "Closing Pool", "Total Pool", "Current Pool", "Pool Size", "Outstanding")),
-    remark:   String(getField(r, "Remark", "Remarks", "Note", "Description") || ""),
-  }));
+  const transactions = (txSheet||[]).filter(r=>hasField(r, "Date", "Month", "Tab", "Batch")).map(r=>{
+    const remark = String(getField(r, "Remark", "Remarks", "Note", "Description") || "");
+    const rawInvested = num(getField(r, "Invested", "Amount", "Added", "Net Invested", "Reinvested"));
+    const isWithdrawal = /withdr|withdrawal|withdrawn|redeem|redeemed|payout/i.test(remark);
+    return {
+      date:     String(getField(r, "Date", "Month", "Tab", "Batch") || ""),
+      invested: isWithdrawal ? -Math.abs(rawInvested) : rawInvested,
+      pool:     num(getField(r, "Pool", "Closing Pool", "Total Pool", "Current Pool", "Pool Size", "Outstanding")),
+      remark,
+    };
+  });
 
   const parseMonthlySheetRows = (rows, tabName) => {
     if (!Array.isArray(rows) || rows.length === 0) return [];
