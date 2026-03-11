@@ -1972,6 +1972,11 @@ function LendenClubTab({ data }) {
   const displayTotalOutstanding = outstandingFromLoans || totalOutstanding;
   const currentCapitalDeployed = allLoans.length > 0 ? outstandingFromLoans : totalOutstanding;
   const displayTotalInterest = totalInterestEarned || totalInterestFromTab;
+  const externalCapitalAdded = d.lendenClub.transactions?.length
+    ? d.lendenClub.transactions.reduce((s, t) => s + n(t.invested), 0)
+    : n(d.lendenClub.totalPooled);
+  const capitalAfterEarnings = externalCapitalAdded + displayTotalInterest - totalFees;
+  const idleCash = capitalAfterEarnings - currentCapitalDeployed;
   const avgLoanDuration      = allLoans.length ? (allLoans.reduce((s,l)=>s+l.tenure,0)/allLoans.length).toFixed(1) : 0;
   const avgRate              = allLoans.length ? (allLoans.reduce((s,l)=>s+l.rate,0)/allLoans.length).toFixed(2) : 0;
   const avgClosedDuration    = closedLoans.length ? (closedLoans.reduce((s,l)=>s+(l.monthsToClose || l.tenure || 0),0)/closedLoans.length).toFixed(1) : 0;
@@ -2192,6 +2197,27 @@ function LendenClubTab({ data }) {
               <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:item.color}}>{item.value}</div>
             </div>
           ))}
+        </div>
+        <div style={{marginTop:12,background:P.card3,border:`1px solid ${P.border}`,borderRadius:12,padding:"12px 14px"}}>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>Capital Reconciliation</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
+            {[
+              {label:"Capital Added", value:fmtF(externalCapitalAdded), color:P.gold},
+              {label:"Interest Earned", value:fmtF(displayTotalInterest), color:P.teal},
+              {label:"Fees Deducted", value:fmtF(totalFees), color:P.ruby},
+              {label:"Current Deployed", value:fmtF(currentCapitalDeployed), color:P.sapphire},
+              {label:"Idle Cash", value:fmtF(idleCash), color:idleCash >= 0 ? P.emerald : P.ruby},
+            ].map((item) => (
+              <div key={item.label} style={{background:`${item.color}0A`,border:`1px solid ${item.color}22`,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:3}}>{item.label}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:item.color}}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:10,fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.8}}>
+            Formula: <span style={{color:P.gold}}>Capital Added</span> + <span style={{color:P.teal}}>Interest Earned</span> - <span style={{color:P.ruby}}>Fees Deducted</span> = <span style={{color:P.text}}>Capital Available</span> {fmtF(capitalAfterEarnings)}.
+            Remaining after current deployment = <span style={{color:idleCash >= 0 ? P.emerald : P.ruby}}>{fmtF(idleCash)}</span>.
+          </div>
         </div>
       </Card>
 
