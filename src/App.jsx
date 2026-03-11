@@ -1925,12 +1925,7 @@ function LendenClubTab({ data }) {
     const monthlyRateToClose = isClosed && loan.amount > 0 && closedMonths > 0
       ? +(((loan.interestRecv / loan.amount) / closedMonths) * 100).toFixed(2)
       : 0;
-    const outstandingAmount = Math.max(
-      0,
-      n(loan.totalRepay) > 0
-        ? n(loan.totalRepay) - n(loan.totalRecv)
-        : n(loan.amount) - n(loan.principalRecv)
-    );
+    const outstandingAmount = Math.max(0, n(loan.amount) - n(loan.principalRecv));
     return {
       ...loan,
       status: derivedStatus,
