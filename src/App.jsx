@@ -547,6 +547,7 @@ function mapLendenClubData(raw) {
     monthSummary,
     tabSummary,
     transactions,
+    monthlyLoanRows: monthlyLoans,
     loanSamples,
     reportedTotalLoans,
     reportedClosedLoans,
@@ -1904,12 +1905,13 @@ Respond ONLY as valid JSON (no markdown, no backticks):
 function LendenClubTab({ data }) {
   const d = data;
   const [loanFilter, setLoanFilter] = useState("ALL");
-  const [monthFilter, setMonthFilter] = useState("ALL_MONTHS");
+  const [monthNameFilter, setMonthNameFilter] = useState("ALL_MONTHS");
+  const [yearFilter, setYearFilter] = useState("ALL_YEARS");
   const [loanQuery, setLoanQuery] = useState("");
   const [repayFilter, setRepayFilter] = useState("");
 
   // ── Analytics calculations ──
-  const allLoans = (d.lendenClub.loanSamples || []).map(loan => {
+  const enrichLoan = (loan) => {
     const rawStatus = String(loan.status || "").trim().toUpperCase();
     const rawPrincipalRecv = n(loan.principalRecv);
     const rawInterestRecv = n(loan.interestRecv);
@@ -1963,7 +1965,33 @@ function LendenClubTab({ data }) {
       outstandingAmount,
       rs: repaymentStatus,
     };
+  };
+  const allLoans = (d.lendenClub.loanSamples || []).map(enrichLoan);
+  const monthlyLoanRows = (d.lendenClub.monthlyLoanRows || []).map(enrichLoan);
+  const parseTabParts = (tab) => {
+    const raw = String(tab || "").trim();
+    const match = raw.match(/^([A-Za-z]{3})[-/ ](\d{2,4})$/);
+    if (!match) return { month: raw, year: "" };
+    const year = String(match[2]).length === 2 ? `20${match[2]}` : String(match[2]);
+    return { month: match[1], year };
+  };
+  const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const allTabLabels = Array.from(new Set([
+    ...d.lendenClub.tabSummary.map(t => String(t.tab || "").trim()).filter(Boolean),
+    ...monthlyLoanRows.map(l => String(l.tab || "").trim()).filter(Boolean),
+    ...allLoans.map(l => String(l.tab || "").trim()).filter(Boolean),
+  ])).sort((a, b) => lendenTabKey(a) - lendenTabKey(b));
+  const yearOptions = ["ALL_YEARS", ...Array.from(new Set(allTabLabels.map((tab) => parseTabParts(tab).year).filter(Boolean))).sort()];
+  const monthOptions = ["ALL_MONTHS", ...monthOrder.filter((month) => allTabLabels.some((tab) => parseTabParts(tab).month === month))];
+  const selectedTabs = allTabLabels.filter((tab) => {
+    const parts = parseTabParts(tab);
+    return (yearFilter === "ALL_YEARS" || parts.year === yearFilter) &&
+      (monthNameFilter === "ALL_MONTHS" || parts.month === monthNameFilter);
   });
+  const hasTabFilter = yearFilter !== "ALL_YEARS" || monthNameFilter !== "ALL_MONTHS";
+  const monthlySourceRows = hasTabFilter
+    ? monthlyLoanRows.filter((l) => selectedTabs.includes(String(l.tab || "").trim()))
+    : monthlyLoanRows;
   const activeLoans = allLoans.filter(l=>l.status==="ACTIVE");
   const closedLoans = allLoans.filter(l=>l.status==="CLOSED");
   const pendingLoans = allLoans.filter(l=>l.status==="PENDING");
@@ -2026,21 +2054,16 @@ function LendenClubTab({ data }) {
     ? ((displayTotalInterest / d.lendenClub.totalPooled) * (12 / 3) * 100).toFixed(2)  // 3 months of data
     : 0;
 
-  const monthOptions = ["ALL_MONTHS", ...Array.from(new Set([
-    ...d.lendenClub.tabSummary.map(t => String(t.tab || "").trim()).filter(Boolean),
-    ...allLoans.map(l => String(l.tab || "").trim()).filter(Boolean),
-  ]))];
-
   // Filter loans based on selected filter
-  const baseFilteredLoans = loanFilter==="ALL" ? allLoans
-    : loanFilter==="ACTIVE" ? activeLoans
-    : loanFilter==="PENDING" ? pendingLoans
-    : loanFilter==="OVERDUE" ? overdueLoans
-    : loanFilter==="CLOSED" ? closedLoans
-    : allLoans; // MONTHLY handled separately
-  const filteredByMonth = monthFilter==="ALL_MONTHS"
-    ? baseFilteredLoans
-    : baseFilteredLoans.filter(l => String(l.tab || "").trim() === monthFilter);
+  const applyLoanFilter = (rows) => loanFilter==="ALL" ? rows
+    : loanFilter==="ACTIVE" ? rows.filter(l => l.status === "ACTIVE")
+    : loanFilter==="PENDING" ? rows.filter(l => l.status === "PENDING")
+    : loanFilter==="OVERDUE" ? rows.filter(l => l.rs === "OVERDUE")
+    : loanFilter==="CLOSED" ? rows.filter(l => l.status === "CLOSED")
+    : rows; // MONTHLY handled separately
+  const baseFilteredLoans = applyLoanFilter(allLoans);
+  const loanRowsForTable = hasTabFilter ? applyLoanFilter(monthlySourceRows) : baseFilteredLoans;
+  const filteredByMonth = loanRowsForTable;
   const filteredLoans = filteredByMonth.filter((l) => {
     const query = loanQuery.trim().toLowerCase();
     const queryMatch = !query || [
@@ -2055,11 +2078,12 @@ function LendenClubTab({ data }) {
     const repayMatch = !repayFilter || l.rs === repayFilter;
     return queryMatch && repayMatch;
   });
-  const visibleMonthlySummary = monthFilter==="ALL_MONTHS"
-    ? d.lendenClub.tabSummary
-    : d.lendenClub.tabSummary.filter(t => String(t.tab || "").trim() === monthFilter);
+  const visibleMonthlySummary = (hasTabFilter
+    ? d.lendenClub.tabSummary.filter(t => selectedTabs.includes(String(t.tab || "").trim()))
+    : d.lendenClub.tabSummary
+  ).sort((a, b) => lendenTabKey(a.tab) - lendenTabKey(b.tab));
   const visibleMonthlyRows = visibleMonthlySummary.map((t) => {
-    const monthLoans = allLoans.filter((l) => String(l.tab || "").trim() === String(t.tab || "").trim());
+    const monthLoans = monthlyLoanRows.filter((l) => String(l.tab || "").trim() === String(t.tab || "").trim());
     const closed = monthLoans.filter((l) => l.status === "CLOSED");
     const active = monthLoans.filter((l) => l.status === "ACTIVE");
     const pending = monthLoans.filter((l) => l.status === "PENDING");
@@ -2075,6 +2099,7 @@ function LendenClubTab({ data }) {
     const monthNetRate = monthDisbursed > 0 ? ((monthInterest / monthDisbursed) * 100) : 0;
     return {
       ...t,
+      loans: monthLoans.length || t.loans,
       active: active.length,
       closed: closed.length,
       pending: pending.length,
@@ -2098,6 +2123,23 @@ function LendenClubTab({ data }) {
     loans: t.loans,
     roi: t.monthDisbursed > 0 ? ((t.monthInterest / t.monthDisbursed) * 100 * 12).toFixed(1) : 0,
   }));
+  const visibleMonthlyTotals = visibleMonthlyRows.reduce((acc, row) => ({
+    loans: acc.loans + n(row.loans),
+    active: acc.active + n(row.active),
+    closed: acc.closed + n(row.closed),
+    pending: acc.pending + n(row.pending),
+    overdue: acc.overdue + n(row.overdue),
+    npa: acc.npa + n(row.npa),
+    disbursed: acc.disbursed + n(row.monthDisbursed),
+    principal: acc.principal + n(row.monthPrincipal),
+    interest: acc.interest + n(row.monthInterest),
+    fee: acc.fee + n(row.monthFees),
+    outstanding: acc.outstanding + n(row.monthOutstanding),
+    received: acc.received + n(row.received),
+  }), {
+    loans: 0, active: 0, closed: 0, pending: 0, overdue: 0, npa: 0,
+    disbursed: 0, principal: 0, interest: 0, fee: 0, outstanding: 0, received: 0,
+  });
 
   const FILTER_OPTIONS = [
     {id:"ALL",    label:"All Loans",    count:summaryTotalLoans || allLoans.length, color:P.muted   },
@@ -2264,19 +2306,19 @@ function LendenClubTab({ data }) {
               ))}
               <tr style={{background:P.card2}}>
                 <TD bold color={P.gold}>TOTAL</TD>
-                <TD bold>{summaryTotalLoans}</TD>
-                <TD bold color={P.emerald}>{summaryActiveLoans}</TD>
-                <TD bold color={P.sapphire}>{summaryClosedLoans}</TD>
-                <TD bold color={P.gold}>{summaryPendingLoans}</TD>
-                <TD bold color={P.ruby}>{summaryOverdueLoans}</TD>
-                <TD bold color={P.rose}>{npaLoans.length}</TD>
-                <TD bold color={P.sapphire}>{fmtF(displayTotalDisbursed)}</TD>
-                <TD bold color={P.text}>{fmtF(allLoans.reduce((s,l)=>s+n(l.principalRecv),0))}</TD>
-                <TD bold color={P.teal}>{fmtF(displayTotalInterest)}</TD>
-                <TD bold color={P.muted}>{fmtF(d.lendenClub.tabSummary.reduce((s,t)=>s+t.fee,0) || totalFees)}</TD>
-                <TD bold color={P.ruby}>{fmtF(displayTotalOutstanding)}</TD>
-                <TD bold color={P.emerald}>{pct(displayTotalReceived,displayTotalDisbursed)}%</TD>
-                <TD bold color={P.emerald}>{grossRate.toFixed(2)}%</TD>
+                <TD bold>{visibleMonthlyTotals.loans}</TD>
+                <TD bold color={P.emerald}>{visibleMonthlyTotals.active}</TD>
+                <TD bold color={P.sapphire}>{visibleMonthlyTotals.closed}</TD>
+                <TD bold color={P.gold}>{visibleMonthlyTotals.pending}</TD>
+                <TD bold color={P.ruby}>{visibleMonthlyTotals.overdue}</TD>
+                <TD bold color={P.rose}>{visibleMonthlyTotals.npa}</TD>
+                <TD bold color={P.sapphire}>{fmtF(visibleMonthlyTotals.disbursed)}</TD>
+                <TD bold color={P.text}>{fmtF(visibleMonthlyTotals.principal)}</TD>
+                <TD bold color={P.teal}>{fmtF(visibleMonthlyTotals.interest)}</TD>
+                <TD bold color={P.muted}>{fmtF(visibleMonthlyTotals.fee)}</TD>
+                <TD bold color={P.ruby}>{fmtF(visibleMonthlyTotals.outstanding)}</TD>
+                <TD bold color={P.emerald}>{pct(visibleMonthlyTotals.received,visibleMonthlyTotals.disbursed)}%</TD>
+                <TD bold color={P.emerald}>{visibleMonthlyTotals.disbursed > 0 ? ((visibleMonthlyTotals.interest / visibleMonthlyTotals.disbursed) * 100).toFixed(2) : "0.00"}%</TD>
               </tr>
             </tbody>
           </table>
@@ -2327,10 +2369,20 @@ function LendenClubTab({ data }) {
                 <option key={m || "ALL"} value={m}>{m || "All Statuses"}</option>
               ))}
             </select>
+            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginLeft:4}}>Year</span>
+            <select
+              value={yearFilter}
+              onChange={e=>setYearFilter(e.target.value)}
+              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
+            >
+              {yearOptions.map(y=>(
+                <option key={y} value={y}>{y==="ALL_YEARS" ? "All Years" : y}</option>
+              ))}
+            </select>
             <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginLeft:4}}>Month</span>
             <select
-              value={monthFilter}
-              onChange={e=>setMonthFilter(e.target.value)}
+              value={monthNameFilter}
+              onChange={e=>setMonthNameFilter(e.target.value)}
               style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
             >
               {monthOptions.map(m=>(
@@ -2343,7 +2395,7 @@ function LendenClubTab({ data }) {
         {loanFilter==="MONTHLY" ? (
           <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
             {visibleMonthlyRows.map((t,i)=>{
-              const tabLoans = allLoans.filter(l=>l.tab===t.tab);
+              const tabLoans = monthlyLoanRows.filter(l=>l.tab===t.tab);
               return (
                 <div key={i} style={{background:P.card3,borderRadius:12,padding:14,border:`1px solid ${CC[i]}22`}}>
                   <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,color:CC[i],marginBottom:8}}>{t.tab} · {t.loans} loans</div>
