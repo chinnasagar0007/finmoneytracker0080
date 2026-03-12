@@ -1975,6 +1975,20 @@ function LendenClubTab({ data }) {
     const year = String(match[2]).length === 2 ? `20${match[2]}` : String(match[2]);
     return { month: match[1], year };
   };
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const getDateParts = (value) => {
+    const parsed = parseDateValue(value);
+    if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return null;
+    return {
+      month: monthNames[parsed.getMonth()],
+      year: String(parsed.getFullYear()),
+    };
+  };
+  const getLoanFilterParts = (loan) => {
+    const closureParts = getDateParts(loan.closure);
+    if (loan.status === "CLOSED" && closureParts) return closureParts;
+    return getDateParts(loan.disbDate) || parseTabParts(loan.tab);
+  };
   const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const allTabLabels = Array.from(new Set([
     ...d.lendenClub.tabSummary.map(t => String(t.tab || "").trim()).filter(Boolean),
@@ -2061,8 +2075,16 @@ function LendenClubTab({ data }) {
     : loanFilter==="OVERDUE" ? rows.filter(l => l.rs === "OVERDUE")
     : loanFilter==="CLOSED" ? rows.filter(l => l.status === "CLOSED")
     : rows; // MONTHLY handled separately
+  const matchesCalendarFilter = (loan) => {
+    if (!hasTabFilter) return true;
+    const parts = getLoanFilterParts(loan);
+    return (yearFilter === "ALL_YEARS" || parts.year === yearFilter) &&
+      (monthNameFilter === "ALL_MONTHS" || parts.month === monthNameFilter);
+  };
   const baseFilteredLoans = applyLoanFilter(allLoans);
-  const loanRowsForTable = hasTabFilter ? applyLoanFilter(monthlySourceRows) : baseFilteredLoans;
+  const loanRowsForTable = hasTabFilter
+    ? applyLoanFilter(monthlyLoanRows).filter(matchesCalendarFilter)
+    : baseFilteredLoans;
   const filteredByMonth = loanRowsForTable;
   const filteredLoans = filteredByMonth.filter((l) => {
     const query = loanQuery.trim().toLowerCase();
