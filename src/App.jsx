@@ -2139,9 +2139,12 @@ function LendenClubTab({ data }) {
     const dueSoon = monthLoans.filter((l) => l.rs === "DUE SOON");
     const activeCount = Math.max(0, totalLoans - closed.length - pending.length - overdue.length - npa.length);
     const monthDisbursed = t.disbursed || dedupedMonthLoans.reduce((s, l) => s + n(l.amount), 0);
-    const monthInterest = t.interest || dedupedMonthLoans.reduce((s, l) => s + n(l.interestRecv), 0);
-    const monthFees = t.fee || dedupedMonthLoans.reduce((s, l) => s + n(l.fee), 0);
-    const monthPrincipal = t.principal || dedupedMonthLoans.reduce((s, l) => s + n(l.principalRecv), 0);
+    const loanInterest = dedupedMonthLoans.reduce((s, l) => s + n(l.interestRecv), 0);
+    const loanPrincipal = dedupedMonthLoans.reduce((s, l) => s + n(l.principalRecv), 0);
+    const loanFees = dedupedMonthLoans.reduce((s, l) => s + n(l.fee), 0);
+    const monthInterest = dedupedMonthLoans.length > 0 ? loanInterest : (t.interest || 0);
+    const monthPrincipal = dedupedMonthLoans.length > 0 ? loanPrincipal : (t.principal || 0);
+    const monthFees = dedupedMonthLoans.length > 0 ? loanFees : (t.fee || 0);
     const monthOutstanding = t.outstanding || dedupedMonthLoans.reduce((s, l) => s + n(l.outstandingAmount), 0);
     const monthNetRate = monthDisbursed > 0 ? ((monthInterest / monthDisbursed) * 100) : 0;
     return {
