@@ -525,9 +525,10 @@ function mapLendenClubData(raw) {
 
   const monthlyLoans = monthLoanSources.flatMap(([name, rows]) => parseMonthlySheetRows(rows, name));
   const sampleLoans = loanSheet?.length ? parseMonthlySheetRows(loanSheet, Object.keys(sheets).find(k => sheets[k] === loanSheet) || "Loan Samples") : [];
+  const allRawLoans = [...monthlyLoans, ...sampleLoans];
 
   const dedupedLoanMap = new Map();
-  const sourceLoans = monthlyLoans.length > 0 ? monthlyLoans : sampleLoans;
+  const sourceLoans = allRawLoans.length > 0 ? allRawLoans : sampleLoans;
   sourceLoans
     .sort((a, b) => lendenTabKey(a.tab) - lendenTabKey(b.tab))
     .forEach(loan => {
@@ -559,7 +560,7 @@ function mapLendenClubData(raw) {
     monthSummary,
     tabSummary,
     transactions,
-    monthlyLoanRows: monthlyLoans,
+    monthlyLoanRows: allRawLoans,
     loanSamples,
     reportedTotalLoans,
     reportedClosedLoans,
@@ -1042,10 +1043,9 @@ function parseDateValue(value) {
   const raw = String(value || "").trim();
   if (!raw) return null;
 
-  const direct = new Date(raw);
-  if (!Number.isNaN(direct.getTime())) return direct;
-
   const monthMap = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+
+  // 1. dd-MMM-yy  (e.g. "25-Jan-2026", "01 Feb 26")
   let match = raw.match(/^(\d{1,2})[-\/ ]([A-Za-z]{3})[-\/ ](\d{2,4})$/);
   if (match) {
     const day = Number(match[1]);
@@ -1058,6 +1058,7 @@ function parseDateValue(value) {
     }
   }
 
+  // 2. dd/mm/yyyy  (Indian locale — day first, BEFORE new Date() which assumes US mm/dd)
   match = raw.match(/^(\d{1,2})[-\/ ](\d{1,2})[-\/ ](\d{2,4})$/);
   if (match) {
     const day = Number(match[1]);
@@ -1067,6 +1068,10 @@ function parseDateValue(value) {
     const date = new Date(year, month, day);
     return Number.isNaN(date.getTime()) ? null : date;
   }
+
+  // 3. Fallback for ISO ("2026-01-25"), text ("January 25, 2026"), etc.
+  const direct = new Date(raw);
+  if (!Number.isNaN(direct.getTime())) return direct;
 
   return null;
 }
@@ -2122,14 +2127,16 @@ function LendenClubTab({ data }) {
   ).sort((a, b) => lendenTabKey(a.tab) - lendenTabKey(b.tab));
   const visibleMonthlyRows = visibleMonthlySummary.map((t) => {
     const tabKey = String(t.tab || "").trim();
-    const monthLoans = allLoans.filter((l) => String(l.tab || "").trim() === tabKey);
-    const closed = monthLoans.filter((l) => /closed/i.test(String(l.rawStatus || l.status || "").trim()));
-    const active = monthLoans.filter((l) => l.status === "ACTIVE");
-    const pending = monthLoans.filter((l) => l.status === "PENDING");
-    const overdue = monthLoans.filter((l) => l.rs === "OVERDUE");
-    const npa = monthLoans.filter((l) => l.rs === "NPA");
+    const monthLoans = monthlyLoanRows.filter((l) => String(l.tab || "").trim() === tabKey);
+    const totalLoans = t.loans || monthLoans.length;
+    const rawMonthStatus = (loan) => String(loan.rawStatus || "").trim().toUpperCase();
+    const closed = monthLoans.filter((l) => rawMonthStatus(l) === "CLOSED");
+    const pending = monthLoans.filter((l) => /PENDING|PROCESSING|LIVE|ONGOING/.test(rawMonthStatus(l)));
+    const overdue = monthLoans.filter((l) => /OVERDUE|DELAYED|LATE/.test(rawMonthStatus(l)));
+    const npa = monthLoans.filter((l) => /NPA|DEFAULT|WRITTEN OFF/.test(rawMonthStatus(l)));
     const dueToday = monthLoans.filter((l) => l.rs === "DUE TODAY");
     const dueSoon = monthLoans.filter((l) => l.rs === "DUE SOON");
+    const activeCount = Math.max(0, totalLoans - closed.length - pending.length - overdue.length - npa.length);
     const monthDisbursed = t.disbursed || monthLoans.reduce((s, l) => s + n(l.amount), 0);
     const monthInterest = t.interest || monthLoans.reduce((s, l) => s + n(l.interestRecv), 0);
     const monthFees = t.fee || monthLoans.reduce((s, l) => s + n(l.fee), 0);
@@ -2138,8 +2145,8 @@ function LendenClubTab({ data }) {
     const monthNetRate = monthDisbursed > 0 ? ((monthInterest / monthDisbursed) * 100) : 0;
     return {
       ...t,
-      loans: t.loans || monthLoans.length,
-      active: active.length,
+      loans: totalLoans,
+      active: activeCount,
       closed: closed.length,
       pending: pending.length,
       overdue: overdue.length,
