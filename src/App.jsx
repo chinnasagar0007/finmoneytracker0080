@@ -3982,11 +3982,26 @@ export default function App() {
                 <div style={{marginTop:20}}>
                   <SectionHead title="Valuation Track" icon="📈" color={P.emerald}/>
                   <table>
-                    <thead><tr><TH>Year</TH><TH>Market Value</TH><TH>Total Invested</TH><TH>Unrealised Gain</TH><TH>Gain%</TH></tr></thead>
+                    <thead><tr><TH>Year</TH><TH>Market Value</TH><TH>Total Invested</TH><TH>Cumulative Invested</TH><TH>Unrealised Gain</TH><TH>Gain%</TH></tr></thead>
                     <tbody>
-                      {d.realEstate.valuation.map((v,i)=>(
-                        <tr key={i}><TD color={P.gold}>{v.year}</TD><TD color={P.muted}>{v.marketValue?fmtF(v.marketValue):"—"}</TD><TD color={P.text}>{fmtF(v.totalInvested)}</TD><TD color={P.muted}>{v.unrealisedGain!=null?fmtF(v.unrealisedGain):"—"}</TD><TD color={P.muted}>{v.gainP!=null?`${v.gainP}%`:"—"}</TD></tr>
-                      ))}
+                      {(()=>{
+                        let cumInvested = 0;
+                        return d.realEstate.valuation.map((v,i)=>{
+                          cumInvested += n(v.totalInvested);
+                          const gain = v.unrealisedGain != null ? v.unrealisedGain : (v.marketValue ? v.marketValue - cumInvested : null);
+                          const gainPct = v.gainP != null ? v.gainP : (gain != null && cumInvested > 0 ? +((gain / cumInvested) * 100).toFixed(2) : null);
+                          return (
+                            <tr key={i}>
+                              <TD color={P.gold}>{v.year}</TD>
+                              <TD color={P.muted}>{v.marketValue?fmtF(v.marketValue):"—"}</TD>
+                              <TD color={P.text}>{fmtF(v.totalInvested)}</TD>
+                              <TD color={P.sapphire}>{fmtF(cumInvested)}</TD>
+                              <TD color={gain!=null&&gain>=0?P.emerald:P.ruby}>{gain!=null?fmtF(gain):"—"}</TD>
+                              <TD color={gainPct!=null&&gainPct>=0?P.emerald:P.ruby}>{gainPct!=null?`${gainPct}%`:"—"}</TD>
+                            </tr>
+                          );
+                        });
+                      })()}
                     </tbody>
                   </table>
                   <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:10,lineHeight:1.8}}>
