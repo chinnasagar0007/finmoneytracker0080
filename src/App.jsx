@@ -2186,6 +2186,23 @@ function LendenClubTab({ data }) {
     loans: 0, active: 0, closed: 0, pending: 0, overdue: 0, npa: 0,
     disbursed: 0, principal: 0, interest: 0, fee: 0, outstanding: 0, received: 0,
   });
+  const displayedTotalCounts = hasTabFilter
+    ? {
+        loans: visibleMonthlyTotals.loans,
+        active: visibleMonthlyTotals.active,
+        closed: visibleMonthlyTotals.closed,
+        pending: visibleMonthlyTotals.pending,
+        overdue: visibleMonthlyTotals.overdue,
+        npa: visibleMonthlyTotals.npa,
+      }
+    : {
+        loans: summaryTotalLoans,
+        active: summaryActiveLoans,
+        closed: summaryClosedLoans,
+        pending: summaryPendingLoans,
+        overdue: summaryOverdueLoans,
+        npa: npaLoans.length,
+      };
 
   const REPAYMENT_OPTIONS = ["", "On Track", "DUE TODAY", "DUE SOON", "OVERDUE", "NPA", "Closed"];
 
@@ -2344,12 +2361,12 @@ function LendenClubTab({ data }) {
               ))}
               <tr style={{background:P.card2}}>
                 <TD bold color={P.gold}>TOTAL</TD>
-                <TD bold>{visibleMonthlyTotals.loans}</TD>
-                <TD bold color={P.emerald}>{visibleMonthlyTotals.active}</TD>
-                <TD bold color={P.sapphire}>{visibleMonthlyTotals.closed}</TD>
-                <TD bold color={P.gold}>{visibleMonthlyTotals.pending}</TD>
-                <TD bold color={P.ruby}>{visibleMonthlyTotals.overdue}</TD>
-                <TD bold color={P.rose}>{visibleMonthlyTotals.npa}</TD>
+                <TD bold>{displayedTotalCounts.loans}</TD>
+                <TD bold color={P.emerald}>{displayedTotalCounts.active}</TD>
+                <TD bold color={P.sapphire}>{displayedTotalCounts.closed}</TD>
+                <TD bold color={P.gold}>{displayedTotalCounts.pending}</TD>
+                <TD bold color={P.ruby}>{displayedTotalCounts.overdue}</TD>
+                <TD bold color={P.rose}>{displayedTotalCounts.npa}</TD>
                 <TD bold color={P.sapphire}>{fmtF(visibleMonthlyTotals.disbursed)}</TD>
                 <TD bold color={P.text}>{fmtF(visibleMonthlyTotals.principal)}</TD>
                 <TD bold color={P.teal}>{fmtF(visibleMonthlyTotals.interest)}</TD>
@@ -2364,7 +2381,7 @@ function LendenClubTab({ data }) {
         <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
           {[
             {label:"Visible Months", v:String(visibleMonthlyRows.length), color:P.teal},
-            {label:"Visible Closed Loans", v:String(visibleMonthlyTotals.closed), color:P.emerald},
+            {label:"Visible Closed Loans", v:String(hasTabFilter ? visibleMonthlyTotals.closed : summaryClosedLoans), color:P.emerald},
             {label:"Visible Outstanding", v:fmtF(visibleMonthlyTotals.outstanding), color:P.rose},
             {label:"Visible Recovery", v:`${pct(visibleMonthlyTotals.received,visibleMonthlyTotals.disbursed)}%`, color:P.violet},
           ].map((s,i)=>(
