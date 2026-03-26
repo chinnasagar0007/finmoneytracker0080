@@ -1904,9 +1904,9 @@ Respond ONLY as valid JSON (no markdown, no backticks):
 // ─── LENDENCLUB TAB COMPONENT ─────────────────────────────────────────────────
 function LendenClubTab({ data }) {
   const d = data;
-  const [loanFilter, setLoanFilter] = useState("ALL");
   const [monthNameFilter, setMonthNameFilter] = useState("ALL_MONTHS");
   const [yearFilter, setYearFilter] = useState("ALL_YEARS");
+  const [loanQuery, setLoanQuery] = useState("");
   const [repayFilter, setRepayFilter] = useState("");
 
   // ── Analytics calculations ──
@@ -2063,24 +2063,28 @@ function LendenClubTab({ data }) {
     : 0;
 
   // Filter loans based on selected filter
-  const applyLoanFilter = (rows) => loanFilter==="ALL" ? rows
-    : loanFilter==="ACTIVE" ? rows.filter(l => l.status === "ACTIVE")
-    : loanFilter==="PENDING" ? rows.filter(l => l.status === "PENDING")
-    : loanFilter==="OVERDUE" ? rows.filter(l => l.rs === "OVERDUE")
-    : loanFilter==="CLOSED" ? rows.filter(l => l.status === "CLOSED")
-    : rows; // MONTHLY handled separately
   const matchesCalendarFilter = (loan) => {
     if (!hasTabFilter) return true;
     const parts = getLoanFilterParts(loan);
     return (yearFilter === "ALL_YEARS" || parts.year === yearFilter) &&
       (monthNameFilter === "ALL_MONTHS" || parts.month === monthNameFilter);
   };
-  const baseFilteredLoans = applyLoanFilter(allLoans);
-  const loanRowsForTable = hasTabFilter
-    ? applyLoanFilter(monthlyLoanRows).filter(matchesCalendarFilter)
-    : baseFilteredLoans;
-  const filteredByMonth = loanRowsForTable;
-  const filteredLoans = filteredByMonth.filter((l) => !repayFilter || l.rs === repayFilter);
+  const filteredLoans = allLoans.filter((l) => {
+    if (!matchesCalendarFilter(l)) return false;
+    if (repayFilter && l.rs !== repayFilter) return false;
+    const query = loanQuery.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      l.tab,
+      l.id,
+      l.status,
+      l.rs,
+      l.rawStatus,
+      l.disbDate,
+      l.closure,
+      l.repayStart,
+    ].some((value) => String(value || "").toLowerCase().includes(query));
+  });
   const visibleMonthlySummary = (hasTabFilter
     ? d.lendenClub.tabSummary.filter(t => selectedTabs.includes(String(t.tab || "").trim()))
     : d.lendenClub.tabSummary
@@ -2144,14 +2148,6 @@ function LendenClubTab({ data }) {
     disbursed: 0, principal: 0, interest: 0, fee: 0, outstanding: 0, received: 0,
   });
 
-  const FILTER_OPTIONS = [
-    {id:"ALL",    label:"All Loans",    count:summaryTotalLoans || allLoans.length, color:P.muted   },
-    {id:"ACTIVE", label:"Active",       count:summaryActiveLoans,                    color:P.emerald },
-    {id:"PENDING",label:"Pending",      count:summaryPendingLoans,                   color:P.gold    },
-    {id:"OVERDUE",label:"Overdue",      count:summaryOverdueLoans,                   color:P.ruby    },
-    {id:"CLOSED", label:"Closed",       count:summaryClosedLoans,                    color:P.sapphire},
-    {id:"MONTHLY",label:"By Month",     count:d.lendenClub.tabSummary.length, color:P.gold},
-  ];
   const REPAYMENT_OPTIONS = ["", "On Track", "DUE TODAY", "DUE SOON", "OVERDUE", "NPA", "Closed"];
 
   return (
@@ -2346,16 +2342,12 @@ function LendenClubTab({ data }) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
           <SectionHead title="Individual Loan Accounts" icon="📋" color={P.rose}/>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Filter</span>
-            <select
-              value={loanFilter}
-              onChange={e=>setLoanFilter(e.target.value)}
-              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
-            >
-              {FILTER_OPTIONS.map(f=>(
-                <option key={f.id} value={f.id}>{f.label} ({f.count})</option>
-              ))}
-            </select>
+            <input
+              value={loanQuery}
+              onChange={e=>setLoanQuery(e.target.value)}
+              placeholder="Search loan id / month / status"
+              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10,minWidth:220}}
+            />
             <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginLeft:4}}>Repayment Status</span>
             <select
               value={repayFilter}
@@ -2389,42 +2381,7 @@ function LendenClubTab({ data }) {
           </div>
         </div>
 
-        {loanFilter==="MONTHLY" ? (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
-            {visibleMonthlyRows.map((t,i)=>{
-              const tabLoans = monthlyLoanRows.filter(l=>l.tab===t.tab);
-              return (
-                <div key={i} style={{background:P.card3,borderRadius:12,padding:14,border:`1px solid ${CC[i]}22`}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,color:CC[i],marginBottom:8}}>{t.tab} · {t.loans} loans</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
-                    {[
-                      {label:"Disbursed",   v:fmtF(t.monthDisbursed),   color:P.sapphire},
-                      {label:"Interest",    v:fmtF(t.monthInterest),    color:P.teal    },
-                      {label:"Outstanding", v:fmtF(t.monthOutstanding), color:P.ruby    },
-                      {label:"Net ROI",     v:`${t.monthNetRate.toFixed(2)}%`, color:P.emerald},
-                      {label:"Closed",      v:t.closed, color:P.sapphire},
-                      {label:"Overdue / NPA", v:`${t.overdue} / ${t.npa}`, color:P.rose},
-                    ].map((s,j)=>(
-                      <div key={j} style={{background:`${P.card2}`,borderRadius:8,padding:"8px 10px"}}>
-                        <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:2}}>{s.label}</div>
-                        <div style={{fontFamily:"'Fira Code',monospace",fontSize:12,fontWeight:700,color:s.color}}>{s.v}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {tabLoans.length>0 && (
-                    <table style={{width:"100%",borderCollapse:"collapse"}}>
-                      <thead><tr><th style={{padding:"6px 8px",fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,textAlign:"left"}}>Loan ID</th><th style={{padding:"6px 8px",fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted}}>Rate</th><th style={{padding:"6px 8px",fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted}}>Status</th><th style={{padding:"6px 8px",fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted}}>Interest</th></tr></thead>
-                      <tbody>{tabLoans.map((l,j)=>(
-                        <tr key={j}><td style={{padding:"5px 8px",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>{l.id.slice(-8)}</td><td style={{padding:"5px 8px",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.sapphire,textAlign:"center"}}>{l.rate}%</td><td style={{padding:"5px 8px",fontFamily:"'Fira Code',monospace",fontSize:9,textAlign:"center"}}><span style={{padding:"2px 7px",borderRadius:10,background:`${l.status==="CLOSED"?P.muted:P.emerald}22`,color:l.status==="CLOSED"?P.muted:P.emerald,fontSize:8}}>{l.status}</span></td><td style={{padding:"5px 8px",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.teal,textAlign:"center"}}>{fmtF(l.interestRecv)}</td></tr>
-                      ))}</tbody>
-                    </table>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div style={{overflowX:"auto"}}>
+        <div style={{overflowX:"auto"}}>
             <table className="row-hover">
               <thead><tr><TH>Tab</TH><TH left>Loan ID</TH><TH>Rate%</TH><TH>Tenure</TH><TH>Score</TH><TH>Disbursed</TH><TH>Repay Start</TH><TH>Due</TH><TH>Amount</TH><TH>Status</TH><TH>Repayment</TH><TH>DPD</TH><TH>NPA</TH><TH>Principal Recv</TH><TH>Interest Earned</TH><TH>Avg/Mo</TH><TH>Fee</TH><TH>Total Recv</TH><TH>P&L</TH><TH>Months</TH><TH>Closure</TH></tr></thead>
               <tbody>
@@ -2473,8 +2430,7 @@ function LendenClubTab({ data }) {
                 Math.max(filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s + (n(l.amount) * Math.max(1, n(l.monthsToClose))),0), 1)
               * 100).toFixed(2)}%`:"0.00%"}</span> · Repayment split: <span style={{color:P.gold}}>{dueTodayLoans.length}</span> due today / <span style={{color:P.sapphire}}>{dueSoonLoans.length}</span> due soon / <span style={{color:P.ruby}}>{overdueLoans.length}</span> overdue / <span style={{color:P.rose}}>{npaLoans.length}</span> NPA
             </div>
-          </div>
-        )}
+        </div>
       </Card>
 
       <Card accent={P.violet}>
