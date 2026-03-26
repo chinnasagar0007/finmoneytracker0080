@@ -2122,9 +2122,7 @@ function LendenClubTab({ data }) {
   ).sort((a, b) => lendenTabKey(a.tab) - lendenTabKey(b.tab));
   const visibleMonthlyRows = visibleMonthlySummary.map((t) => {
     const tabKey = String(t.tab || "").trim();
-    const snapshotLoans = monthlyLoanRows.filter((l) => String(l.tab || "").trim() === tabKey);
-    const fallbackLoans = allLoans.filter((l) => String(l.tab || "").trim() === tabKey);
-    const monthLoans = snapshotLoans.length > 0 ? snapshotLoans : fallbackLoans;
+    const monthLoans = allLoans.filter((l) => String(l.tab || "").trim() === tabKey);
     const closed = monthLoans.filter((l) => /closed/i.test(String(l.rawStatus || l.status || "").trim()));
     const active = monthLoans.filter((l) => l.status === "ACTIVE");
     const pending = monthLoans.filter((l) => l.status === "PENDING");
@@ -2132,21 +2130,11 @@ function LendenClubTab({ data }) {
     const npa = monthLoans.filter((l) => l.rs === "NPA");
     const dueToday = monthLoans.filter((l) => l.rs === "DUE TODAY");
     const dueSoon = monthLoans.filter((l) => l.rs === "DUE SOON");
-    const monthDisbursed = snapshotLoans.length > 0
-      ? (snapshotLoans.reduce((s, l) => s + n(l.amount), 0) || t.disbursed)
-      : (t.disbursed || monthLoans.reduce((s, l) => s + n(l.amount), 0));
-    const monthInterest = snapshotLoans.length > 0
-      ? (snapshotLoans.reduce((s, l) => s + n(l.interestRecv), 0) || t.interest)
-      : (t.interest || monthLoans.reduce((s, l) => s + n(l.interestRecv), 0));
-    const monthFees = snapshotLoans.length > 0
-      ? (snapshotLoans.reduce((s, l) => s + n(l.fee), 0) || t.fee)
-      : (t.fee || monthLoans.reduce((s, l) => s + n(l.fee), 0));
-    const monthPrincipal = snapshotLoans.length > 0
-      ? (snapshotLoans.reduce((s, l) => s + n(l.principalRecv), 0) || t.principal)
-      : (t.principal || monthLoans.reduce((s, l) => s + n(l.principalRecv), 0));
-    const monthOutstanding = snapshotLoans.length > 0
-      ? (snapshotLoans.reduce((s, l) => s + n(l.outstandingAmount), 0) || t.outstanding)
-      : (t.outstanding || monthLoans.reduce((s, l) => s + n(l.outstandingAmount), 0));
+    const monthDisbursed = t.disbursed || monthLoans.reduce((s, l) => s + n(l.amount), 0);
+    const monthInterest = t.interest || monthLoans.reduce((s, l) => s + n(l.interestRecv), 0);
+    const monthFees = t.fee || monthLoans.reduce((s, l) => s + n(l.fee), 0);
+    const monthPrincipal = t.principal || monthLoans.reduce((s, l) => s + n(l.principalRecv), 0);
+    const monthOutstanding = t.outstanding || monthLoans.reduce((s, l) => s + n(l.outstandingAmount), 0);
     const monthNetRate = monthDisbursed > 0 ? ((monthInterest / monthDisbursed) * 100) : 0;
     return {
       ...t,
