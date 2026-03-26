@@ -1916,8 +1916,10 @@ Respond ONLY as valid JSON (no markdown, no backticks):
 // ─── LENDENCLUB TAB COMPONENT ─────────────────────────────────────────────────
 function LendenClubTab({ data }) {
   const d = data;
-  const [monthNameFilter, setMonthNameFilter] = useState("ALL_MONTHS");
-  const [yearFilter, setYearFilter] = useState("ALL_YEARS");
+  const [monthlyMonthNameFilter, setMonthlyMonthNameFilter] = useState("ALL_MONTHS");
+  const [monthlyYearFilter, setMonthlyYearFilter] = useState("ALL_YEARS");
+  const [loanMonthNameFilter, setLoanMonthNameFilter] = useState("ALL_MONTHS");
+  const [loanYearFilter, setLoanYearFilter] = useState("ALL_YEARS");
   const [loanQuery, setLoanQuery] = useState("");
   const [repayFilter, setRepayFilter] = useState("");
 
@@ -2014,15 +2016,18 @@ function LendenClubTab({ data }) {
   ])).sort((a, b) => lendenTabKey(a) - lendenTabKey(b));
   const yearOptions = ["ALL_YEARS", ...Array.from(new Set(allTabLabels.map((tab) => parseTabParts(tab).year).filter(Boolean))).sort()];
   const monthOptions = ["ALL_MONTHS", ...monthOrder.filter((month) => allTabLabels.some((tab) => parseTabParts(tab).month === month))];
-  const selectedTabs = allTabLabels.filter((tab) => {
+  const selectedMonthlyTabs = allTabLabels.filter((tab) => {
     const parts = parseTabParts(tab);
-    return (yearFilter === "ALL_YEARS" || parts.year === yearFilter) &&
-      (monthNameFilter === "ALL_MONTHS" || parts.month === monthNameFilter);
+    return (monthlyYearFilter === "ALL_YEARS" || parts.year === monthlyYearFilter) &&
+      (monthlyMonthNameFilter === "ALL_MONTHS" || parts.month === monthlyMonthNameFilter);
   });
-  const hasTabFilter = yearFilter !== "ALL_YEARS" || monthNameFilter !== "ALL_MONTHS";
-  const monthlySourceRows = hasTabFilter
-    ? monthlyLoanRows.filter((l) => selectedTabs.includes(String(l.tab || "").trim()))
-    : monthlyLoanRows;
+  const hasMonthlyTabFilter = monthlyYearFilter !== "ALL_YEARS" || monthlyMonthNameFilter !== "ALL_MONTHS";
+  const selectedLoanTabs = allTabLabels.filter((tab) => {
+    const parts = parseTabParts(tab);
+    return (loanYearFilter === "ALL_YEARS" || parts.year === loanYearFilter) &&
+      (loanMonthNameFilter === "ALL_MONTHS" || parts.month === loanMonthNameFilter);
+  });
+  const hasLoanTabFilter = loanYearFilter !== "ALL_YEARS" || loanMonthNameFilter !== "ALL_MONTHS";
   const activeLoans = allLoans.filter(l=>l.status==="ACTIVE");
   const closedLoans = allLoans.filter(l=>l.status==="CLOSED");
   const pendingLoans = allLoans.filter(l=>l.status==="PENDING");
@@ -2081,19 +2086,19 @@ function LendenClubTab({ data }) {
     : 0;
 
   // Filter loans based on selected filter
-  const matchesTabFilter = (loan) => !hasTabFilter || selectedTabs.includes(String(loan.tab || "").trim());
+  const matchesLoanTabFilter = (loan) => !hasLoanTabFilter || selectedLoanTabs.includes(String(loan.tab || "").trim());
   const matchesClosureFilter = (loan) => {
-    if (!hasTabFilter) return true;
+    if (!hasLoanTabFilter) return true;
     const parts = getDateParts(loan.closure);
     if (!parts) return false;
-    return (yearFilter === "ALL_YEARS" || parts.year === yearFilter) &&
-      (monthNameFilter === "ALL_MONTHS" || parts.month === monthNameFilter);
+    return (loanYearFilter === "ALL_YEARS" || parts.year === loanYearFilter) &&
+      (loanMonthNameFilter === "ALL_MONTHS" || parts.month === loanMonthNameFilter);
   };
   const tableLoanSource = (() => {
     if (repayFilter === "Closed") return closedLoans.filter(matchesClosureFilter);
-    if (!hasTabFilter) return allLoans;
-    const tabRows = monthlyLoanRows.filter(matchesTabFilter);
-    if (tabRows.length === 0) return allLoans.filter(matchesTabFilter);
+    if (!hasLoanTabFilter) return allLoans;
+    const tabRows = monthlyLoanRows.filter(matchesLoanTabFilter);
+    if (tabRows.length === 0) return allLoans.filter(matchesLoanTabFilter);
     return tabRows;
   })();
   const filteredLoans = tableLoanSource.filter((l) => {
@@ -2111,8 +2116,8 @@ function LendenClubTab({ data }) {
       l.repayStart,
     ].some((value) => String(value || "").toLowerCase().includes(query));
   });
-  const visibleMonthlySummary = (hasTabFilter
-    ? d.lendenClub.tabSummary.filter(t => selectedTabs.includes(String(t.tab || "").trim()))
+  const visibleMonthlySummary = (hasMonthlyTabFilter
+    ? d.lendenClub.tabSummary.filter(t => selectedMonthlyTabs.includes(String(t.tab || "").trim()))
     : d.lendenClub.tabSummary
   ).sort((a, b) => lendenTabKey(a.tab) - lendenTabKey(b.tab));
   const visibleMonthlyRows = visibleMonthlySummary.map((t) => {
@@ -2186,23 +2191,14 @@ function LendenClubTab({ data }) {
     loans: 0, active: 0, closed: 0, pending: 0, overdue: 0, npa: 0,
     disbursed: 0, principal: 0, interest: 0, fee: 0, outstanding: 0, received: 0,
   });
-  const displayedTotalCounts = hasTabFilter
-    ? {
-        loans: visibleMonthlyTotals.loans,
-        active: visibleMonthlyTotals.active,
-        closed: visibleMonthlyTotals.closed,
-        pending: visibleMonthlyTotals.pending,
-        overdue: visibleMonthlyTotals.overdue,
-        npa: visibleMonthlyTotals.npa,
-      }
-    : {
-        loans: summaryTotalLoans,
-        active: summaryActiveLoans,
-        closed: summaryClosedLoans,
-        pending: summaryPendingLoans,
-        overdue: summaryOverdueLoans,
-        npa: npaLoans.length,
-      };
+  const displayedTotalCounts = {
+    loans: visibleMonthlyTotals.loans,
+    active: visibleMonthlyTotals.active,
+    closed: visibleMonthlyTotals.closed,
+    pending: visibleMonthlyTotals.pending,
+    overdue: visibleMonthlyTotals.overdue,
+    npa: visibleMonthlyTotals.npa,
+  };
 
   const REPAYMENT_OPTIONS = ["", "On Track", "DUE TODAY", "DUE SOON", "OVERDUE", "NPA", "Closed"];
 
@@ -2336,7 +2332,31 @@ function LendenClubTab({ data }) {
 
       {/* Monthly ROI table */}
       <Card accent={P.emerald} style={{marginBottom:14}}>
-        <SectionHead title="Monthly Interest & ROI Analysis" icon="💰" color={P.emerald}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <SectionHead title="Monthly Interest & ROI Analysis" icon="💰" color={P.emerald}/>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Year</span>
+            <select
+              value={monthlyYearFilter}
+              onChange={e=>setMonthlyYearFilter(e.target.value)}
+              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
+            >
+              {yearOptions.map(y=>(
+                <option key={y} value={y}>{y==="ALL_YEARS" ? "All Years" : y}</option>
+              ))}
+            </select>
+            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Month</span>
+            <select
+              value={monthlyMonthNameFilter}
+              onChange={e=>setMonthlyMonthNameFilter(e.target.value)}
+              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
+            >
+              {monthOptions.map(m=>(
+                <option key={m} value={m}>{m==="ALL_MONTHS" ? "All Months" : m}</option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div style={{overflowX:"auto"}}>
           <table className="row-hover">
             <thead><tr><TH>Month</TH><TH>Loans</TH><TH>Active</TH><TH>Closed</TH><TH>Pending</TH><TH>Overdue</TH><TH>NPA</TH><TH>Disbursed</TH><TH>Principal</TH><TH>Interest</TH><TH>Fee</TH><TH>Outstanding</TH><TH>Recovery%</TH><TH>Monthly ROI</TH></tr></thead>
@@ -2381,7 +2401,7 @@ function LendenClubTab({ data }) {
         <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
           {[
             {label:"Visible Months", v:String(visibleMonthlyRows.length), color:P.teal},
-            {label:"Visible Closed Loans", v:String(hasTabFilter ? visibleMonthlyTotals.closed : summaryClosedLoans), color:P.emerald},
+            {label:"Visible Closed Loans", v:String(visibleMonthlyTotals.closed), color:P.emerald},
             {label:"Visible Outstanding", v:fmtF(visibleMonthlyTotals.outstanding), color:P.rose},
             {label:"Visible Recovery", v:`${pct(visibleMonthlyTotals.received,visibleMonthlyTotals.disbursed)}%`, color:P.violet},
           ].map((s,i)=>(
@@ -2416,8 +2436,8 @@ function LendenClubTab({ data }) {
             </select>
             <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginLeft:4}}>Year</span>
             <select
-              value={yearFilter}
-              onChange={e=>setYearFilter(e.target.value)}
+              value={loanYearFilter}
+              onChange={e=>setLoanYearFilter(e.target.value)}
               style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
             >
               {yearOptions.map(y=>(
@@ -2426,8 +2446,8 @@ function LendenClubTab({ data }) {
             </select>
             <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginLeft:4}}>Month</span>
             <select
-              value={monthNameFilter}
-              onChange={e=>setMonthNameFilter(e.target.value)}
+              value={loanMonthNameFilter}
+              onChange={e=>setLoanMonthNameFilter(e.target.value)}
               style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
             >
               {monthOptions.map(m=>(
