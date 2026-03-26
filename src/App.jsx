@@ -433,6 +433,12 @@ function mapLendenClubData(raw) {
 
   const parseMonthlySheetRows = (rows, tabName) => {
     if (!Array.isArray(rows) || rows.length === 0) return [];
+    const inferTabFromDate = (value) => {
+      const parsed = parseDateValue(value);
+      if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return "";
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return `${monthNames[parsed.getMonth()]}-${String(parsed.getFullYear()).slice(-2)}`;
+    };
 
     // Old HTML dashboard format: raw 2D arrays with fixed columns.
     if (Array.isArray(rows[0])) {
@@ -483,13 +489,19 @@ function mapLendenClubData(raw) {
       .map(r => {
         const inv = num(getField(r, "Amount", "Invested Amount", "Principal", "Loan Amount"));
         const recv = num(getField(r, "Total Recv", "Total Received", "Received"));
+        const explicitTab = String(getField(r, "Tab", "Batch", "Month") || "").trim();
+        const disbDate = String(getField(r, "Disb Date", "Disbursement Date", "Date") || "");
+        const normalizedTabName = String(tabName || "").trim();
+        const inferredTab = explicitTab
+          || (monthTabPattern.test(normalizedTabName) ? normalizedTabName : "")
+          || inferTabFromDate(disbDate);
         return {
-          tab:String(getField(r, "Tab", "Batch", "Month") || tabName || ""),
+          tab: inferredTab,
           id:String(getField(r, "Loan ID", "ID", "Loan Account", "Loan Account No", "Account") || "").toUpperCase(),
           rate:num(getField(r, "Rate", "Rate%", "Interest Rate")),
           tenure:num(getField(r, "Tenure", "Duration", "Months")),
           score:num(getField(r, "Score", "Credit Score", "CIBIL")),
-          disbDate:String(getField(r, "Disb Date", "Disbursement Date", "Date") || ""),
+          disbDate,
           amount:inv,
           status:String(getField(r, "Status", "Loan Status") || "").toUpperCase(),
           totalRepay:num(getField(r, "Total Repay", "Total Repayment", "Repayment Amount", "Maturity Amount", "Total Due")),
