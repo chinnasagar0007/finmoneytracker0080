@@ -1977,7 +1977,18 @@ function LendenClubTab({ data }) {
   };
   const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const getDateParts = (value) => {
-    const parsed = parseDateValue(value);
+    const raw = String(value || "").trim();
+    let parsed = null;
+    const numericMatch = raw.match(/^(\d{1,2})[-\/ ](\d{1,2})[-\/ ](\d{2,4})$/);
+    if (numericMatch) {
+      const day = Number(numericMatch[1]);
+      const month = Number(numericMatch[2]) - 1;
+      let year = Number(numericMatch[3]);
+      if (year < 100) year += 2000;
+      parsed = new Date(year, month, day);
+    } else {
+      parsed = parseDateValue(raw);
+    }
     if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return null;
     return {
       month: monthOrder[parsed.getMonth()],
