@@ -1934,9 +1934,9 @@ function LendenClubTab({ data }) {
     let repaymentStatus = "On Track";
     if (derivedStatus === "CLOSED") {
       repaymentStatus = "Closed";
-    } else if (n(loan.dpd) > 0 || n(loan.npa) > 0) {
+    } else if (n(loan.npa) > 0 || /npa|default|written off/i.test(rawStatus)) {
       repaymentStatus = "NPA";
-    } else if (dueOn instanceof Date && !Number.isNaN(dueOn.getTime()) && dueOn < new Date()) {
+    } else if (n(loan.dpd) > 0 || /overdue|delayed|late/i.test(rawStatus)) {
       repaymentStatus = "OVERDUE";
     } else if (repayStartOn instanceof Date && !Number.isNaN(repayStartOn.getTime())) {
       const today = new Date();
@@ -1985,7 +1985,7 @@ function LendenClubTab({ data }) {
   };
   const getLoanFilterParts = (loan) => {
     const closureParts = getDateParts(loan.closure);
-    if (loan.status === "CLOSED" && closureParts) return closureParts;
+    if ((loan.status === "CLOSED" || loan.rs === "Closed") && closureParts) return closureParts;
     return getDateParts(loan.disbDate) || parseTabParts(loan.tab);
   };
   const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -2069,7 +2069,23 @@ function LendenClubTab({ data }) {
     return (yearFilter === "ALL_YEARS" || parts.year === yearFilter) &&
       (monthNameFilter === "ALL_MONTHS" || parts.month === monthNameFilter);
   };
-  const filteredLoans = allLoans.filter((l) => {
+  const tableLoanSource = (() => {
+    if (repayFilter !== "Closed" || !hasTabFilter) return allLoans;
+    const closedRows = monthlyLoanRows
+      .filter((loan) => (loan.status === "CLOSED" || loan.rs === "Closed" || parseDateValue(loan.closure)) && matchesCalendarFilter(loan))
+      .sort((a, b) => {
+        const aDate = parseDateValue(a.closure) || parseDateValue(a.disbDate);
+        const bDate = parseDateValue(b.closure) || parseDateValue(b.disbDate);
+        return (bDate?.getTime?.() || 0) - (aDate?.getTime?.() || 0);
+      });
+    const deduped = new Map();
+    closedRows.forEach((loan) => {
+      const key = normalizeLookupKey(loan.id) || `${loan.tab}-${loan.id}`;
+      if (!deduped.has(key)) deduped.set(key, loan);
+    });
+    return [...deduped.values()];
+  })();
+  const filteredLoans = tableLoanSource.filter((l) => {
     if (!matchesCalendarFilter(l)) return false;
     if (repayFilter && l.rs !== repayFilter) return false;
     const query = loanQuery.trim().toLowerCase();
