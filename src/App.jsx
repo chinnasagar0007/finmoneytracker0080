@@ -1974,20 +1974,6 @@ function LendenClubTab({ data }) {
     const year = String(match[2]).length === 2 ? `20${match[2]}` : String(match[2]);
     return { month: match[1], year };
   };
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const getDateParts = (value) => {
-    const parsed = parseDateValue(value);
-    if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return null;
-    return {
-      month: monthNames[parsed.getMonth()],
-      year: String(parsed.getFullYear()),
-    };
-  };
-  const getLoanFilterParts = (loan) => {
-    const closureParts = getDateParts(loan.closure);
-    if ((loan.status === "CLOSED" || loan.rs === "Closed") && closureParts) return closureParts;
-    return getDateParts(loan.disbDate) || parseTabParts(loan.tab);
-  };
   const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const allTabLabels = Array.from(new Set([
     ...d.lendenClub.tabSummary.map(t => String(t.tab || "").trim()).filter(Boolean),
@@ -2063,30 +2049,14 @@ function LendenClubTab({ data }) {
     : 0;
 
   // Filter loans based on selected filter
-  const matchesCalendarFilter = (loan) => {
-    if (!hasTabFilter) return true;
-    const parts = getLoanFilterParts(loan);
-    return (yearFilter === "ALL_YEARS" || parts.year === yearFilter) &&
-      (monthNameFilter === "ALL_MONTHS" || parts.month === monthNameFilter);
-  };
+  const matchesTabFilter = (loan) => !hasTabFilter || selectedTabs.includes(String(loan.tab || "").trim());
   const tableLoanSource = (() => {
-    if (repayFilter !== "Closed" || !hasTabFilter) return allLoans;
-    const closedRows = monthlyLoanRows
-      .filter((loan) => (loan.status === "CLOSED" || loan.rs === "Closed" || parseDateValue(loan.closure)) && matchesCalendarFilter(loan))
-      .sort((a, b) => {
-        const aDate = parseDateValue(a.closure) || parseDateValue(a.disbDate);
-        const bDate = parseDateValue(b.closure) || parseDateValue(b.disbDate);
-        return (bDate?.getTime?.() || 0) - (aDate?.getTime?.() || 0);
-      });
-    const deduped = new Map();
-    closedRows.forEach((loan) => {
-      const key = normalizeLookupKey(loan.id) || `${loan.tab}-${loan.id}`;
-      if (!deduped.has(key)) deduped.set(key, loan);
-    });
-    return [...deduped.values()];
+    if (!hasTabFilter) return allLoans;
+    const tabRows = monthlyLoanRows.filter(matchesTabFilter);
+    if (tabRows.length === 0) return allLoans.filter(matchesTabFilter);
+    return tabRows;
   })();
   const filteredLoans = tableLoanSource.filter((l) => {
-    if (!matchesCalendarFilter(l)) return false;
     if (repayFilter && l.rs !== repayFilter) return false;
     const query = loanQuery.trim().toLowerCase();
     if (!query) return true;
