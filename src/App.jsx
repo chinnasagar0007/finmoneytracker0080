@@ -2128,7 +2128,8 @@ function LendenClubTab({ data }) {
   const visibleMonthlyRows = visibleMonthlySummary.map((t) => {
     const tabKey = String(t.tab || "").trim();
     const monthLoans = monthlyLoanRows.filter((l) => String(l.tab || "").trim() === tabKey);
-    const totalLoans = t.loans || monthLoans.length;
+    const dedupedMonthLoans = allLoans.filter((l) => String(l.tab || "").trim() === tabKey);
+    const totalLoans = t.loans || dedupedMonthLoans.length;
     const rawMonthStatus = (loan) => String(loan.rawStatus || "").trim().toUpperCase();
     const closed = monthLoans.filter((l) => rawMonthStatus(l) === "CLOSED");
     const pending = monthLoans.filter((l) => /PENDING|PROCESSING|LIVE|ONGOING/.test(rawMonthStatus(l)));
@@ -2137,11 +2138,11 @@ function LendenClubTab({ data }) {
     const dueToday = monthLoans.filter((l) => l.rs === "DUE TODAY");
     const dueSoon = monthLoans.filter((l) => l.rs === "DUE SOON");
     const activeCount = Math.max(0, totalLoans - closed.length - pending.length - overdue.length - npa.length);
-    const monthDisbursed = t.disbursed || monthLoans.reduce((s, l) => s + n(l.amount), 0);
-    const monthInterest = t.interest || monthLoans.reduce((s, l) => s + n(l.interestRecv), 0);
-    const monthFees = t.fee || monthLoans.reduce((s, l) => s + n(l.fee), 0);
-    const monthPrincipal = t.principal || monthLoans.reduce((s, l) => s + n(l.principalRecv), 0);
-    const monthOutstanding = t.outstanding || monthLoans.reduce((s, l) => s + n(l.outstandingAmount), 0);
+    const monthDisbursed = t.disbursed || dedupedMonthLoans.reduce((s, l) => s + n(l.amount), 0);
+    const monthInterest = t.interest || dedupedMonthLoans.reduce((s, l) => s + n(l.interestRecv), 0);
+    const monthFees = t.fee || dedupedMonthLoans.reduce((s, l) => s + n(l.fee), 0);
+    const monthPrincipal = t.principal || dedupedMonthLoans.reduce((s, l) => s + n(l.principalRecv), 0);
+    const monthOutstanding = t.outstanding || dedupedMonthLoans.reduce((s, l) => s + n(l.outstandingAmount), 0);
     const monthNetRate = monthDisbursed > 0 ? ((monthInterest / monthDisbursed) * 100) : 0;
     return {
       ...t,
