@@ -2125,7 +2125,7 @@ function LendenClubTab({ data }) {
     const snapshotLoans = monthlyLoanRows.filter((l) => String(l.tab || "").trim() === tabKey);
     const fallbackLoans = allLoans.filter((l) => String(l.tab || "").trim() === tabKey);
     const monthLoans = snapshotLoans.length > 0 ? snapshotLoans : fallbackLoans;
-    const closed = monthLoans.filter((l) => l.status === "CLOSED");
+    const closed = monthLoans.filter((l) => /closed/i.test(String(l.rawStatus || l.status || "").trim()));
     const active = monthLoans.filter((l) => l.status === "ACTIVE");
     const pending = monthLoans.filter((l) => l.status === "PENDING");
     const overdue = monthLoans.filter((l) => l.rs === "OVERDUE");
