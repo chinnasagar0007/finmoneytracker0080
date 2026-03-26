@@ -1924,7 +1924,8 @@ function LendenClubTab({ data }) {
     const closedOn = parseDateValue(loan.closure);
     const repayStartOn = parseDateValue(loan.repayStart);
     const dueOn = parseDateValue(loan.expectedClose) || (disbursedOn && loan.tenure ? addMonths(disbursedOn, loan.tenure) : null);
-    const isClosed = /closed|completed|repaid|settled/i.test(rawStatus) || Boolean(closedOn);
+    const principalFullyRecovered = n(loan.amount) > 0 && normalizedPrincipalRecv >= (n(loan.amount) - 0.5);
+    const isClosed = /closed|completed|repaid|settled/i.test(rawStatus) || Boolean(closedOn) || principalFullyRecovered;
     const isExplicitPending = /pending|processing|live|ongoing/i.test(rawStatus);
     const derivedStatus = isClosed
       ? "CLOSED"
@@ -1975,6 +1976,14 @@ function LendenClubTab({ data }) {
     return { month: match[1], year };
   };
   const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const getDateParts = (value) => {
+    const parsed = parseDateValue(value);
+    if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return null;
+    return {
+      month: monthOrder[parsed.getMonth()],
+      year: String(parsed.getFullYear()),
+    };
+  };
   const allTabLabels = Array.from(new Set([
     ...d.lendenClub.tabSummary.map(t => String(t.tab || "").trim()).filter(Boolean),
     ...monthlyLoanRows.map(l => String(l.tab || "").trim()).filter(Boolean),
@@ -2050,7 +2059,15 @@ function LendenClubTab({ data }) {
 
   // Filter loans based on selected filter
   const matchesTabFilter = (loan) => !hasTabFilter || selectedTabs.includes(String(loan.tab || "").trim());
+  const matchesClosureFilter = (loan) => {
+    if (!hasTabFilter) return true;
+    const parts = getDateParts(loan.closure);
+    if (!parts) return false;
+    return (yearFilter === "ALL_YEARS" || parts.year === yearFilter) &&
+      (monthNameFilter === "ALL_MONTHS" || parts.month === monthNameFilter);
+  };
   const tableLoanSource = (() => {
+    if (repayFilter === "Closed") return closedLoans.filter(matchesClosureFilter);
     if (!hasTabFilter) return allLoans;
     const tabRows = monthlyLoanRows.filter(matchesTabFilter);
     if (tabRows.length === 0) return allLoans.filter(matchesTabFilter);
