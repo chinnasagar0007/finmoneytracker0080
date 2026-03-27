@@ -3759,20 +3759,44 @@ export default function App() {
               ))}
             </div>
 
+            {/* ── HDFC ── */}
             {(loanFilter==="ALL" || loanFilter==="HDFC") && (
             <Card accent={P.ruby} style={{marginBottom:14}}>
-              <SectionHead title="HDFC Home Loan — Amortisation" icon="🏦" color={P.ruby}/>
-              <div style={{display:"flex",gap:24,marginBottom:14,flexWrap:"wrap"}}>
-                <DonutRing pct={(d.loans.hdfc.paid/d.loans.hdfc.total)*100} color={P.ruby} size={100} stroke={9} label={`${d.loans.hdfc.paid}/${d.loans.hdfc.total}`} sub="EMIs"/>
-                <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:P.muted,lineHeight:2.1}}>
-                  <div>EMI: <span style={{color:P.ruby}}>{fmtF(d.loans.hdfc.emi)}/mo</span></div>
-                  <div>Outstanding: <span style={{color:P.ruby}}>{fmtF(d.loans.hdfc.outstanding)}</span></div>
-                  <div>Rate: <span style={{color:P.gold}}>{d.loans.hdfc.interestRate}% p.a.</span></div>
-                  <div>Remaining: <span style={{color:P.text}}>{d.loans.hdfc.total-d.loans.hdfc.paid} EMIs</span></div>
-                  <div>Principal paid: <span style={{color:P.emerald}}>{fmtF(d.loans.hdfc.totalPrincipalPaid||92396)}</span></div>
-                  <div>Interest paid: <span style={{color:P.ruby}}>{fmtF(d.loans.hdfc.totalInterestPaid||76874)}</span></div>
+              {/* Header banner */}
+              <div style={{background:`linear-gradient(135deg,${P.ruby}28,${P.ruby}08)`,border:`1px solid ${P.ruby}40`,borderRadius:14,padding:"16px 20px",marginBottom:18,display:"flex",alignItems:"center",gap:16}}>
+                <div style={{width:52,height:52,borderRadius:14,background:`${P.ruby}22`,border:`1.5px solid ${P.ruby}55`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>🏦</div>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:P.ruby,letterSpacing:-0.5}}>HDFC Home Loan</div>
+                  <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:3}}>Home Loan · Amortisation Schedule · {d.loans.hdfc.total} EMIs</div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                  <DonutRing pct={(d.loans.hdfc.paid/d.loans.hdfc.total)*100} color={P.ruby} size={80} stroke={7} label={`${Math.round((d.loans.hdfc.paid/d.loans.hdfc.total)*100)}%`} sub="done"/>
                 </div>
               </div>
+              {/* Stats grid */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
+                {[
+                  {label:"Monthly EMI",    v:fmtF(d.loans.hdfc.emi),                             color:P.ruby},
+                  {label:"Outstanding",    v:fmtF(d.loans.hdfc.outstanding),                     color:P.ruby},
+                  {label:"Interest Rate",  v:`${d.loans.hdfc.interestRate}% p.a.`,               color:P.gold},
+                  {label:"EMIs Remaining", v:`${d.loans.hdfc.total - d.loans.hdfc.paid} of ${d.loans.hdfc.total}`, color:P.text},
+                  {label:"Principal Paid", v:fmtF(d.loans.hdfc.totalPrincipalPaid||92396),       color:P.emerald},
+                  {label:"Interest Paid",  v:fmtF(d.loans.hdfc.totalInterestPaid||76874),        color:P.ruby},
+                ].map((s,i)=>(
+                  <div key={i} style={{background:`linear-gradient(135deg,${P.card3},${P.card2})`,borderRadius:10,padding:"11px 13px",border:`1px solid ${s.color}22`,boxShadow:`inset 0 1px 0 ${s.color}11`}}>
+                    <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,letterSpacing:1.5,textTransform:"uppercase",marginBottom:5}}>{s.label}</div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:800,color:s.color,letterSpacing:-0.3}}>{s.v}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Progress */}
+              <div style={{marginBottom:16,padding:"10px 14px",background:P.card3,borderRadius:10,border:`1px solid ${P.border}33`}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:6}}>
+                  <span>{d.loans.hdfc.paid} EMIs paid</span><span>{d.loans.hdfc.total - d.loans.hdfc.paid} remaining</span>
+                </div>
+                <PBar value={d.loans.hdfc.paid} max={d.loans.hdfc.total} color={P.ruby} height={7}/>
+              </div>
+              {/* Table */}
               <div style={{overflowX:"auto"}}>
                 <table className="row-hover">
                   <thead><tr><TH>#</TH><TH>Due Date</TH><TH>EMI</TH><TH>Principal</TH><TH>Interest</TH><TH>Balance</TH><TH>Status</TH></tr></thead>
@@ -3793,49 +3817,98 @@ export default function App() {
             )}
 
             <div style={{display:"grid",gridTemplateColumns: loanFilter==="ALL" ? "1fr 1fr" : "1fr",gap:14}}>
+              {/* ── IDFC ── */}
               {(loanFilter==="ALL" || loanFilter==="IDFC") && (
               <Card accent={P.sapphire}>
-                <SectionHead title="IDFC Personal Loan" icon="🏦" color={P.sapphire}/>
-                <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
-                  <DonutRing pct={(d.loans.idfc.paid/d.loans.idfc.total)*100} color={P.sapphire} size={90} stroke={8} label={`${d.loans.idfc.paid}/${d.loans.idfc.total}`} sub="EMIs"/>
-                  <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:P.muted,lineHeight:2.1}}>
-                    <div>EMI: <span style={{color:P.sapphire}}>{fmtF(d.loans.idfc.emi)}/mo</span></div>
-                    <div>Outstanding: <span style={{color:P.ruby}}>{fmtF(d.loans.idfc.outstanding)}</span></div>
-                    <div>Rate: <span style={{color:P.gold}}>{d.loans.idfc.interestRate}% p.a.</span></div>
+                {/* Header banner */}
+                <div style={{background:`linear-gradient(135deg,${P.sapphire}28,${P.sapphire}08)`,border:`1px solid ${P.sapphire}40`,borderRadius:14,padding:"14px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:14}}>
+                  <div style={{width:46,height:46,borderRadius:12,background:`${P.sapphire}22`,border:`1.5px solid ${P.sapphire}55`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏦</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:17,fontWeight:800,color:P.sapphire,letterSpacing:-0.3}}>IDFC Personal Loan</div>
+                    <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:2}}>Personal Loan · {d.loans.idfc.total} EMIs total</div>
                   </div>
+                  <DonutRing pct={(d.loans.idfc.paid/d.loans.idfc.total)*100} color={P.sapphire} size={70} stroke={6} label={`${Math.round((d.loans.idfc.paid/d.loans.idfc.total)*100)}%`} sub="done"/>
                 </div>
-                <table className="row-hover">
-                  <thead><tr><TH>#</TH><TH>Date</TH><TH>EMI</TH><TH>Principal</TH><TH>Interest</TH><TH>Balance</TH><TH>Status</TH></tr></thead>
-                  <tbody>
-                    {d.loans.idfc.schedule.map((s,i)=>(
-                      <tr key={i}><TD color={P.muted}>{s.no}</TD><TD color={P.muted}>{s.date}</TD><TD>{fmtF(s.emi)}</TD><TD color={P.emerald}>{fmtF(s.principal)}</TD><TD color={P.ruby}>{fmtF(s.interest)}</TD><TD color={P.sapphire}>{fmtF(s.balance)}</TD><TD><Pill color={s.status==="Paid"?P.emerald:P.muted}>{s.status||"Pending"}</Pill></TD></tr>
-                    ))}
-                  </tbody>
-                </table>
+                {/* Stats grid */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:14}}>
+                  {[
+                    {label:"Monthly EMI",   v:fmtF(d.loans.idfc.emi),              color:P.sapphire},
+                    {label:"Outstanding",   v:fmtF(d.loans.idfc.outstanding),       color:P.ruby},
+                    {label:"Interest Rate", v:`${d.loans.idfc.interestRate}% p.a.`, color:P.gold},
+                    {label:"EMIs Paid",     v:`${d.loans.idfc.paid} of ${d.loans.idfc.total}`, color:P.emerald},
+                  ].map((s,i)=>(
+                    <div key={i} style={{background:`linear-gradient(135deg,${P.card3},${P.card2})`,borderRadius:9,padding:"10px 12px",border:`1px solid ${s.color}22`}}>
+                      <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,letterSpacing:1.5,textTransform:"uppercase",marginBottom:4}}>{s.label}</div>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:800,color:s.color}}>{s.v}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Progress */}
+                <div style={{marginBottom:14,padding:"9px 12px",background:P.card3,borderRadius:9,border:`1px solid ${P.border}33`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:5}}>
+                    <span>{d.loans.idfc.paid} paid</span><span>{d.loans.idfc.total - d.loans.idfc.paid} left</span>
+                  </div>
+                  <PBar value={d.loans.idfc.paid} max={d.loans.idfc.total} color={P.sapphire} height={6}/>
+                </div>
+                {/* Table */}
+                <div style={{overflowX:"auto"}}>
+                  <table className="row-hover">
+                    <thead><tr><TH>#</TH><TH>Date</TH><TH>EMI</TH><TH>Principal</TH><TH>Interest</TH><TH>Balance</TH><TH>Status</TH></tr></thead>
+                    <tbody>
+                      {d.loans.idfc.schedule.map((s,i)=>(
+                        <tr key={i}><TD color={P.muted}>{s.no}</TD><TD color={P.muted}>{s.date}</TD><TD>{fmtF(s.emi)}</TD><TD color={P.emerald}>{fmtF(s.principal)}</TD><TD color={P.ruby}>{fmtF(s.interest)}</TD><TD color={P.sapphire}>{fmtF(s.balance)}</TD><TD><Pill color={s.status==="Paid"?P.emerald:P.muted}>{s.status||"Pending"}</Pill></TD></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </Card>
               )}
 
+              {/* ── SBI ── */}
               {(loanFilter==="ALL" || loanFilter==="SBI") && (
               <Card accent={P.orange}>
-                <SectionHead title="SBI Personal Loan" icon="🏦" color={P.orange}/>
-                <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
-                  <DonutRing pct={0} color={P.orange} size={90} stroke={8} label="0/25" sub="EMIs"/>
-                  <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:P.muted,lineHeight:2.1}}>
-                    <div>EMI: <span style={{color:P.orange}}>{fmtF(d.loans.sbi.emi)}/mo</span></div>
-                    <div>Outstanding: <span style={{color:P.ruby}}>{fmtF(d.loans.sbi.outstanding)}</span></div>
-                    <div>Rate: <span style={{color:P.gold}}>{d.loans.sbi.interestRate}% p.a.</span></div>
-                    <div>Total Interest: <span style={{color:P.ruby}}>{fmtF(d.loans.sbi.totalInterestOnLoan||5495)}</span></div>
+                {/* Header banner */}
+                <div style={{background:`linear-gradient(135deg,${P.orange}28,${P.orange}08)`,border:`1px solid ${P.orange}40`,borderRadius:14,padding:"14px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:14}}>
+                  <div style={{width:46,height:46,borderRadius:12,background:`${P.orange}22`,border:`1.5px solid ${P.orange}55`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏦</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:17,fontWeight:800,color:P.orange,letterSpacing:-0.3}}>SBI Personal Loan</div>
+                    <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:2}}>Personal Loan · 25 EMIs total · Ends Apr 2028</div>
                   </div>
+                  <DonutRing pct={(d.loans.sbi.paid/d.loans.sbi.total)*100||0} color={P.orange} size={70} stroke={6} label={`${Math.round((d.loans.sbi.paid/d.loans.sbi.total)*100)||0}%`} sub="done"/>
                 </div>
-                <table className="row-hover">
-                  <thead><tr><TH>#</TH><TH>Date</TH><TH>EMI</TH><TH>Principal</TH><TH>Interest</TH><TH>Closing Bal</TH></tr></thead>
-                  <tbody>
-                    {d.loans.sbi.schedule.slice(0,4).map((s,i)=>(
-                      <tr key={i}><TD color={P.muted}>{s.no}</TD><TD color={P.muted}>{s.date}</TD><TD>{fmtF(s.emi)}</TD><TD color={P.emerald}>{fmtF(s.principal)}</TD><TD color={P.ruby}>{fmtF(s.interest)}</TD><TD color={P.sapphire}>{fmtF(s.balance)}</TD></tr>
-                    ))}
-                    <tr style={{background:P.card2}}><TD colSpan={6} color={P.muted} left>25 EMIs total · Ends Apr 2028</TD></tr>
-                  </tbody>
-                </table>
+                {/* Stats grid */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:14}}>
+                  {[
+                    {label:"Monthly EMI",    v:fmtF(d.loans.sbi.emi),                       color:P.orange},
+                    {label:"Outstanding",    v:fmtF(d.loans.sbi.outstanding),               color:P.ruby},
+                    {label:"Interest Rate",  v:`${d.loans.sbi.interestRate}% p.a.`,         color:P.gold},
+                    {label:"Total Interest", v:fmtF(d.loans.sbi.totalInterestOnLoan||5495), color:P.ruby},
+                  ].map((s,i)=>(
+                    <div key={i} style={{background:`linear-gradient(135deg,${P.card3},${P.card2})`,borderRadius:9,padding:"10px 12px",border:`1px solid ${s.color}22`}}>
+                      <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,letterSpacing:1.5,textTransform:"uppercase",marginBottom:4}}>{s.label}</div>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:800,color:s.color}}>{s.v}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Progress */}
+                <div style={{marginBottom:14,padding:"9px 12px",background:P.card3,borderRadius:9,border:`1px solid ${P.border}33`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:5}}>
+                    <span>{d.loans.sbi.paid||0} paid</span><span>{(d.loans.sbi.total||25) - (d.loans.sbi.paid||0)} left</span>
+                  </div>
+                  <PBar value={d.loans.sbi.paid||0} max={d.loans.sbi.total||25} color={P.orange} height={6}/>
+                </div>
+                {/* Table */}
+                <div style={{overflowX:"auto"}}>
+                  <table className="row-hover">
+                    <thead><tr><TH>#</TH><TH>Date</TH><TH>EMI</TH><TH>Principal</TH><TH>Interest</TH><TH>Closing Bal</TH></tr></thead>
+                    <tbody>
+                      {d.loans.sbi.schedule.slice(0,4).map((s,i)=>(
+                        <tr key={i}><TD color={P.muted}>{s.no}</TD><TD color={P.muted}>{s.date}</TD><TD>{fmtF(s.emi)}</TD><TD color={P.emerald}>{fmtF(s.principal)}</TD><TD color={P.ruby}>{fmtF(s.interest)}</TD><TD color={P.sapphire}>{fmtF(s.balance)}</TD></tr>
+                      ))}
+                      <tr style={{background:P.card2,fontStyle:"italic"}}><TD colSpan={6} color={P.muted} left>25 EMIs total · Ends Apr 2028</TD></tr>
+                    </tbody>
+                  </table>
+                </div>
               </Card>
               )}
             </div>
