@@ -66,7 +66,7 @@ function getField(row, ...candidates) {
     if (value === "" || value == null) continue;
     const normalizedKey = normalizeLookupKey(key);
     if (!normalizedKey) continue;
-    if (wants.some(want => normalizedKey === want || normalizedKey.includes(want) || want.includes(normalizedKey))) {
+    if (wants.some(want => normalizedKey === want || normalizedKey.includes(want) || want.split(" ").includes(normalizedKey))) {
       return value;
     }
   }
@@ -3770,7 +3770,7 @@ export default function App() {
                   <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:3}}>Home Loan · Amortisation Schedule · {d.loans.hdfc.total} EMIs</div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-                  <DonutRing pct={(d.loans.hdfc.paid/d.loans.hdfc.total)*100} color={P.ruby} size={80} stroke={7} label={`${Math.round((d.loans.hdfc.paid/d.loans.hdfc.total)*100)}%`} sub="done"/>
+                  <DonutRing pct={d.loans.hdfc.total>0?(d.loans.hdfc.paid/d.loans.hdfc.total)*100:0} color={P.ruby} size={80} stroke={7} label={`${d.loans.hdfc.total>0?Math.round((d.loans.hdfc.paid/d.loans.hdfc.total)*100):0}%`} sub="done"/>
                 </div>
               </div>
               {/* Stats grid */}
@@ -3827,7 +3827,7 @@ export default function App() {
                     <div style={{fontFamily:"'Syne',sans-serif",fontSize:17,fontWeight:800,color:P.sapphire,letterSpacing:-0.3}}>IDFC Personal Loan</div>
                     <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:2}}>Personal Loan · {d.loans.idfc.total} EMIs total</div>
                   </div>
-                  <DonutRing pct={(d.loans.idfc.paid/d.loans.idfc.total)*100} color={P.sapphire} size={70} stroke={6} label={`${Math.round((d.loans.idfc.paid/d.loans.idfc.total)*100)}%`} sub="done"/>
+                  <DonutRing pct={d.loans.idfc.total>0?(d.loans.idfc.paid/d.loans.idfc.total)*100:0} color={P.sapphire} size={70} stroke={6} label={`${d.loans.idfc.total>0?Math.round((d.loans.idfc.paid/d.loans.idfc.total)*100):0}%`} sub="done"/>
                 </div>
                 {/* Stats grid */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:14}}>
