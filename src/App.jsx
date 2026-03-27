@@ -3029,6 +3029,7 @@ const TABS = [
 export default function App() {
   const [data,     setData]     = useState(SEED);
   const [tab,      setTab]      = useState("overview");
+  const [loanFilter, setLoanFilter] = useState("ALL");
   const [syncSt,   setSyncSt]   = useState("idle");
   const [lastSync, setLastSync] = useState(null);
   const [syncLog,  setSyncLog]  = useState([]);  // [{ts,key,status,duration,summary,error}]
@@ -3733,6 +3734,32 @@ export default function App() {
               <KPI label="Interest Paid HDFC"value={fmtF(d.loans.hdfc.totalInterestPaid||76874)} sub="4 EMIs paid" color={P.muted} icon="📉"/>
             </div>
 
+            {/* ── Bank Filter ── */}
+            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,letterSpacing:1,marginRight:4}}>FILTER BY BANK:</span>
+              {[
+                {id:"ALL",  label:"All Banks", color:P.gold},
+                {id:"HDFC", label:"HDFC",      color:P.ruby},
+                {id:"IDFC", label:"IDFC",      color:P.sapphire},
+                {id:"SBI",  label:"SBI",       color:P.orange},
+              ].map(f=>(
+                <button key={f.id} onClick={()=>setLoanFilter(f.id)} style={{
+                  background: loanFilter===f.id ? `${f.color}22` : "transparent",
+                  border: `1.5px solid ${loanFilter===f.id ? f.color : P.border2}`,
+                  borderRadius: 8,
+                  color: loanFilter===f.id ? f.color : P.muted,
+                  fontFamily:"'Fira Code',monospace",
+                  fontSize: 11,
+                  fontWeight: loanFilter===f.id ? 700 : 400,
+                  padding: "6px 16px",
+                  cursor: "pointer",
+                  transition: "all .2s",
+                  letterSpacing: 0.5,
+                }}>{f.label}</button>
+              ))}
+            </div>
+
+            {(loanFilter==="ALL" || loanFilter==="HDFC") && (
             <Card accent={P.ruby} style={{marginBottom:14}}>
               <SectionHead title="HDFC Home Loan — Amortisation" icon="🏦" color={P.ruby}/>
               <div style={{display:"flex",gap:24,marginBottom:14,flexWrap:"wrap"}}>
@@ -3763,8 +3790,10 @@ export default function App() {
                 </table>
               </div>
             </Card>
+            )}
 
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+            <div style={{display:"grid",gridTemplateColumns: loanFilter==="ALL" ? "1fr 1fr" : "1fr",gap:14}}>
+              {(loanFilter==="ALL" || loanFilter==="IDFC") && (
               <Card accent={P.sapphire}>
                 <SectionHead title="IDFC Personal Loan" icon="🏦" color={P.sapphire}/>
                 <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
@@ -3784,7 +3813,9 @@ export default function App() {
                   </tbody>
                 </table>
               </Card>
+              )}
 
+              {(loanFilter==="ALL" || loanFilter==="SBI") && (
               <Card accent={P.orange}>
                 <SectionHead title="SBI Personal Loan" icon="🏦" color={P.orange}/>
                 <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
@@ -3806,6 +3837,7 @@ export default function App() {
                   </tbody>
                 </table>
               </Card>
+              )}
             </div>
           </div>
         )}
