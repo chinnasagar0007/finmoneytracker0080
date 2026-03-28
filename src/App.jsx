@@ -333,16 +333,21 @@ function mapLoansData(raw) {
         balance:   num(getField(r, "Balance", "Closing Balance", "Outstanding")),
         status:    String(getField(r, "Status") || ""),
       }));
+    const paidEmis = schedule.filter(e => /paid|done|completed/i.test(e.status));
+    const calcPrincipalPaid = paidEmis.reduce((s, e) => s + e.principal, 0);
+    const calcInterestPaid  = paidEmis.reduce((s, e) => s + e.interest, 0);
+    const sheetInterestPaid   = num(getField(meta, "Total Interest Paid"));
+    const sheetPrincipalPaid  = num(getField(meta, "Total Principal Paid"));
     return {
       name:                String(getField(meta, "Loan Name", "Name") || ""),
       emi:                 num(getField(meta, "EMI", "Monthly EMI")),
       outstanding:         num(getField(meta, "Outstanding", "Balance Outstanding")),
-      paid:                num(getField(meta, "EMIs Paid")),
+      paid:                num(getField(meta, "EMIs Paid")) || paidEmis.length,
       total:               num(getField(meta, "Total EMIs", "Tenure")),
       originalLoan:        num(getField(meta, "Original Loan", "Loan Amount")),
       interestRate:        num(getField(meta, "Interest Rate", "Rate")),
-      totalPrincipalPaid:  num(getField(meta, "Total Principal Paid")),
-      totalInterestPaid:   num(getField(meta, "Total Interest Paid")),
+      totalPrincipalPaid:  calcPrincipalPaid > 0 ? calcPrincipalPaid : sheetPrincipalPaid,
+      totalInterestPaid:   calcInterestPaid > 0 ? calcInterestPaid : sheetInterestPaid,
       totalInterestOnLoan: num(getField(meta, "Total Interest on Loan")),
       schedule,
     };
@@ -3731,7 +3736,7 @@ export default function App() {
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
               <KPI label="Total Outstanding" value={fmt(totalDebt)}      sub="Across all 3 loans"      color={P.ruby}   icon="🏦"/>
               <KPI label="Monthly EMI Total" value={fmt(emiTotal)}       sub={`${emiPct}% of salary`}  color={P.orange} icon="💳"/>
-              <KPI label="Interest Paid HDFC"value={fmtF(d.loans.hdfc.totalInterestPaid||76874)} sub="4 EMIs paid" color={P.muted} icon="📉"/>
+              <KPI label="Interest Paid HDFC"value={fmtF(d.loans.hdfc.totalInterestPaid||0)} sub={`${d.loans.hdfc.paid} EMIs paid`} color={P.muted} icon="📉"/>
             </div>
 
             {/* ── Bank Filter ── */}
@@ -3780,8 +3785,8 @@ export default function App() {
                   {label:"Outstanding",    v:fmtF(d.loans.hdfc.outstanding),                     color:P.ruby},
                   {label:"Interest Rate",  v:`${d.loans.hdfc.interestRate}% p.a.`,               color:P.gold},
                   {label:"EMIs Remaining", v:`${d.loans.hdfc.total - d.loans.hdfc.paid} of ${d.loans.hdfc.total}`, color:P.text},
-                  {label:"Principal Paid", v:fmtF(d.loans.hdfc.totalPrincipalPaid||92396),       color:P.emerald},
-                  {label:"Interest Paid",  v:fmtF(d.loans.hdfc.totalInterestPaid||76874),        color:P.ruby},
+                  {label:"Principal Paid", v:fmtF(d.loans.hdfc.totalPrincipalPaid||0),       color:P.emerald},
+                  {label:"Interest Paid",  v:fmtF(d.loans.hdfc.totalInterestPaid||0),        color:P.ruby},
                 ].map((s,i)=>(
                   <div key={i} style={{background:`linear-gradient(135deg,${P.card3},${P.card2})`,borderRadius:10,padding:"11px 13px",border:`1px solid ${s.color}22`,boxShadow:`inset 0 1px 0 ${s.color}11`}}>
                     <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,letterSpacing:1.5,textTransform:"uppercase",marginBottom:5}}>{s.label}</div>
