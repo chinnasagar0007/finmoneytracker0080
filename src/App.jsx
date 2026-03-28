@@ -1041,7 +1041,7 @@ const SEED = {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const n   = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
-const fmt  = v => { v=n(v); const neg=v<0; const a=Math.abs(v); const s=a>=10000000?`₹${Math.round(a/10000000)}Cr`:a>=100000?`₹${Math.round(a/100000)}L`:a>=1000?`₹${Math.round(a/1000)}K`:`₹${Math.round(a).toLocaleString("en-IN")}`; return neg?`-${s}`:s; };
+const fmt  = v => { v=n(v); const neg=v<0; const s=`₹${Math.round(Math.abs(v)).toLocaleString("en-IN")}`; return neg?`-${s}`:s; };
 const fmtF = v => `₹${Math.round(n(v)).toLocaleString("en-IN")}`;
 const pct  = (a,b) => b>0?Math.round((a/b)*100):0;
 const addMonths = (d,m) => { const r=new Date(d); r.setMonth(r.getMonth()+m); return r; };
@@ -3477,7 +3477,7 @@ export default function App() {
       {/* ── TICKER ── */}
       <div style={{background:P.card,borderBottom:`1px solid ${P.border}`,height:30,overflow:"hidden",display:"flex",alignItems:"center"}}>
         <div style={{display:"flex",gap:48,whiteSpace:"nowrap",animation:"marquee 35s linear infinite",fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,padding:"0 24px"}}>
-          {[`NET WORTH ${fmt(netWorth)}`,`SALARY ₹${Math.round(d.income.salary/1000)}K`,`IN-HAND ${fmt(d.income.inHand)}`,`EMI LOAD ${emiPct}%`,`STOCKS ${fmt(d.stocks.summary.total.current)}`,`P&L +${fmt(d.stocks.summary.total.pl)}`,`P.LENDING ₹${Math.round(d.personalLending.totalCapital/100000)}L`,`LENDEN ₹${Math.round(d.lendenClub.totalPooled/1000)}K`,`HDFC ${fmt(d.loans.hdfc.outstanding)}`,`IDFC ${fmt(d.loans.idfc.outstanding)}`,`LAND PAID ${fmt(d.realEstate.paid)}`].map((t,i)=>(
+          {[`NET WORTH ${fmt(netWorth)}`,`SALARY ${fmt(d.income.salary)}`,`IN-HAND ${fmt(d.income.inHand)}`,`EMI LOAD ${emiPct}%`,`STOCKS ${fmt(d.stocks.summary.total.current)}`,`P&L +${fmt(d.stocks.summary.total.pl)}`,`P.LENDING ${fmt(d.personalLending.totalCapital)}`,`LENDEN ${fmt(d.lendenClub.totalPooled)}`,`HDFC ${fmt(d.loans.hdfc.outstanding)}`,`IDFC ${fmt(d.loans.idfc.outstanding)}`,`LAND PAID ${fmt(d.realEstate.paid)}`].map((t,i)=>(
             <span key={i}><span style={{color:P.gold}}>◈</span> {t}</span>
           ))}
           {[`NET WORTH ${fmt(netWorth)}`,`SALARY ₹${(d.income.salary/1000).toFixed(0)}K`,`IN-HAND ${fmt(d.income.inHand)}`].map((t,i)=>(
