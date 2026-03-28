@@ -3734,9 +3734,9 @@ export default function App() {
         {tab==="loans" && (
           <div className="fade">
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
-              <KPI label="Total Outstanding" value={fmt(totalDebt)}      sub="Across all 3 loans"      color={P.ruby}   icon="🏦"/>
-              <KPI label="Monthly EMI Total" value={fmt(emiTotal)}       sub={`${emiPct}% of salary`}  color={P.orange} icon="💳"/>
-              <KPI label="Interest Paid HDFC"value={fmtF(d.loans.hdfc.totalInterestPaid||0)} sub={`${d.loans.hdfc.paid} EMIs paid`} color={P.muted} icon="📉"/>
+              <KPI label="Total Loan Amount" value={`₹${Math.round(n(d.loans.hdfc.originalLoan)+n(d.loans.idfc.originalLoan)+n(d.loans.sbi.originalLoan)).toLocaleString("en-IN")}`} sub="Across all 3 loans" color={P.sapphire} icon="📋"/>
+              <KPI label="Total Outstanding" value={`₹${Math.round(totalDebt).toLocaleString("en-IN")}`} sub="Remaining balance" color={P.ruby} icon="🏦"/>
+              <KPI label="Monthly EMI Total" value={`₹${Math.round(emiTotal).toLocaleString("en-IN")}`} sub={`${emiPct}% of salary`} color={P.orange} icon="💳"/>
             </div>
 
             {/* ── Bank Filter ── */}
