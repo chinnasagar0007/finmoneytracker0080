@@ -1351,6 +1351,23 @@ function SyncBadge({ status, lastSync }) {
 }
 
 
+// ─── MARKDOWN RENDERER ────────────────────────────────────────────────────────
+function renderMD(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/\*\*\*(.+?)\*\*\*/g,"<strong><em>$1</em></strong>")
+    .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g,"<em>$1</em>")
+    .replace(/`(.+?)`/g,`<code style="background:#162340;padding:1px 5px;border-radius:4px;font-family:'Fira Code',monospace;font-size:0.9em">$1</code>`)
+    .replace(/^### (.+)$/gm,"<div style='font-weight:700;font-size:13px;margin:10px 0 4px'>$1</div>")
+    .replace(/^## (.+)$/gm,"<div style='font-weight:800;font-size:14px;margin:12px 0 4px'>$1</div>")
+    .replace(/^# (.+)$/gm,"<div style='font-weight:800;font-size:15px;margin:12px 0 6px'>$1</div>")
+    .replace(/^[-*] (.+)$/gm,"<div style='padding-left:14px'>• $1</div>")
+    .replace(/^\d+\. (.+)$/gm,"<div style='padding-left:14px'>$1</div>")
+    .replace(/\n/g,"<br/>");
+}
+
 // ─── GEMINI HELPER ────────────────────────────────────────────────────────────
 async function geminiChat({ key, system="", messages=[], maxTokens=1000 }) {
   if (!key) throw new Error("Gemini API key not set. Please enter your key above.");
@@ -1569,9 +1586,9 @@ Ask me anything — I know your complete financial picture!`;
               <div style={{width:32,height:32,borderRadius:"50%",background:m.role==="user"?`linear-gradient(135deg,${P.gold},${P.orange})`:`linear-gradient(135deg,${P.violet},${P.sapphire})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>
                 {m.role==="user"?"👤":"🪙"}
               </div>
-              <div style={{maxWidth:"78%",padding:"12px 16px",borderRadius:m.role==="user"?"16px 4px 16px 16px":"4px 16px 16px 16px",background:m.role==="user"?`linear-gradient(135deg,${P.gold}22,${P.orange}15)`:P.card3,border:`1px solid ${m.role==="user"?P.gold+"33":P.border}`,fontFamily:"'Outfit',sans-serif",fontSize:13,color:P.text,lineHeight:1.75,whiteSpace:"pre-wrap"}}>
-                {m.content}
-              </div>
+              <div style={{maxWidth:"78%",padding:"12px 16px",borderRadius:m.role==="user"?"16px 4px 16px 16px":"4px 16px 16px 16px",background:m.role==="user"?`linear-gradient(135deg,${P.gold}22,${P.orange}15)`:P.card3,border:`1px solid ${m.role==="user"?P.gold+"33":P.border}`,fontFamily:"'Outfit',sans-serif",fontSize:13,color:P.text,lineHeight:1.75}}
+                dangerouslySetInnerHTML={{__html: m.role==="assistant" ? renderMD(m.content) : m.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br/>")}}/>
+
             </div>
           ))}
           {loading&&(
@@ -1788,9 +1805,8 @@ Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) in
             {reportLoading?"🔄 Generating…":"📊 Generate Report"}
           </button>
           {report && (
-            <div style={{background:P.card3,borderRadius:10,padding:"14px 16px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap",maxHeight:300,overflowY:"auto"}}>
-              {report}
-            </div>
+            <div style={{background:P.card3,borderRadius:10,padding:"14px 16px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,maxHeight:300,overflowY:"auto"}}
+              dangerouslySetInnerHTML={{__html:renderMD(report)}}/>
           )}
           {!report && <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.8}}>AI-generated month-end summary: income vs budget, overspend categories, net worth change, and one key observation.</div>}
         </Card>
@@ -1819,7 +1835,7 @@ Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) in
               </button>
               {whatsapp && (
                 <div style={{background:P.card3,border:`1px solid ${P.ruby}33`,borderRadius:10,padding:"12px 14px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.75}}>
-                  {whatsapp}
+                  <div dangerouslySetInnerHTML={{__html:renderMD(whatsapp)}}/>
                   <button onClick={()=>navigator.clipboard?.writeText(whatsapp)} style={{display:"block",marginTop:8,background:"none",border:`1px solid ${P.emerald}44`,color:P.emerald,borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:10,fontFamily:"'Fira Code',monospace"}}>📋 Copy</button>
                 </div>
               )}
@@ -2441,11 +2457,10 @@ function WhatIfEngine({ data, geminiKey, systemPrompt }) {
           </button>
         ))}
       </div>
-      {loading&&<div style={{textAlign:"center",padding:"20px",fontFamily:"'Fira Code',monospace",fontSize:11,color:P.sapphire}}>🔮 Claude is running your scenario with real numbers…</div>}
+      {loading&&<div style={{textAlign:"center",padding:"20px",fontFamily:"'Fira Code',monospace",fontSize:11,color:P.sapphire}}>🔮 Arth is running your scenario with real numbers…</div>}
       {result&&(
-        <div style={{background:P.card3,border:`1px solid ${P.sapphire}33`,borderRadius:12,padding:"16px 18px",fontFamily:"'Outfit',sans-serif",fontSize:13,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap"}}>
-          {result}
-        </div>
+        <div style={{background:P.card3,border:`1px solid ${P.sapphire}33`,borderRadius:12,padding:"16px 18px",fontFamily:"'Outfit',sans-serif",fontSize:13,color:P.text,lineHeight:1.8}}
+          dangerouslySetInnerHTML={{__html:renderMD(result)}}/>
       )}
     </Card>
   );
@@ -2547,7 +2562,7 @@ Cover: (1) Which regime is better and by how much (2) Unused 80C opportunity (3)
         style={{width:"100%",background:loading?P.border:`linear-gradient(135deg,${P.gold},${P.orange})`,border:"none",borderRadius:10,padding:"11px 0",color:"#050D1A",cursor:loading?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,marginBottom:analysis?12:0}}>
         {loading?"🔄 Analysing…":"🧾 Full AI Tax Analysis"}
       </button>
-      {analysis&&<div style={{background:P.card3,border:`1px solid ${P.gold}33`,borderRadius:12,padding:"14px 18px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap",maxHeight:320,overflowY:"auto"}}>{analysis}</div>}
+      {analysis&&<div style={{background:P.card3,border:`1px solid ${P.gold}33`,borderRadius:12,padding:"14px 18px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,maxHeight:320,overflowY:"auto"}} dangerouslySetInnerHTML={{__html:renderMD(analysis)}}/>}
     </Card>
   );
 }
@@ -2612,7 +2627,7 @@ Identify: (1) Top 3 overspend categories vs budget (2) Any forgotten/unnecessary
         style={{width:"100%",background:loading?P.border:`linear-gradient(135deg,${P.rose},${P.violet})`,border:"none",borderRadius:10,padding:"11px 0",color:"#fff",cursor:loading?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,marginBottom:audit?12:0}}>
         {loading?"🔍 Auditing…":"🔍 Run AI Spend Audit"}
       </button>
-      {audit&&<div style={{background:P.card3,border:`1px solid ${P.rose}33`,borderRadius:12,padding:"14px 18px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{audit}</div>}
+      {audit&&<div style={{background:P.card3,border:`1px solid ${P.rose}33`,borderRadius:12,padding:"14px 18px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8}} dangerouslySetInnerHTML={{__html:renderMD(audit)}}/>}
     </Card>
   );
 }
@@ -2711,7 +2726,7 @@ For each goal: on-track or off-track? What's the specific action to accelerate i
         style={{width:"100%",background:loading?P.border:`linear-gradient(135deg,${P.gold},${P.orange})`,border:"none",borderRadius:10,padding:"11px 0",color:"#050D1A",cursor:loading?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,marginBottom:check?12:0}}>
         {loading?"🔄 Checking…":"🎯 AI Goal Review"}
       </button>
-      {check&&<div style={{background:P.card3,border:`1px solid ${P.gold}33`,borderRadius:12,padding:"14px 18px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap",maxHeight:300,overflowY:"auto"}}>{check}</div>}
+      {check&&<div style={{background:P.card3,border:`1px solid ${P.gold}33`,borderRadius:12,padding:"14px 18px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,maxHeight:300,overflowY:"auto"}} dangerouslySetInnerHTML={{__html:renderMD(check)}}/>}
     </Card>
   );
 }
