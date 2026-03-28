@@ -1041,7 +1041,7 @@ const SEED = {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const n   = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
-const fmt  = v => { v=n(v); return v>=10000000?`₹${(v/10000000).toFixed(2)}Cr`:v>=100000?`₹${(v/100000).toFixed(2)}L`:v>=1000?`₹${(v/1000).toFixed(1)}K`:`₹${v.toLocaleString("en-IN")}`; };
+const fmt  = v => { v=n(v); const neg=v<0; const a=Math.abs(v); const s=a>=10000000?`₹${+(a/10000000).toFixed(1)}Cr`:a>=100000?`₹${+(a/100000).toFixed(1)}L`:a>=1000?`₹${Math.round(a/1000)}K`:`₹${Math.round(a).toLocaleString("en-IN")}`; return neg?`-${s}`:s; };
 const fmtF = v => `₹${n(v).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const pct  = (a,b) => b>0?((a/b)*100).toFixed(1):0;
 const addMonths = (d,m) => { const r=new Date(d); r.setMonth(r.getMonth()+m); return r; };
@@ -1236,13 +1236,14 @@ function deepMerge(target, source) {
 // ─── UI PRIMITIVES ────────────────────────────────────────────────────────────
 function Card({ children, style={}, accent=null }) {
   return (
-    <div style={{
+    <div className="card-hover" style={{
       background:`linear-gradient(145deg,${P.card},${P.card2})`,
       border:`1px solid ${P.border}`,
-      borderTop: accent ? `2px solid ${accent}` : `1px solid ${P.border}`,
+      borderTop: accent ? `3px solid ${accent}` : `1px solid ${P.border}`,
       borderRadius:16, padding:20,
       backdropFilter:"blur(12px)",
       boxShadow:`0 4px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)`,
+      animation:"slideUp .35s ease both",
       ...style
     }}>{children}</div>
   );
@@ -3073,6 +3074,189 @@ function DebtStressTest({ data, salary, emiTotal, inHand, totalDebt }) {
 }
 
 
+// ─── SALARY TRACKER ───────────────────────────────────────────────────────────
+function SalaryTracker({ data }) {
+  const d   = data;
+  const n   = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const abs = v => `₹${Math.round(Math.abs(n(v))).toLocaleString("en-IN")}`;
+  const hist = d.salaryHistory || [];
+
+  const [filterYear, setFilterYear] = useState("ALL");
+  const parseM = m => {
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const [mon, yr] = String(m||"").split("-");
+    return { name: mon, yr: yr ? "20"+yr : "", idx: months.indexOf(mon) };
+  };
+
+  const years = ["ALL", ...Array.from(new Set(hist.map(h => parseM(h.month).yr).filter(Boolean))).sort()];
+  const filtered = filterYear==="ALL" ? hist : hist.filter(h => parseM(h.month).yr === filterYear);
+
+  // Aggregate KPIs
+  const totalSalary   = filtered.reduce((s,h) => s+n(h.salary), 0);
+  const totalTutoring = filtered.reduce((s,h) => s+n(h.tutoring), 0);
+  const totalLending  = filtered.reduce((s,h) => s+n(h.lendingInterest), 0);
+  const totalGross    = filtered.reduce((s,h) => s+n(h.grossTotal||h.totalIncome), 0);
+  const totalInHand   = filtered.reduce((s,h) => s+n(h.inHand||h.savings), 0);
+  const avgSavingsRate = totalGross>0 ? ((totalInHand/totalGross)*100).toFixed(0) : 0;
+
+  // Trend: compare last month vs prev month
+  const last  = filtered[filtered.length-1];
+  const prev  = filtered[filtered.length-2];
+  const trend = last && prev ? n(last.inHand||last.savings) - n(prev.inHand||prev.savings) : 0;
+
+  // Chart data
+  const chartData = filtered.map(h => ({
+    month:  h.month,
+    Salary: Math.round(n(h.salary)/1000),
+    Tutoring: Math.round(n(h.tutoring)/1000),
+    Lending: Math.round(n(h.lendingInterest)/1000),
+    Gross:  Math.round(n(h.grossTotal||h.totalIncome)/1000),
+    InHand: Math.round(n(h.inHand||h.savings)/1000),
+    EMI:    Math.round((n(h.hdfcEmi)+n(h.idfcEmi)+n(h.sbiEmi))/1000),
+  }));
+
+  const selStyle = { background:P.card3, border:`1px solid ${P.border}`, borderRadius:8, color:P.text, fontFamily:"'Fira Code',monospace", fontSize:10, padding:"5px 10px", outline:"none", cursor:"pointer" };
+
+  return (
+    <div className="fade">
+      {/* Header + Year Filter */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:800,color:P.text}}>📊 Salary Tracker</div>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Month-wise income, savings & growth analysis</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Year</span>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} style={selStyle}>
+            {years.map(y=><option key={y} value={y}>{y==="ALL"?"All Years":y}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* KPI Row */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:16}}>
+        {[
+          {label:"Total Salary",    v:abs(totalSalary),   color:P.gold,     icon:"💼", sub:`${filtered.length} months`},
+          {label:"DevOps Tutoring", v:abs(totalTutoring), color:P.emerald,  icon:"🎓", sub:"Side income"},
+          {label:"Lending Interest",v:abs(totalLending),  color:P.teal,     icon:"🤝", sub:"Personal lending"},
+          {label:"Total Gross",     v:abs(totalGross),    color:P.sapphire, icon:"💰", sub:"All income combined"},
+          {label:"Total In-Hand",   v:abs(totalInHand),   color:P.violet,   icon:"💵", sub:"After all deductions"},
+          {label:"Avg Savings Rate",v:`${avgSavingsRate}%`,color:avgSavingsRate>=20?P.emerald:avgSavingsRate>=10?P.gold:P.ruby, icon:"📈", sub:trend>=0?`↑ ₹${Math.round(trend).toLocaleString("en-IN")} vs last`:`↓ ₹${Math.round(Math.abs(trend)).toLocaleString("en-IN")} vs last`},
+        ].map((k,i)=>(
+          <div key={i} style={{background:`${k.color}0A`,border:`1px solid ${k.color}33`,borderRadius:14,padding:"14px 16px",transition:"transform .2s,box-shadow .2s",cursor:"default"}}
+            onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 20px ${k.color}33`;}}
+            onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+            <div style={{fontSize:20,marginBottom:6}}>{k.icon}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:k.color}}>{k.v}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:2}}>{k.label}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:k.color+"99",marginTop:1}}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Charts */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+        <Card accent={P.sapphire}>
+          <SectionHead title="Income Trend (₹K)" icon="📈" color={P.sapphire}/>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={chartData} margin={{top:5,right:10,left:-10,bottom:0}}>
+              <defs>
+                <linearGradient id="grossGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={P.sapphire} stopOpacity={0.3}/><stop offset="95%" stopColor={P.sapphire} stopOpacity={0}/></linearGradient>
+                <linearGradient id="inhandGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={P.emerald} stopOpacity={0.3}/><stop offset="95%" stopColor={P.emerald} stopOpacity={0}/></linearGradient>
+              </defs>
+              <XAxis dataKey="month" tick={{fill:P.muted,fontSize:8}} tickLine={false}/>
+              <YAxis tick={{fill:P.muted,fontSize:8}} tickLine={false} axisLine={false}/>
+              <Tooltip contentStyle={{background:P.card2,border:`1px solid ${P.border}`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:10}} formatter={v=>`₹${v}K`}/>
+              <Area type="monotone" dataKey="Gross"  stroke={P.sapphire} fill="url(#grossGrad)"  strokeWidth={2} dot={false} name="Gross"/>
+              <Area type="monotone" dataKey="InHand" stroke={P.emerald}  fill="url(#inhandGrad)" strokeWidth={2} dot={false} name="In-Hand"/>
+            </AreaChart>
+          </ResponsiveContainer>
+          <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:8}}>
+            {[{c:P.sapphire,l:"Gross"},{c:P.emerald,l:"In-Hand"}].map((x,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:4,fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>
+                <div style={{width:12,height:3,background:x.c,borderRadius:2}}/>{x.l}
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card accent={P.gold}>
+          <SectionHead title="Monthly Breakdown (₹K)" icon="📊" color={P.gold}/>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={chartData} margin={{top:5,right:10,left:-10,bottom:0}}>
+              <XAxis dataKey="month" tick={{fill:P.muted,fontSize:8}} tickLine={false}/>
+              <YAxis tick={{fill:P.muted,fontSize:8}} tickLine={false} axisLine={false}/>
+              <Tooltip contentStyle={{background:P.card2,border:`1px solid ${P.border}`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:10}} formatter={v=>`₹${v}K`}/>
+              <Bar dataKey="Salary"   fill={P.gold}     radius={[3,3,0,0]} name="Salary"/>
+              <Bar dataKey="Tutoring" fill={P.emerald}  radius={[3,3,0,0]} name="Tutoring"/>
+              <Bar dataKey="Lending"  fill={P.teal}     radius={[3,3,0,0]} name="Lending Int."/>
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:8}}>
+            {[{c:P.gold,l:"Salary"},{c:P.emerald,l:"Tutoring"},{c:P.teal,l:"Lending"}].map((x,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:4,fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>
+                <div style={{width:10,height:10,background:x.c,borderRadius:2}}/>{x.l}
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* Detail Table */}
+      <Card accent={P.teal}>
+        <SectionHead title="Month-wise Salary Flow" icon="🗂" color={P.teal}/>
+        <div style={{overflowX:"auto"}}>
+          <table className="row-hover" style={{minWidth:900,width:"100%",borderCollapse:"collapse"}}>
+            <thead>
+              <tr style={{borderBottom:`2px solid ${P.border}`}}>
+                {["Month","Salary","Tutoring","Lending Int.","Gross Income","HDFC EMI","IDFC EMI","SBI EMI","In-Hand","Savings Rate"].map((h,i)=>(
+                  <th key={i} style={{fontFamily:"'Fira Code',monospace",fontSize:9,fontWeight:700,color:P.muted,padding:"8px 12px",textAlign:i===0?"left":"right",letterSpacing:.5,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r,i)=>{
+                const gross  = n(r.grossTotal||r.totalIncome);
+                const ih     = n(r.inHand||r.savings);
+                const rate   = gross>0 ? Math.round((ih/gross)*100) : 0;
+                const isLast = i===filtered.length-1;
+                return (
+                  <tr key={i} style={{borderBottom:`1px solid ${P.border}22`,background:isLast?`${P.gold}08`:"transparent",transition:"background .15s"}}>
+                    <td style={{fontFamily:"'Syne',sans-serif",fontSize:11,fontWeight:700,color:isLast?P.gold:P.text,padding:"9px 12px",whiteSpace:"nowrap"}}>{r.month}{isLast?" ★":""}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.gold,padding:"9px 12px",textAlign:"right"}}>{abs(r.salary)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald,padding:"9px 12px",textAlign:"right"}}>{abs(r.tutoring)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.teal,padding:"9px 12px",textAlign:"right"}}>{abs(r.lendingInterest)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:P.sapphire,padding:"9px 12px",textAlign:"right"}}>{abs(gross)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.ruby,padding:"9px 12px",textAlign:"right"}}>{abs(r.hdfcEmi)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.ruby,padding:"9px 12px",textAlign:"right"}}>{abs(r.idfcEmi)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.ruby,padding:"9px 12px",textAlign:"right"}}>{abs(r.sbiEmi)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:ih>20000?P.emerald:P.orange,padding:"9px 12px",textAlign:"right"}}>{abs(ih)}</td>
+                    <td style={{padding:"9px 12px",textAlign:"right"}}>
+                      <span style={{background:`${rate>=20?P.emerald:rate>=10?P.gold:P.ruby}22`,border:`1px solid ${rate>=20?P.emerald:rate>=10?P.gold:P.ruby}44`,borderRadius:20,padding:"2px 8px",fontFamily:"'Fira Code',monospace",fontSize:9,fontWeight:700,color:rate>=20?P.emerald:rate>=10?P.gold:P.ruby}}>{rate}%</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{borderTop:`2px solid ${P.border}`,background:P.card2}}>
+                <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:P.gold,padding:"10px 12px"}}>TOTAL</td>
+                <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:P.gold,padding:"10px 12px",textAlign:"right"}}>{abs(totalSalary)}</td>
+                <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:P.emerald,padding:"10px 12px",textAlign:"right"}}>{abs(totalTutoring)}</td>
+                <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:P.teal,padding:"10px 12px",textAlign:"right"}}>{abs(totalLending)}</td>
+                <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:P.sapphire,padding:"10px 12px",textAlign:"right"}}>{abs(totalGross)}</td>
+                <td colSpan={3} style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,padding:"10px 12px",textAlign:"right"}}>—</td>
+                <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:P.emerald,padding:"10px 12px",textAlign:"right"}}>{abs(totalInHand)}</td>
+                <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:avgSavingsRate>=20?P.emerald:P.gold,padding:"10px 12px",textAlign:"right"}}>{avgSavingsRate}% avg</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 const TABS = [
   { id:"overview",    label:"Overview",         icon:"🏠" },
   { id:"income",      label:"Income & Budget",  icon:"💰" },
@@ -3265,8 +3449,17 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Outfit:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap');
         @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
-        @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.25} }
+        @keyframes pulse      { 0%,100%{opacity:1} 50%{opacity:.25} }
         @keyframes pulse-glow { 0%,100%{box-shadow:0 0 24px #F5A62366,0 0 48px #F5A62322} 50%{box-shadow:0 0 36px #F5A623aa,0 0 72px #F5A62344} }
+        @keyframes slideUp    { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:none} }
+        @keyframes shimmer    { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+        .kpi-card { transition:transform .2s ease,box-shadow .2s ease; }
+        .kpi-card:hover { transform:translateY(-4px) !important; }
+        .card-hover { transition:border-color .2s,box-shadow .2s; }
+        .card-hover:hover { box-shadow:0 4px 24px rgba(0,0,0,.25) !important; }
+        .btn-hover { transition:transform .15s,box-shadow .15s,opacity .15s; }
+        .btn-hover:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,.2); }
+        .btn-hover:active:not(:disabled) { transform:translateY(0); }
         @keyframes marquee{ from{transform:translateX(0)} to{transform:translateX(-50%)} }
         * { box-sizing:border-box }
         ::-webkit-scrollbar{width:4px;height:4px}
@@ -3418,16 +3611,24 @@ export default function App() {
         {/* ═══ OVERVIEW ═══ */}
         {tab==="overview" && (
           <div className="fade">
+            {(() => {
+              const sh = data.salaryHistory || [];
+              const last2 = sh.slice(-2);
+              const salTrend = last2.length===2 ? Math.round(((last2[1].salary-last2[0].salary)/Math.max(1,last2[0].salary))*100) : null;
+              const ihTrend  = last2.length===2 ? Math.round((((last2[1].inHand||last2[1].savings)-(last2[0].inHand||last2[0].savings))/Math.max(1,(last2[0].inHand||last2[0].savings)))*100) : null;
+              return (
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:10,marginBottom:16}}>
-              <KPI label="Monthly Salary"    value={fmt(d.income.salary)}               sub={`Age ${d.income.age} · ${d.income.year}`}  color={P.gold}     icon="💼"/>
-              <KPI label="In-Hand Income"    value={fmt(d.income.inHand)}               sub={`Savings rate ${savingsRate}%`}            color={P.emerald}  icon="💵"/>
+              <KPI label="Monthly Salary"    value={fmt(d.income.salary)}               sub={`Age ${d.income.age} · ${d.income.year}`}  color={P.gold}     icon="💼" trend={salTrend}/>
+              <KPI label="In-Hand Income"    value={fmt(d.income.inHand)}               sub={`Savings rate ${savingsRate}%`}            color={P.emerald}  icon="💵" trend={ihTrend}/>
               <KPI label="Total Investments" value={fmt(totalInv)}                      sub="All assets"                               color={P.sapphire} icon="📊"/>
               <KPI label="Total Debt"        value={fmt(totalDebt)}                     sub="3 active loans"                           color={P.ruby}     icon="🏦"/>
-              <KPI label="Stock Portfolio"   value={fmt(d.stocks.summary.total.current)}sub={`P&L +${fmt(d.stocks.summary.total.pl)}`} color={P.violet}   icon="📈"/>
+              <KPI label="Stock Portfolio"   value={fmt(d.stocks.summary.total.current)}sub={`P&L ${fmt(d.stocks.summary.total.pl)}`}  color={P.violet}   icon="📈"/>
               <KPI label="EMI Burden"        value={`${emiPct}%`}                       sub={`${fmt(emiTotal)}/month`}                  color={emiPct>50?P.ruby:P.orange} icon="💳"/>
               <KPI label="Lending Received" value={fmt(d.income.lendingInterest || d.personalLending.receivedThisMonth || 0)} sub={d.income.month ? `Actual in ${d.income.month}` : (d.personalLending.receivedMonthLabel ? `Interest in ${d.personalLending.receivedMonthLabel}` : "Latest received month")} color={P.teal} icon="🤝"/>
               <KPI label="LendenClub Pool"   value={fmt(d.lendenClub.totalPooled)}      sub="P2P portfolio"                            color={P.rose}     icon="🏛"/>
             </div>
+              );
+            })()}
 
             <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr",gap:14,marginBottom:14}}>
               <Card accent={P.gold}>
