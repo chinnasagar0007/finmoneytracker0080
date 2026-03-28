@@ -3781,16 +3781,17 @@ export default function App() {
               {/* Stats grid */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
                 {[
-                  {label:"Monthly EMI",    v:fmtF(d.loans.hdfc.emi),                             color:P.ruby},
-                  {label:"Outstanding",    v:fmtF(d.loans.hdfc.outstanding),                     color:P.ruby},
+                  {label:"Loan Amount",    v:`₹${Math.round(n(d.loans.hdfc.originalLoan)).toLocaleString("en-IN")}`, color:P.sapphire},
+                  {label:"Monthly EMI",    v:`₹${Math.round(n(d.loans.hdfc.emi)).toLocaleString("en-IN")}`,          color:P.ruby},
+                  {label:"Outstanding",    v:`₹${Math.round(n(d.loans.hdfc.outstanding)).toLocaleString("en-IN")}`,  color:P.ruby},
                   {label:"Interest Rate",  v:`${d.loans.hdfc.interestRate}% p.a.`,               color:P.gold},
                   {label:"EMIs Remaining", v:`${d.loans.hdfc.total - d.loans.hdfc.paid} of ${d.loans.hdfc.total}`, color:P.text},
-                  {label:"Principal Paid", v:fmtF(d.loans.hdfc.totalPrincipalPaid||0),       color:P.emerald},
-                  {label:"Interest Paid",  v:fmtF(d.loans.hdfc.totalInterestPaid||0),        color:P.ruby},
+                  {label:"Principal Paid", v:`₹${Math.round(n(d.loans.hdfc.totalPrincipalPaid)).toLocaleString("en-IN")}`, color:P.emerald},
+                  {label:"Interest Paid",  v:`₹${Math.round(n(d.loans.hdfc.totalInterestPaid)).toLocaleString("en-IN")}`,  color:P.ruby},
                 ].map((s,i)=>(
                   <div key={i} style={{background:`linear-gradient(135deg,${P.card3},${P.card2})`,borderRadius:10,padding:"11px 13px",border:`1px solid ${s.color}22`,boxShadow:`inset 0 1px 0 ${s.color}11`}}>
                     <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,letterSpacing:1.5,textTransform:"uppercase",marginBottom:5}}>{s.label}</div>
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:800,color:s.color,letterSpacing:-0.3}}>{s.v}</div>
+                    <div style={{fontFamily:"'Fira Code',monospace",fontSize:13,fontWeight:700,color:s.color}}>{s.v}</div>
                   </div>
                 ))}
               </div>
@@ -3835,16 +3836,18 @@ export default function App() {
                   <DonutRing pct={d.loans.idfc.total>0?(d.loans.idfc.paid/d.loans.idfc.total)*100:0} color={P.sapphire} size={70} stroke={6} label={`${d.loans.idfc.total>0?Math.round((d.loans.idfc.paid/d.loans.idfc.total)*100):0}%`} sub="done"/>
                 </div>
                 {/* Stats grid */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:14}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:14}}>
                   {[
-                    {label:"Monthly EMI",   v:fmtF(d.loans.idfc.emi),              color:P.sapphire},
-                    {label:"Outstanding",   v:fmtF(d.loans.idfc.outstanding),       color:P.ruby},
+                    {label:"Loan Amount",   v:`₹${Math.round(n(d.loans.idfc.originalLoan)).toLocaleString("en-IN")}`, color:P.sapphire},
+                    {label:"Monthly EMI",   v:`₹${Math.round(n(d.loans.idfc.emi)).toLocaleString("en-IN")}`,          color:P.sapphire},
+                    {label:"Outstanding",   v:`₹${Math.round(n(d.loans.idfc.outstanding)).toLocaleString("en-IN")}`,  color:P.ruby},
                     {label:"Interest Rate", v:`${d.loans.idfc.interestRate}% p.a.`, color:P.gold},
                     {label:"EMIs Paid",     v:`${d.loans.idfc.paid} of ${d.loans.idfc.total}`, color:P.emerald},
+                    {label:"Interest Paid", v:`₹${Math.round(n(d.loans.idfc.totalInterestPaid)).toLocaleString("en-IN")}`, color:P.ruby},
                   ].map((s,i)=>(
                     <div key={i} style={{background:`linear-gradient(135deg,${P.card3},${P.card2})`,borderRadius:9,padding:"10px 12px",border:`1px solid ${s.color}22`}}>
                       <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,letterSpacing:1.5,textTransform:"uppercase",marginBottom:4}}>{s.label}</div>
-                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:800,color:s.color}}>{s.v}</div>
+                      <div style={{fontFamily:"'Fira Code',monospace",fontSize:13,fontWeight:700,color:s.color}}>{s.v}</div>
                     </div>
                   ))}
                 </div>
@@ -3882,16 +3885,18 @@ export default function App() {
                   <DonutRing pct={(d.loans.sbi.paid/d.loans.sbi.total)*100||0} color={P.orange} size={70} stroke={6} label={`${Math.round((d.loans.sbi.paid/d.loans.sbi.total)*100)||0}%`} sub="done"/>
                 </div>
                 {/* Stats grid */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:14}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:14}}>
                   {[
-                    {label:"Monthly EMI",    v:fmtF(d.loans.sbi.emi),                       color:P.orange},
-                    {label:"Outstanding",    v:fmtF(d.loans.sbi.outstanding),               color:P.ruby},
+                    {label:"Loan Amount",    v:`₹${Math.round(n(d.loans.sbi.originalLoan)).toLocaleString("en-IN")}`, color:P.orange},
+                    {label:"Monthly EMI",    v:`₹${Math.round(n(d.loans.sbi.emi)).toLocaleString("en-IN")}`,          color:P.orange},
+                    {label:"Outstanding",    v:`₹${Math.round(n(d.loans.sbi.outstanding)).toLocaleString("en-IN")}`,  color:P.ruby},
                     {label:"Interest Rate",  v:`${d.loans.sbi.interestRate}% p.a.`,         color:P.gold},
-                    {label:"Total Interest", v:fmtF(d.loans.sbi.totalInterestOnLoan||5495), color:P.ruby},
+                    {label:"EMIs Paid",      v:`${d.loans.sbi.paid||0} of ${d.loans.sbi.total||25}`, color:P.emerald},
+                    {label:"Total Interest", v:`₹${Math.round(n(d.loans.sbi.totalInterestOnLoan)).toLocaleString("en-IN")}`, color:P.ruby},
                   ].map((s,i)=>(
                     <div key={i} style={{background:`linear-gradient(135deg,${P.card3},${P.card2})`,borderRadius:9,padding:"10px 12px",border:`1px solid ${s.color}22`}}>
                       <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,letterSpacing:1.5,textTransform:"uppercase",marginBottom:4}}>{s.label}</div>
-                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:800,color:s.color}}>{s.v}</div>
+                      <div style={{fontFamily:"'Fira Code',monospace",fontSize:13,fontWeight:700,color:s.color}}>{s.v}</div>
                     </div>
                   ))}
                 </div>
