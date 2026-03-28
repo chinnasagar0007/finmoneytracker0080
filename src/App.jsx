@@ -1041,9 +1041,9 @@ const SEED = {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const n   = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
-const fmt  = v => { v=n(v); const neg=v<0; const a=Math.abs(v); const s=a>=10000000?`₹${+(a/10000000).toFixed(1)}Cr`:a>=100000?`₹${+(a/100000).toFixed(1)}L`:a>=1000?`₹${Math.round(a/1000)}K`:`₹${Math.round(a).toLocaleString("en-IN")}`; return neg?`-${s}`:s; };
-const fmtF = v => `₹${n(v).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-const pct  = (a,b) => b>0?((a/b)*100).toFixed(1):0;
+const fmt  = v => { v=n(v); const neg=v<0; const a=Math.abs(v); const s=a>=10000000?`₹${Math.round(a/10000000)}Cr`:a>=100000?`₹${Math.round(a/100000)}L`:a>=1000?`₹${Math.round(a/1000)}K`:`₹${Math.round(a).toLocaleString("en-IN")}`; return neg?`-${s}`:s; };
+const fmtF = v => `₹${Math.round(n(v)).toLocaleString("en-IN")}`;
+const pct  = (a,b) => b>0?Math.round((a/b)*100):0;
 const addMonths = (d,m) => { const r=new Date(d); r.setMonth(r.getMonth()+m); return r; };
 const fmtDate  = d => d.toLocaleDateString("en-IN",{month:"short",year:"numeric"});
 const JSONP_TIMEOUT_MS = 30000;
@@ -1427,7 +1427,7 @@ function AIHub({ data }) {
     const tutoring    = n(d.income?.tutoring || d.income?.devopsTutoring);
     const lendingInt  = n(d.income?.lendingInterest || d.personalLending?.monthlyInterest);
     const grossIncome = salary + tutoring + lendingInt;
-    const savingsRate = grossIncome>0 ? ((inHand/grossIncome)*100).toFixed(1) : 0;
+    const savingsRate = grossIncome>0 ? Math.round((inHand/grossIncome)*100) : 0;
 
     // Salary history — last 6 months
     const hist = (d.salaryHistory || []).slice(-6);
@@ -1446,7 +1446,7 @@ function AIHub({ data }) {
     // Real estate
     const rePaid      = n(d.realEstate?.paid);
     const reTotal     = n(d.realEstate?.totalCost || d.realEstate?.totalAmount);
-    const rePct       = reTotal>0 ? ((rePaid/reTotal)*100).toFixed(1) : 0;
+    const rePct       = reTotal>0 ? Math.round((rePaid/reTotal)*100) : 0;
 
     // Goals with progress
     const idfcOut   = n(d.loans?.idfc?.outstanding);
@@ -1478,7 +1478,7 @@ LOANS (Total debt: ₹${Math.round(totalDebt).toLocaleString("en-IN")}):
 - HDFC Home Loan: ₹${Math.round(n(d.loans?.hdfc?.outstanding)).toLocaleString("en-IN")} @ ${d.loans?.hdfc?.interestRate||10.5}% | EMI ₹${n(d.loans?.hdfc?.emi).toLocaleString("en-IN")} | ${(d.loans?.hdfc?.total||72)-(d.loans?.hdfc?.paid||4)} EMIs left
 - IDFC Personal Loan: ₹${Math.round(idfcOut).toLocaleString("en-IN")} @ ${d.loans?.idfc?.interestRate||13.5}% | EMI ₹${n(d.loans?.idfc?.emi).toLocaleString("en-IN")} | ${(d.loans?.idfc?.total||60)-(d.loans?.idfc?.paid||18)} EMIs left  ← HIGHEST RATE, PRIORITY PAYOFF
 - SBI Loan: ₹${Math.round(sbiOut).toLocaleString("en-IN")} @ ${d.loans?.sbi?.interestRate||9.35}% | EMI ₹${n(d.loans?.sbi?.emi).toLocaleString("en-IN")} | ${(d.loans?.sbi?.total||25)-(d.loans?.sbi?.paid||0)} EMIs left
-- EMI burden: ₹${emiTotal.toLocaleString("en-IN")}/mo = ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary ${emiTotal/salary>0.5?"⚠ HIGH — above 50% danger zone":"✅ manageable"}
+- EMI burden: ₹${emiTotal.toLocaleString("en-IN")}/mo = ${salary>0?Math.round((emiTotal/salary)*100):0}% of salary ${emiTotal/salary>0.5?"⚠ HIGH — above 50% danger zone":"✅ manageable"}
 
 INVESTMENT PORTFOLIO (Total assets: ₹${Math.round(totalAssets).toLocaleString("en-IN")}):
 - Equity stocks: ₹${equityCurr.toLocaleString("en-IN")} | P&L ₹${equityPL.toLocaleString("en-IN")}
@@ -1501,7 +1501,7 @@ FINANCIAL GOALS & PROGRESS:
 
 ALERTS:
 ${pendingInt>0?`- ⚠ CRITICAL: KishanRao has ₹${pendingInt.toLocaleString("en-IN")} overdue interest (capital at risk)`:"- ✅ No borrower defaults"}
-- EMI burden: ${emiTotal/salary>0.5?"⚠ HIGH at":"✅"} ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary
+- EMI burden: ${emiTotal/salary>0.5?"⚠ HIGH at":"✅"} ${salary>0?Math.round((emiTotal/salary)*100):0}% of salary
 
 YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ numbers. Give actionable advice referencing actual data above. Use Indian financial context (80C, 24(b), LTCG, NPS, ELSS). Be honest about risks. Reference goals by name when relevant. Keep responses under 350 words unless asked to elaborate.`;
   };
@@ -1574,7 +1574,7 @@ function AIChatSection({ data, groqKey, systemPrompt, totalDebt, totalAssets, ne
 
 **🏦 EMI this week:** ${nextEmi?`HDFC EMI of ₹${n(d.loans?.hdfc?.emi).toLocaleString("en-IN")} due ${nextEmi.date}`:"Check your EMI schedule"}
 
-**📊 Budget standing:** EMI load is ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary ${emiTotal/salary>0.5?"— ⚠ above 50% danger zone":"— within range"}
+**📊 Budget standing:** EMI load is ${salary>0?Math.round((emiTotal/salary)*100):0}% of salary ${emiTotal/salary>0.5?"— ⚠ above 50% danger zone":"— within range"}
 
 **🚨 Active alert:** ${kishanPending>0?`KishanRao owes ₹${kishanPending.toLocaleString("en-IN")} in unpaid interest — ${Math.round(n(d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"))?.monthsElapsed||2))} months overdue`:"No borrower defaults 👍"}
 
@@ -1690,7 +1690,7 @@ Ask me anything — I know your complete financial picture!`;
             {label:"Investments",  v:fmt(totalAssets),color:P.sapphire,                    bar:Math.min(100,(totalAssets/1000000)*100)},
             {label:"In-Hand/mo",   v:fmt(inHand),     color:P.gold,                        bar:Math.min(100,(inHand/100000)*100)},
             {label:"EMI/mo",       v:fmt(emiTotal),   color:P.orange,                      bar:Math.min(100,(emiTotal/salary||0)*100)},
-            {label:"EMI % Salary", v:`${salary>0?((emiTotal/salary)*100).toFixed(1):0}%`,  color:emiTotal/salary>0.5?P.ruby:P.emerald, bar:Math.min(100,(emiTotal/salary||0)*100)},
+            {label:"EMI % Salary", v:`${salary>0?Math.round((emiTotal/salary)*100):0}%`,  color:emiTotal/salary>0.5?P.ruby:P.emerald, bar:Math.min(100,(emiTotal/salary||0)*100)},
           ].map((r,i)=>(
             <div key={i} style={{padding:"8px 0",borderBottom:`1px solid ${P.border}22`}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
@@ -1757,7 +1757,7 @@ function AIAlertsSection({ data, groqKey, totalDebt, totalAssets, netWorth, emiT
     if (daysLeft<=10) alerts.push({ level:"warning", icon:"🟡", title:`HDFC EMI Due in ${daysLeft} days`, msg:`₹${n(nextHdfc.emi).toLocaleString("en-IN")} due ${nextHdfc.date}. Ensure funds in account.`, color:P.orange });
   }
   if (emiTotal/salary>0.5) {
-    alerts.push({ level:"warning", icon:"🟠", title:"High EMI Burden", msg:`EMIs consume ${((emiTotal/salary)*100).toFixed(1)}% of your salary — above safe 40% threshold. Risk of cash crunch if any unexpected expense hits.`, color:P.orange });
+    alerts.push({ level:"warning", icon:"🟠", title:"High EMI Burden", msg:`EMIs consume ${Math.round((emiTotal/salary)*100)}% of your salary — above safe 40% threshold. Risk of cash crunch if any unexpected expense hits.`, color:P.orange });
   }
   const totalBudget = Object.entries(d.budget||{}).filter(([k])=>k!=="actual").reduce((s,[,v])=>s+n(v),0);
   const totalActual = Object.values(d.budget?.actual||{}).reduce((s,v)=>s+n(v),0);
@@ -1796,7 +1796,7 @@ function AIAlertsSection({ data, groqKey, totalDebt, totalAssets, netWorth, emiT
 INCOME THIS MONTH:
 - Primary salary: ₹${n(d.income?.salary).toLocaleString("en-IN")} | DevOps tutoring: ₹${tutoringInc.toLocaleString("en-IN")} | Lending interest: ₹${lendingInc.toLocaleString("en-IN")}
 - In-hand after deductions: ₹${n(d.income?.inHand).toLocaleString("en-IN")}
-- Savings rate: ${salary>0?((n(d.income?.inHand)/salary)*100).toFixed(1):0}%
+- Savings rate: ${salary>0?Math.round((n(d.income?.inHand)/salary)*100):0}%
 
 SALARY HISTORY TREND (last 6 months):
 ${hist6.map(h=>`  ${h.month}: gross ₹${n(h.grossTotal||h.totalIncome).toLocaleString("en-IN")}, in-hand ₹${n(h.inHand||h.savings).toLocaleString("en-IN")}`).join("\n")||"  No history"}
@@ -1804,7 +1804,7 @@ ${hist6.map(h=>`  ${h.month}: gross ₹${n(h.grossTotal||h.totalIncome).toLocale
 BALANCE SHEET:
 - Net worth: ₹${Math.round(netWorth).toLocaleString("en-IN")}
 - Total investments: ₹${Math.round(totalAssets).toLocaleString("en-IN")} | Total debt: ₹${Math.round(totalDebt).toLocaleString("en-IN")}
-- EMI burden: ₹${emiTotal.toLocaleString("en-IN")} = ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary
+- EMI burden: ₹${emiTotal.toLocaleString("en-IN")} = ${salary>0?Math.round((emiTotal/salary)*100):0}% of salary
 - LendenClub pool: ₹${n(d.lendenClub?.totalPooled).toLocaleString("en-IN")} | Lending interest received: ₹${n(d.personalLending?.receivedTillNow).toLocaleString("en-IN")}
 - KishanRao overdue: ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")}
 - Budget spent: ₹${totalActual.toLocaleString("en-IN")} vs budget ₹${totalBudget.toLocaleString("en-IN")} (${totalActual>totalBudget?"OVER":"within"} budget)
@@ -1812,8 +1812,8 @@ BALANCE SHEET:
 
 GOALS STATUS:
 - IDFC loan: ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} remaining @ 13.5% (priority payoff)
-- ₹1Cr net worth: ${Math.min(100,Math.max(0,(netWorth/10000000)*100)).toFixed(1)}% reached
-- ₹10L investments: ${Math.min(100,(totalAssets/1000000)*100).toFixed(1)}% reached
+- ₹1Cr net worth: ${Math.min(100,Math.max(0,Math.round((netWorth/10000000)*100)))}% reached
+- ₹10L investments: ${Math.min(100,Math.round((totalAssets/1000000)*100))}% reached
 
 Format: 6 bullet points — (1) income vs spend with savings rate comment (2) income trend from history (3) net worth & investment change (4) debt status & goal progress (5) one risk to watch (6) ONE specific priority action for next month tied to a named goal. Use ₹ numbers throughout.`}] });
       setReport(reply);
@@ -2123,7 +2123,7 @@ function NetWorthCalc({ data, netWorth, totalAssets, totalDebt, inHand, emiTotal
         </div>
         <div style={{flex:1}}>
           <PBar value={Math.max(0,netWorth)} max={target} color={P.gold} height={10}/>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:4}}>{Math.max(0,crProgress).toFixed(1)}% of ₹1Cr goal</div>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:4}}>{Math.max(0,Math.round(crProgress))}% of ₹1Cr goal</div>
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginBottom:4}}>Estimated ₹1Cr date</div>
@@ -2139,7 +2139,7 @@ function NetWorthCalc({ data, netWorth, totalAssets, totalDebt, inHand, emiTotal
             </linearGradient>
           </defs>
           <XAxis dataKey="date" tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false} interval={3}/>
-          <YAxis tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false} tickFormatter={v=>v>=10000000?`₹${(v/10000000).toFixed(1)}Cr`:v>=100000?`₹${(v/100000).toFixed(0)}L`:`₹${(v/1000).toFixed(0)}K`}/>
+          <YAxis tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false} tickFormatter={v=>v>=10000000?`₹${Math.round(v/10000000)}Cr`:v>=100000?`₹${Math.round(v/100000)}L`:`₹${Math.round(v/1000)}K`}/>
           <Tooltip content={({active,payload,label})=>active&&payload?.length?(<div style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,padding:"8px 12px"}}><p style={{color:P.muted,fontSize:9,margin:"0 0 2px",fontFamily:"'Fira Code',monospace"}}>{label}</p><p style={{color:P.gold,fontSize:12,fontWeight:700,margin:0,fontFamily:"'Fira Code',monospace"}}>{fmt(payload[0].value)}</p></div>):null}/>
           <Area type="monotone" dataKey="nw" stroke={P.gold} fill="url(#nwG)" strokeWidth={2} dot={false}/>
         </AreaChart>
@@ -2437,7 +2437,7 @@ function SIPStepUpCalc({ data, salary }) {
       <ResponsiveContainer width="100%" height={180}>
         <LineChart data={chartData}>
           <XAxis dataKey="year" tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false}/>
-          <YAxis tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false} tickFormatter={v=>v>=10000000?`${(v/10000000).toFixed(1)}Cr`:v>=100000?`${(v/100000).toFixed(0)}L`:`${(v/1000).toFixed(0)}K`}/>
+          <YAxis tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false} tickFormatter={v=>v>=10000000?`${Math.round(v/10000000)}Cr`:v>=100000?`${Math.round(v/100000)}L`:`${Math.round(v/1000)}K`}/>
           <Tooltip content={({active,payload,label})=>active&&payload?.length?(<div style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,padding:"8px 12px"}}><p style={{color:P.muted,fontSize:9,margin:"0 0 3px"}}>{label}</p>{payload.map((p,i)=><p key={i} style={{color:p.color,fontSize:11,fontWeight:600,margin:"1px 0",fontFamily:"'Fira Code',monospace"}}>{p.name}: {fmt(p.value)}</p>)}</div>):null}/>
           <Legend wrapperStyle={{fontSize:10,fontFamily:"'Fira Code',monospace"}}/>
           <Line type="monotone" dataKey="flat"   name="Flat SIP"    stroke={P.muted}    strokeWidth={2} dot={false}/>
@@ -2454,7 +2454,7 @@ function EmergencyFundCalc({ data, emiTotal, salary, inHand }) {
   const [emergencyFund, setEmergencyFund] = useState(50000);
   const monthlyFixed = emiTotal + n(data.income?.creditCardBills);
   const monthlyTotal = monthlyFixed + 25000; // living expenses estimate
-  const runwayMonths = monthlyTotal>0 ? (emergencyFund/monthlyTotal).toFixed(1) : 0;
+  const runwayMonths = monthlyTotal>0 ? Math.round(emergencyFund/monthlyTotal) : 0;
   const recommended  = monthlyTotal * 6;
   const gap          = Math.max(0, recommended - emergencyFund);
 
@@ -2792,8 +2792,8 @@ Cover: (1) Which regime is better and by how much (2) Unused 80C opportunity (3)
       <SectionHead title="Tax Planner — FY 2025-26" icon="🧾" color={P.gold}/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
         {[
-          {label:"Old Regime Tax",       v:`₹${oldTax.toLocaleString("en-IN")}`,       color:oldTax<newTax?P.emerald:P.ruby, sub:`${((oldTax/grossAnnual)*100).toFixed(1)}% effective rate`},
-          {label:"New Regime Tax",       v:`₹${newTax.toLocaleString("en-IN")}`,       color:newTax<oldTax?P.emerald:P.ruby, sub:`${((newTax/grossAnnual)*100).toFixed(1)}% effective rate`},
+          {label:"Old Regime Tax",       v:`₹${oldTax.toLocaleString("en-IN")}`,       color:oldTax<newTax?P.emerald:P.ruby, sub:`${Math.round((oldTax/grossAnnual)*100)}% effective rate`},
+          {label:"New Regime Tax",       v:`₹${newTax.toLocaleString("en-IN")}`,       color:newTax<oldTax?P.emerald:P.ruby, sub:`${Math.round((newTax/grossAnnual)*100)}% effective rate`},
           {label:"Better Regime",        v:`${better} Regime`,                          color:P.emerald, sub:`Saves ₹${saving.toLocaleString("en-IN")}`},
           {label:"Crypto Tax Due (30%)", v:`₹${Math.round(cryptoGain*0.3).toLocaleString("en-IN")}`, color:P.ruby, sub:"No offsetting allowed"},
         ].map((r,i)=>(
@@ -2913,7 +2913,7 @@ function SalaryImpact({ data, salary, emiTotal, inHand, netWorth, totalAssets })
           {label:"New Salary",      v:fmt(newSalary),    color:P.gold,    sub:`Was ${fmt(salary)}`},
           {label:"New In-Hand",     v:fmt(newInHand),    color:P.emerald, sub:`+₹${extraMonthly.toLocaleString("en-IN")}/mo`},
           {label:"Extra/Year",      v:fmt(extraAnnual),  color:P.sapphire,sub:"Post-tax estimate"},
-          {label:"EMI % New Salary",v:`${newSalary>0?((emiTotal/newSalary)*100).toFixed(1):0}%`, color:emiTotal/newSalary<0.4?P.emerald:P.gold, sub:`Was ${salary>0?((emiTotal/salary)*100).toFixed(1):0}%`},
+          {label:"EMI % New Salary",v:`${newSalary>0?Math.round((emiTotal/newSalary)*100):0}%`, color:emiTotal/newSalary<0.4?P.emerald:P.gold, sub:`Was ${salary>0?Math.round((emiTotal/salary)*100):0}%`},
         ].map((r,i)=>(
           <div key={i} style={{background:`${r.color}0F`,border:`1px solid ${r.color}33`,borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
             <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:4}}>{r.label}</div>
@@ -3477,7 +3477,7 @@ export default function App() {
       {/* ── TICKER ── */}
       <div style={{background:P.card,borderBottom:`1px solid ${P.border}`,height:30,overflow:"hidden",display:"flex",alignItems:"center"}}>
         <div style={{display:"flex",gap:48,whiteSpace:"nowrap",animation:"marquee 35s linear infinite",fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,padding:"0 24px"}}>
-          {[`NET WORTH ${fmt(netWorth)}`,`SALARY ₹${(d.income.salary/1000).toFixed(0)}K`,`IN-HAND ${fmt(d.income.inHand)}`,`EMI LOAD ${emiPct}%`,`STOCKS ${fmt(d.stocks.summary.total.current)}`,`P&L +${fmt(d.stocks.summary.total.pl)}`,`P.LENDING ₹${(d.personalLending.totalCapital/100000).toFixed(1)}L`,`LENDEN ₹${(d.lendenClub.totalPooled/1000).toFixed(0)}K`,`HDFC ${fmt(d.loans.hdfc.outstanding)}`,`IDFC ${fmt(d.loans.idfc.outstanding)}`,`LAND PAID ${fmt(d.realEstate.paid)}`].map((t,i)=>(
+          {[`NET WORTH ${fmt(netWorth)}`,`SALARY ₹${Math.round(d.income.salary/1000)}K`,`IN-HAND ${fmt(d.income.inHand)}`,`EMI LOAD ${emiPct}%`,`STOCKS ${fmt(d.stocks.summary.total.current)}`,`P&L +${fmt(d.stocks.summary.total.pl)}`,`P.LENDING ₹${Math.round(d.personalLending.totalCapital/100000)}L`,`LENDEN ₹${Math.round(d.lendenClub.totalPooled/1000)}K`,`HDFC ${fmt(d.loans.hdfc.outstanding)}`,`IDFC ${fmt(d.loans.idfc.outstanding)}`,`LAND PAID ${fmt(d.realEstate.paid)}`].map((t,i)=>(
             <span key={i}><span style={{color:P.gold}}>◈</span> {t}</span>
           ))}
           {[`NET WORTH ${fmt(netWorth)}`,`SALARY ₹${(d.income.salary/1000).toFixed(0)}K`,`IN-HAND ${fmt(d.income.inHand)}`].map((t,i)=>(
@@ -3988,7 +3988,7 @@ export default function App() {
                       <TD><Pill color={P.teal}>{f.mode}</Pill></TD>
                       <TD>{fmtF(f.invested)}</TD><TD color={P.gold}>{fmtF(f.current)}</TD>
                       <TD color={P.emerald}>+{fmtF(f.returns)}</TD>
-                      <TD color={P.emerald}>+{f.returnsP}%</TD>
+                      <TD color={P.emerald}>+{Math.round(f.returnsP)}%</TD>
                       <TD><Pill color={P.emerald}>{f.status}</Pill></TD>
                     </tr>
                   ))}
@@ -4014,7 +4014,7 @@ export default function App() {
                       <TD>{e.qty}</TD><TD>{fmtF(e.avgBuy)}</TD><TD>{fmtF(e.invested)}</TD>
                       <TD color={P.gold}>{fmtF(e.cmp)}</TD><TD color={P.gold}>{fmtF(e.current)}</TD>
                       <TD color={P.emerald}>+{fmtF(e.pl)}</TD>
-                      <TD color={P.emerald}>+{e.plP}%</TD>
+                      <TD color={P.emerald}>+{Math.round(e.plP)}%</TD>
                       <TD><Pill color={P.violet}>{e.sector}</Pill></TD>
                     </tr>
                   ))}
@@ -4057,10 +4057,10 @@ export default function App() {
                       <tr key={i}>
                         <TD bold color={P.gold}>{c.coin}</TD><TD color={P.muted}>{c.symbol}</TD>
                         <TD><Pill color={P.violet}>{c.exchange}</Pill></TD>
-                        <TD>{c.qty}</TD><TD>{(c.buyPrice/100000).toFixed(2)}L</TD>
+                        <TD>{c.qty}</TD><TD>₹{Math.round(c.buyPrice).toLocaleString("en-IN")}</TD>
                         <TD>{fmtF(c.invested)}</TD><TD color={P.gold}>{fmtF(c.current)}</TD>
                         <TD color={P.emerald}>+{fmtF(c.pl)}</TD>
-                        <TD color={P.emerald}>+{c.plP.toFixed(2)}%</TD>
+                        <TD color={P.emerald}>+{Math.round(c.plP)}%</TD>
                       </tr>
                     ))}
                   </tbody>
@@ -4302,7 +4302,7 @@ export default function App() {
                       {d.personalLending.borrowers.map((b,i)=>(
                         <tr key={i}>
                           <TD color={P.muted}>{b.id}</TD><TD left bold color={P.text}>{b.name}</TD>
-                          <TD color={P.gold}>{fmtF(b.amount)}</TD><TD color={P.sapphire}>{n(b.rate).toFixed(2)}%</TD>
+                          <TD color={P.gold}>{fmtF(b.amount)}</TD><TD color={P.sapphire}>{n(b.rate)}%</TD>
                           <TD color={P.muted}>{b.dateLent}</TD>
                           <TD color={P.emerald}>{fmtF(b.monthlyInt)}</TD><TD>{b.monthsElapsed} mo</TD>
                           <TD color={P.text}>{fmtF(b.interestAccrued)}</TD>
@@ -4452,7 +4452,7 @@ export default function App() {
                             <TD color={P.muted}>{v.marketValue?fmtF(v.marketValue):"—"}</TD>
                             <TD color={P.text}>{fmtF(v.totalInvested)}</TD>
                             <TD color={gain!=null&&gain>=0?P.emerald:P.ruby}>{gain!=null?fmtF(gain):"—"}</TD>
-                            <TD color={gainPct!=null&&gainPct>=0?P.emerald:P.ruby}>{gainPct!=null?`${gainPct}%`:"—"}</TD>
+                            <TD color={gainPct!=null&&gainPct>=0?P.emerald:P.ruby}>{gainPct!=null?`${Math.round(gainPct)}%`:"—"}</TD>
                           </tr>
                         );
                       })}
