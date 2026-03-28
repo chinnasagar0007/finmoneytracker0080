@@ -1369,7 +1369,7 @@ function renderMD(text) {
 }
 
 // ─── GEMINI HELPER ────────────────────────────────────────────────────────────
-async function geminiChat({ key, system="", messages=[], maxTokens=2048 }) {
+async function geminiChat({ key, system="", messages=[], maxTokens=8192 }) {
   if (!key) throw new Error("Gemini API key not set. Please enter your key above.");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
   const body = {
@@ -1378,12 +1378,17 @@ async function geminiChat({ key, system="", messages=[], maxTokens=2048 }) {
       role: m.role==="assistant" ? "model" : "user",
       parts: [{ text: m.content }]
     })),
-    generationConfig: { maxOutputTokens: maxTokens }
+    generationConfig: {
+      maxOutputTokens: maxTokens,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
   };
   const res = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
   const json = await res.json();
   if (json.error) throw new Error(json.error.message);
-  return json.candidates?.[0]?.content?.parts?.[0]?.text || "No response received.";
+  // Collect all text parts (thinking model may return multiple parts)
+  const parts = json.candidates?.[0]?.content?.parts || [];
+  return parts.map(p => p.text || "").join("") || "No response received.";
 }
 
 // ─── AI HUB — COMPLETE LIVE FINANCIAL ADVISOR (18+ Features) ─────────────────
