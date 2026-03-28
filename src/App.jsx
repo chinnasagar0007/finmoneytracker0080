@@ -1553,7 +1553,7 @@ Ask me anything — I know your complete financial picture!`;
     setMessages(history);
     setLoading(true);
     try {
-      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:history.slice(-10), maxTokens:2048 });
+      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:history.slice(-10) });
       setMessages(prev=>[...prev,{ role:"assistant", content:reply }]);
     } catch(e) {
       setMessages(prev=>[...prev,{ role:"assistant", content:`⚠ Connection error: ${e.message}` }]);
@@ -1741,7 +1741,7 @@ Data:
 - Budget spent: ₹${totalActual.toLocaleString("en-IN")} vs budget ₹${totalBudget.toLocaleString("en-IN")}
 - Health score: ${healthScore}/100
 
-Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) investment progress (4) debt status (5) one key recommendation for next month. Be specific with numbers.`}], maxTokens:1000 });
+Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) investment progress (4) debt status (5) one key recommendation for next month. Be specific with numbers.`}] });
       setReport(reply);
     } catch(e) { setReport("Error generating report: "+e.message); }
     setReportLoading(false);
@@ -1751,7 +1751,7 @@ Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) in
   const generateWhatsApp = async () => {
     setWpLoading(true);
     try {
-      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Write a firm but professional WhatsApp message from ${d.settings?.name||"Naresh"} to KishanRao following up on ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")} overdue interest (${n(d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"))?.monthsElapsed||2)} months). Loan amount: ₹${n(kishanRao?.amount||100000).toLocaleString("en-IN")} @ 2%/month. Keep it polite but clear about urgency. Under 100 words. No emojis spam.`}], maxTokens:300 });
+      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Write a firm but professional WhatsApp message from ${d.settings?.name||"Naresh"} to KishanRao following up on ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")} overdue interest (${n(d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"))?.monthsElapsed||2)} months). Loan amount: ₹${n(kishanRao?.amount||100000).toLocaleString("en-IN")} @ 2%/month. Keep it polite but clear about urgency. Under 100 words. No emojis spam.`}], maxTokens:512 });
       setWhatsapp(reply);
     } catch(e) { setWhatsapp("Error: "+e.message); }
     setWpLoading(false);
@@ -2432,7 +2432,7 @@ function WhatIfEngine({ data, geminiKey, systemPrompt }) {
     if (!s || loading) return;
     setLoading(true); setResult(null);
     try {
-      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:[{role:"user",content:`Analyze this scenario with real numbers: "${s}"\n\nProvide:\n1. CURRENT SITUATION (with actual numbers)\n2. SCENARIO OUTCOME (what changes, what doesn't)\n3. NET IMPACT (better or worse, by how much ₹)\n4. RECOMMENDATION (should they do it?)\n\nBe specific. Use ₹ amounts. Keep it under 250 words.`}], maxTokens:800 });
+      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:[{role:"user",content:`Analyze this scenario with real numbers: "${s}"\n\nProvide:\n1. CURRENT SITUATION (with actual numbers)\n2. SCENARIO OUTCOME (what changes, what doesn't)\n3. NET IMPACT (better or worse, by how much ₹)\n4. RECOMMENDATION (should they do it?)\n\nBe specific. Use ₹ amounts. Keep it under 250 words.`}] });
       setResult(reply);
     } catch(e) { setResult("Error: "+e.message); }
     setLoading(false);
@@ -2527,7 +2527,7 @@ Crypto gains: ₹${cryptoGain.toLocaleString("en-IN")} (30% flat tax, no offsett
 Old regime tax: ₹${oldTax.toLocaleString("en-IN")}
 New regime tax: ₹${newTax.toLocaleString("en-IN")}
 
-Cover: (1) Which regime is better and by how much (2) Unused 80C opportunity (3) NPS 80CCD(1B) deduction available (4) F&O loss implications (5) Crypto tax obligation (6) Advance tax deadlines. Be specific with ₹ amounts.`}], maxTokens:800 });
+Cover: (1) Which regime is better and by how much (2) Unused 80C opportunity (3) NPS 80CCD(1B) deduction available (4) F&O loss implications (5) Crypto tax obligation (6) Advance tax deadlines. Be specific with ₹ amounts.`}] });
       setAnalysis(reply);
     } catch(e) { setAnalysis("Error: "+e.message); }
     setLoading(false);
@@ -2594,7 +2594,7 @@ Auto-debit subscriptions: ${JSON.stringify(subscriptions.map(e=>({desc:e.desc,am
 Budget vs actual: ${JSON.stringify({budget:d.budget, actual:d.budget?.actual})}
 Income this month: ₹${n(d.income?.inHand).toLocaleString("en-IN")}
 
-Identify: (1) Top 3 overspend categories vs budget (2) Any forgotten/unnecessary subscriptions (3) Unusual spending patterns (4) 2 specific cuts that would free up most cash. Be direct and specific.`}], maxTokens:600 });
+Identify: (1) Top 3 overspend categories vs budget (2) Any forgotten/unnecessary subscriptions (3) Unusual spending patterns (4) 2 specific cuts that would free up most cash. Be direct and specific.`}] });
       setAudit(reply);
     } catch(e) { setAudit("Error: "+e.message); }
     setLoading(false);
@@ -2700,7 +2700,7 @@ Goals: ${JSON.stringify(goals.map(g=>({name:g.name, progress:`${Math.min(100,g.l
 Monthly savings capacity: ₹${Math.max(0,n(inHand)-15000).toLocaleString("en-IN")}
 Net worth: ₹${Math.round(netWorth).toLocaleString("en-IN")}
 
-For each goal: on-track or off-track? What's the specific action to accelerate it? Keep it to 2-3 lines per goal.`}], maxTokens:500 });
+For each goal: on-track or off-track? What's the specific action to accelerate it? Keep it to 2-3 lines per goal.`}] });
       setCheck(reply);
     } catch(e) { setCheck("Error: "+e.message); }
     setLoading(false);
