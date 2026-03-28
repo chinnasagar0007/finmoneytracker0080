@@ -249,6 +249,11 @@ function mapIncomeData(raw) {
       salary, tutoring, lendingInterest: lending, otherIncome: other,
       totalIncome, expenses,
       savings: inHand || Math.max(0, totalIncome - expenses),
+      grossTotal, inHand, hdfcEmi, idfcEmi, sbiEmi, ccBills, taxDed,
+      personalLending: num(r["Personal Lending"] || r["personal_lending"]),
+      lendenClub:      num(r["LendenClub"]       || r["lenden_club"]),
+      equityStocks:    num(r["Equity Stocks"]     || r["equity_stocks"]),
+      mutualFunds:     num(r["Mutual Funds"]      || r["mutual_funds"]),
     };
   });
 
@@ -3044,6 +3049,8 @@ export default function App() {
   const [corsWarn, setCorsWarn] = useState(false);
   const [syncHint, setSyncHint] = useState("");
   const [apiUrl,   setApiUrl]   = useState(loadApiUrl);  // ← single central API URL
+  const [ovMonth,  setOvMonth]  = useState("ALL");
+  const [ovYear,   setOvYear]   = useState("ALL");
   const timerRef   = useRef(null);
   const syncFnRef  = useRef(null);
 
@@ -3475,6 +3482,112 @@ export default function App() {
                 ))}
               </div>
             </Card>
+
+            {/* ── Monthly Salary Flow Table ── */}
+            {(()=>{
+              const hist = d.salaryHistory || [];
+              const parseM = m => { const p = String(m).match(/^([A-Za-z]+)-(\d{2,4})$/); return p ? { name:p[1], yr: p[2].length===2 ? "20"+p[2] : p[2] } : { name:m, yr:"" }; };
+              const yrs = ["ALL", ...Array.from(new Set(hist.map(h=>parseM(h.month).yr).filter(Boolean)))];
+              const mos = ["ALL", ...Array.from(new Set(hist.map(h=>parseM(h.month).name).filter(Boolean)))];
+              const filtered = hist.filter(h => {
+                const p = parseM(h.month);
+                return (ovYear==="ALL" || p.yr===ovYear) && (ovMonth==="ALL" || p.name===ovMonth);
+              });
+
+              const loanBalanceForMonth = (month) => {
+                const pm = parseM(month);
+                const moIdx = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].indexOf(pm.name);
+                const yr = Number(pm.yr);
+                const matchSch = (sch) => {
+                  if (!sch || !sch.length) return null;
+                  for (let i = sch.length-1; i >= 0; i--) {
+                    const sd = parseDateValue(sch[i].date || sch[i].Date || "");
+                    if (sd && sd.getFullYear() === yr && sd.getMonth() === moIdx) return n(sch[i].balance || sch[i].Balance || sch[i].outstanding || 0);
+                  }
+                  return null;
+                };
+                const hb = matchSch(d.loans.hdfc.schedule);
+                const ib = matchSch(d.loans.idfc.schedule);
+                const sb = matchSch(d.loans.sbi.schedule);
+                if (hb !== null || ib !== null || sb !== null) return (hb||n(d.loans.hdfc.outstanding)) + (ib||n(d.loans.idfc.outstanding)) + (sb||n(d.loans.sbi.outstanding));
+                return n(d.loans.hdfc.outstanding)+n(d.loans.idfc.outstanding)+n(d.loans.sbi.outstanding);
+              };
+
+              const enriched = filtered.map(r => {
+                const emi     = n(r.hdfcEmi)+n(r.idfcEmi)+n(r.sbiEmi);
+                const invest  = n(r.personalLending)+n(r.lendenClub)+n(r.equityStocks)+n(r.mutualFunds);
+                const expense = n(r.ccBills)+n(r.taxDed);
+                const debt    = loanBalanceForMonth(r.month);
+                const nw      = (n(r.grossTotal)||n(r.totalIncome)) + invest - expense - emi - debt;
+                return { ...r, emi, invest, expense, debt, nw, gross: n(r.grossTotal)||n(r.totalIncome), ih: n(r.inHand)||n(r.savings) };
+              });
+
+              const sum = (arr,k) => arr.reduce((s,r)=>s+n(r[k]),0);
+              const selStyle = {background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10};
+
+              return (
+                <Card accent={P.teal} style={{marginTop:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                    <SectionHead title="Monthly Salary Flow" icon="📊" color={P.teal}/>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                      <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Year</span>
+                      <select value={ovYear} onChange={e=>setOvYear(e.target.value)} style={selStyle}>
+                        {yrs.map(y=><option key={y} value={y}>{y==="ALL"?"All Years":y}</option>)}
+                      </select>
+                      <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Month</span>
+                      <select value={ovMonth} onChange={e=>setOvMonth(e.target.value)} style={selStyle}>
+                        {mos.map(m=><option key={m} value={m}>{m==="ALL"?"All Months":m}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{overflowX:"auto"}}>
+                    <table className="row-hover" style={{minWidth:1100}}>
+                      <thead>
+                        <tr>
+                          <TH left>Month</TH><TH>Salary</TH><TH>Tutoring</TH><TH>Lending Int.</TH>
+                          <TH>Gross Income</TH><TH>Expenses</TH><TH>Loan EMIs</TH>
+                          <TH>Investments</TH><TH>In Hand</TH><TH>Total Debts</TH><TH>Net Worth</TH>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {enriched.map((r,i)=>(
+                          <tr key={i}>
+                            <TD left bold color={P.text}>{r.month}</TD>
+                            <TD color={P.gold}>{fmt(r.salary)}</TD>
+                            <TD color={P.emerald}>{fmt(r.tutoring)}</TD>
+                            <TD color={P.teal}>{fmt(r.lendingInterest)}</TD>
+                            <TD bold color={P.gold}>{fmt(r.gross)}</TD>
+                            <TD color={P.ruby}>{fmt(r.expense)}</TD>
+                            <TD color={P.ruby}>{fmt(r.emi)}</TD>
+                            <TD color={P.sapphire}>{fmt(r.invest)}</TD>
+                            <TD bold color={P.emerald}>{fmt(r.ih)}</TD>
+                            <TD color={P.ruby}>{fmt(r.debt)}</TD>
+                            <TD bold color={r.nw>=0?P.emerald:P.ruby}>{fmt(r.nw)}</TD>
+                          </tr>
+                        ))}
+                        {enriched.length>1&&(
+                          <tr style={{background:P.card2,borderTop:`2px solid ${P.border}`}}>
+                            <TD left bold color={P.gold}>TOTAL</TD>
+                            <TD bold color={P.gold}>{fmt(sum(enriched,"salary"))}</TD>
+                            <TD bold color={P.emerald}>{fmt(sum(enriched,"tutoring"))}</TD>
+                            <TD bold color={P.teal}>{fmt(sum(enriched,"lendingInterest"))}</TD>
+                            <TD bold color={P.gold}>{fmt(sum(enriched,"gross"))}</TD>
+                            <TD bold color={P.ruby}>{fmt(sum(enriched,"expense"))}</TD>
+                            <TD bold color={P.ruby}>{fmt(sum(enriched,"emi"))}</TD>
+                            <TD bold color={P.sapphire}>{fmt(sum(enriched,"invest"))}</TD>
+                            <TD bold color={P.emerald}>{fmt(sum(enriched,"ih"))}</TD>
+                            <TD bold color={P.ruby}>{fmt(sum(enriched,"debt"))}</TD>
+                            <TD bold color={sum(enriched,"nw")>=0?P.emerald:P.ruby}>{fmt(sum(enriched,"nw"))}</TD>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {enriched.length===0&&<div style={{textAlign:"center",padding:20,color:P.muted,fontFamily:"'Fira Code',monospace",fontSize:11}}>No data for selected period</div>}
+                </Card>
+              );
+            })()}
+
           </div>
         )}
 
