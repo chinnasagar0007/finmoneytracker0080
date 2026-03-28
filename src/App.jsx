@@ -3494,35 +3494,20 @@ export default function App() {
                 return (ovYear==="ALL" || p.yr===ovYear) && (ovMonth==="ALL" || p.name===ovMonth);
               });
 
-              const loanBalanceForMonth = (month) => {
-                const pm = parseM(month);
-                const moIdx = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].indexOf(pm.name);
-                const yr = Number(pm.yr);
-                const matchSch = (sch) => {
-                  if (!sch || !sch.length) return null;
-                  for (let i = sch.length-1; i >= 0; i--) {
-                    const sd = parseDateValue(sch[i].date || sch[i].Date || "");
-                    if (sd && sd.getFullYear() === yr && sd.getMonth() === moIdx) return n(sch[i].balance || sch[i].Balance || sch[i].outstanding || 0);
-                  }
-                  return null;
-                };
-                const hb = matchSch(d.loans.hdfc.schedule);
-                const ib = matchSch(d.loans.idfc.schedule);
-                const sb = matchSch(d.loans.sbi.schedule);
-                if (hb !== null || ib !== null || sb !== null) return (hb||n(d.loans.hdfc.outstanding)) + (ib||n(d.loans.idfc.outstanding)) + (sb||n(d.loans.sbi.outstanding));
-                return n(d.loans.hdfc.outstanding)+n(d.loans.idfc.outstanding)+n(d.loans.sbi.outstanding);
-              };
+              const curDebt = n(d.loans.hdfc.outstanding)+n(d.loans.idfc.outstanding)+n(d.loans.sbi.outstanding);
+              const abs = v => `₹${Math.round(n(v)).toLocaleString("en-IN")}`;
 
               const enriched = filtered.map(r => {
                 const emi     = n(r.hdfcEmi)+n(r.idfcEmi)+n(r.sbiEmi);
                 const invest  = n(r.personalLending)+n(r.lendenClub)+n(r.equityStocks)+n(r.mutualFunds);
                 const expense = n(r.ccBills)+n(r.taxDed);
-                const debt    = loanBalanceForMonth(r.month);
-                const nw      = (n(r.grossTotal)||n(r.totalIncome)) + invest - expense - emi - debt;
-                return { ...r, emi, invest, expense, debt, nw, gross: n(r.grossTotal)||n(r.totalIncome), ih: n(r.inHand)||n(r.savings) };
+                const gross   = n(r.grossTotal)||n(r.totalIncome);
+                const ih      = n(r.inHand)||n(r.savings);
+                const nw      = totalInv - curDebt;
+                return { ...r, emi, invest, expense, debt: curDebt, nw, gross, ih };
               });
 
-              const sum = (arr,k) => arr.reduce((s,r)=>s+n(r[k]),0);
+              const sm = (arr,k) => arr.reduce((s,r)=>s+n(r[k]),0);
               const selStyle = {background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10};
 
               return (
@@ -3553,31 +3538,31 @@ export default function App() {
                         {enriched.map((r,i)=>(
                           <tr key={i}>
                             <TD left bold color={P.text}>{r.month}</TD>
-                            <TD color={P.gold}>{fmt(r.salary)}</TD>
-                            <TD color={P.emerald}>{fmt(r.tutoring)}</TD>
-                            <TD color={P.teal}>{fmt(r.lendingInterest)}</TD>
-                            <TD bold color={P.gold}>{fmt(r.gross)}</TD>
-                            <TD color={P.ruby}>{fmt(r.expense)}</TD>
-                            <TD color={P.ruby}>{fmt(r.emi)}</TD>
-                            <TD color={P.sapphire}>{fmt(r.invest)}</TD>
-                            <TD bold color={P.emerald}>{fmt(r.ih)}</TD>
-                            <TD color={P.ruby}>{fmt(r.debt)}</TD>
-                            <TD bold color={r.nw>=0?P.emerald:P.ruby}>{fmt(r.nw)}</TD>
+                            <TD color={P.gold}>{abs(r.salary)}</TD>
+                            <TD color={P.emerald}>{abs(r.tutoring)}</TD>
+                            <TD color={P.teal}>{abs(r.lendingInterest)}</TD>
+                            <TD bold color={P.gold}>{abs(r.gross)}</TD>
+                            <TD color={P.ruby}>{abs(r.expense)}</TD>
+                            <TD color={P.ruby}>{abs(r.emi)}</TD>
+                            <TD color={P.sapphire}>{abs(r.invest)}</TD>
+                            <TD bold color={P.emerald}>{abs(r.ih)}</TD>
+                            <TD color={P.ruby}>{abs(r.debt)}</TD>
+                            <TD bold color={r.nw>=0?P.emerald:P.ruby}>{abs(r.nw)}</TD>
                           </tr>
                         ))}
                         {enriched.length>1&&(
                           <tr style={{background:P.card2,borderTop:`2px solid ${P.border}`}}>
                             <TD left bold color={P.gold}>TOTAL</TD>
-                            <TD bold color={P.gold}>{fmt(sum(enriched,"salary"))}</TD>
-                            <TD bold color={P.emerald}>{fmt(sum(enriched,"tutoring"))}</TD>
-                            <TD bold color={P.teal}>{fmt(sum(enriched,"lendingInterest"))}</TD>
-                            <TD bold color={P.gold}>{fmt(sum(enriched,"gross"))}</TD>
-                            <TD bold color={P.ruby}>{fmt(sum(enriched,"expense"))}</TD>
-                            <TD bold color={P.ruby}>{fmt(sum(enriched,"emi"))}</TD>
-                            <TD bold color={P.sapphire}>{fmt(sum(enriched,"invest"))}</TD>
-                            <TD bold color={P.emerald}>{fmt(sum(enriched,"ih"))}</TD>
-                            <TD bold color={P.ruby}>{fmt(sum(enriched,"debt"))}</TD>
-                            <TD bold color={sum(enriched,"nw")>=0?P.emerald:P.ruby}>{fmt(sum(enriched,"nw"))}</TD>
+                            <TD bold color={P.gold}>{abs(sm(enriched,"salary"))}</TD>
+                            <TD bold color={P.emerald}>{abs(sm(enriched,"tutoring"))}</TD>
+                            <TD bold color={P.teal}>{abs(sm(enriched,"lendingInterest"))}</TD>
+                            <TD bold color={P.gold}>{abs(sm(enriched,"gross"))}</TD>
+                            <TD bold color={P.ruby}>{abs(sm(enriched,"expense"))}</TD>
+                            <TD bold color={P.ruby}>{abs(sm(enriched,"emi"))}</TD>
+                            <TD bold color={P.sapphire}>{abs(sm(enriched,"invest"))}</TD>
+                            <TD bold color={P.emerald}>{abs(sm(enriched,"ih"))}</TD>
+                            <TD bold color={P.ruby}>{abs(sm(enriched,"debt"))}</TD>
+                            <TD bold color={sm(enriched,"nw")>=0?P.emerald:P.ruby}>{abs(sm(enriched,"nw"))}</TD>
                           </tr>
                         )}
                       </tbody>
