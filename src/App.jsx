@@ -3074,6 +3074,176 @@ function DebtStressTest({ data, salary, emiTotal, inHand, totalDebt }) {
 }
 
 
+// ─── LENDEN CLUB TAB ──────────────────────────────────────────────────────────
+function LendenClubTab({ data }) {
+  const lc  = data.lendenClub || {};
+  const n   = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const abs = v => `₹${Math.round(Math.abs(n(v))).toLocaleString("en-IN")}`;
+
+  const totalPooled   = n(lc.totalPooled);
+  const tabSummary    = lc.tabSummary    || [];
+  const monthSummary  = lc.monthSummary  || [];
+  const transactions  = lc.transactions  || [];
+  const loanSamples   = lc.loanSamples   || [];
+
+  const totalDisbursed  = tabSummary.reduce((s,t)=>s+n(t.disbursed),0);
+  const totalInterest   = tabSummary.reduce((s,t)=>s+n(t.interest),0);
+  const totalPrincipal  = tabSummary.reduce((s,t)=>s+n(t.principal),0);
+  const totalNPA        = tabSummary.reduce((s,t)=>s+n(t.npa),0);
+  const totalLoans      = tabSummary.reduce((s,t)=>s+n(t.loans),0);
+  const netROI          = totalDisbursed>0 ? Math.round((totalInterest/totalDisbursed)*100) : 0;
+
+  const chartData = monthSummary.map(m=>({
+    month: m.month,
+    Pool:  Math.round(n(m.closingPool)),
+    Added: Math.round(n(m.netInvested)),
+  }));
+
+  return (
+    <div className="fade">
+      {/* KPI Row */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:16}}>
+        {[
+          {label:"Total Pool",       v:abs(totalPooled),    color:P.rose,     icon:"🏛"},
+          {label:"Total Disbursed",  v:abs(totalDisbursed), color:P.sapphire, icon:"💸"},
+          {label:"Interest Earned",  v:abs(totalInterest),  color:P.emerald,  icon:"💰"},
+          {label:"Principal Back",   v:abs(totalPrincipal), color:P.teal,     icon:"🔄"},
+          {label:"Total Loans",      v:`${Math.round(totalLoans)}`,           color:P.violet,   icon:"📋"},
+          {label:"NPA Amount",       v:abs(totalNPA),       color:totalNPA>0?P.ruby:P.emerald, icon:totalNPA>0?"⚠":"✅"},
+        ].map((k,i)=>(
+          <div key={i} style={{background:`${k.color}0A`,border:`1px solid ${k.color}33`,borderRadius:14,padding:"14px 16px",transition:"transform .2s,box-shadow .2s"}}
+            onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 20px ${k.color}33`;}}
+            onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+            <div style={{fontSize:20,marginBottom:6}}>{k.icon}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:k.color}}>{k.v}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:3}}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        {/* Pool Growth Chart */}
+        <Card accent={P.rose}>
+          <SectionHead title="Pool Growth" icon="📈" color={P.rose}/>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={chartData} margin={{top:5,right:10,left:-10,bottom:0}}>
+              <defs>
+                <linearGradient id="poolGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={P.rose} stopOpacity={0.35}/>
+                  <stop offset="95%" stopColor={P.rose} stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="month" tick={{fill:P.muted,fontSize:8}} tickLine={false}/>
+              <YAxis tick={{fill:P.muted,fontSize:8}} tickLine={false} axisLine={false} tickFormatter={v=>v>=100000?`₹${Math.round(v/100000)}L`:`₹${Math.round(v/1000)}K`}/>
+              <Tooltip contentStyle={{background:P.card2,border:`1px solid ${P.border}`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:10}} formatter={v=>`₹${Math.round(v).toLocaleString("en-IN")}`}/>
+              <Area type="monotone" dataKey="Pool" stroke={P.rose} fill="url(#poolGrad)" strokeWidth={2} dot={{fill:P.rose,r:3}} name="Pool"/>
+            </AreaChart>
+          </ResponsiveContainer>
+        </Card>
+
+        {/* Tab Summary */}
+        <Card accent={P.sapphire}>
+          <SectionHead title="Tab-wise Performance" icon="📊" color={P.sapphire}/>
+          <div style={{overflowX:"auto"}}>
+            <table className="row-hover" style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead>
+                <tr style={{borderBottom:`1px solid ${P.border}`}}>
+                  {["Tab","Disbursed","Received","Interest","Outstanding","NPA","Loans"].map((h,i)=>(
+                    <th key={i} style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,padding:"6px 8px",textAlign:i===0?"left":"right",textTransform:"uppercase",letterSpacing:.5,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tabSummary.map((t,i)=>(
+                  <tr key={i} style={{borderBottom:`1px solid ${P.border}18`}}>
+                    <td style={{fontFamily:"'Syne',sans-serif",fontSize:11,fontWeight:700,color:P.rose,padding:"7px 8px"}}>{t.tab}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.gold,padding:"7px 8px",textAlign:"right"}}>{abs(t.disbursed)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.teal,padding:"7px 8px",textAlign:"right"}}>{abs(t.received)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald,padding:"7px 8px",textAlign:"right"}}>{abs(t.interest)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.sapphire,padding:"7px 8px",textAlign:"right"}}>{abs(t.outstanding)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:t.npa>0?P.ruby:P.emerald,padding:"7px 8px",textAlign:"right"}}>{t.npa>0?abs(t.npa):"✅"}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.violet,padding:"7px 8px",textAlign:"right"}}>{Math.round(n(t.loans))}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{borderTop:`2px solid ${P.border}`,background:P.card2}}>
+                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,fontWeight:700,color:P.gold,padding:"8px"}}>TOTAL</td>
+                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,fontWeight:700,color:P.gold,padding:"8px",textAlign:"right"}}>{abs(totalDisbursed)}</td>
+                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.teal,padding:"8px",textAlign:"right"}}>{abs(tabSummary.reduce((s,t)=>s+n(t.received),0))}</td>
+                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,fontWeight:700,color:P.emerald,padding:"8px",textAlign:"right"}}>{abs(totalInterest)}</td>
+                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.sapphire,padding:"8px",textAlign:"right"}}>{abs(totalPooled)}</td>
+                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:totalNPA>0?P.ruby:P.emerald,padding:"8px",textAlign:"right"}}>{totalNPA>0?abs(totalNPA):"✅"}</td>
+                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.violet,padding:"8px",textAlign:"right"}}>{Math.round(totalLoans)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </Card>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        {/* Transactions */}
+        <Card accent={P.teal}>
+          <SectionHead title="Investment Transactions" icon="💸" color={P.teal}/>
+          <div style={{maxHeight:260,overflowY:"auto"}}>
+            <table className="row-hover" style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead>
+                <tr style={{borderBottom:`1px solid ${P.border}`}}>
+                  {["Date","Amount","Pool","Remark"].map((h,i)=>(
+                    <th key={i} style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,padding:"6px 8px",textAlign:i===0||i===3?"left":"right",textTransform:"uppercase",letterSpacing:.5,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map((t,i)=>(
+                  <tr key={i} style={{borderBottom:`1px solid ${P.border}18`}}>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,padding:"7px 8px",whiteSpace:"nowrap"}}>{t.date}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:t.invested<0?P.ruby:P.emerald,padding:"7px 8px",textAlign:"right"}}>{t.invested<0?`-${abs(t.invested)}`:abs(t.invested)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.teal,padding:"7px 8px",textAlign:"right"}}>{abs(t.pool)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.text,padding:"7px 8px",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.remark}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Loan Samples */}
+        <Card accent={P.violet}>
+          <SectionHead title="Loan Samples" icon="📋" color={P.violet}/>
+          <div style={{maxHeight:260,overflowY:"auto"}}>
+            <table className="row-hover" style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead>
+                <tr style={{borderBottom:`1px solid ${P.border}`}}>
+                  {["Tab","Amount","Rate","Tenure","Score","Status","P&L"].map((h,i)=>(
+                    <th key={i} style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,padding:"6px 8px",textAlign:i===0?"left":"right",textTransform:"uppercase",letterSpacing:.5,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loanSamples.map((l,i)=>(
+                  <tr key={i} style={{borderBottom:`1px solid ${P.border}18`}}>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.violet,padding:"7px 8px",whiteSpace:"nowrap"}}>{l.tab}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.gold,padding:"7px 8px",textAlign:"right"}}>{abs(l.amount)}</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.teal,padding:"7px 8px",textAlign:"right"}}>{n(l.rate)}%</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,padding:"7px 8px",textAlign:"right"}}>{l.tenure}m</td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.sapphire,padding:"7px 8px",textAlign:"right"}}>{l.score}</td>
+                    <td style={{padding:"7px 8px",textAlign:"right"}}>
+                      <span style={{background:`${l.status==="CLOSED"?P.emerald:P.gold}18`,border:`1px solid ${l.status==="CLOSED"?P.emerald:P.gold}33`,borderRadius:20,padding:"2px 7px",fontFamily:"'Fira Code',monospace",fontSize:8,fontWeight:700,color:l.status==="CLOSED"?P.emerald:P.gold}}>{l.status}</span>
+                    </td>
+                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:n(l.pl)>0?P.emerald:P.muted,padding:"7px 8px",textAlign:"right"}}>{n(l.pl)>0?abs(l.pl):"—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ─── SALARY TRACKER ───────────────────────────────────────────────────────────
 function SalaryTracker({ data }) {
   const d   = data;
