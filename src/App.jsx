@@ -1351,12 +1351,34 @@ function SyncBadge({ status, lastSync }) {
 }
 
 
+// ─── GEMINI HELPER ────────────────────────────────────────────────────────────
+async function geminiChat({ key, system="", messages=[], maxTokens=1000 }) {
+  if (!key) throw new Error("Gemini API key not set. Please enter your key above.");
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+  const body = {
+    ...(system ? { system_instruction:{ parts:[{ text:system }] } } : {}),
+    contents: messages.map(m => ({
+      role: m.role==="assistant" ? "model" : "user",
+      parts: [{ text: m.content }]
+    })),
+    generationConfig: { maxOutputTokens: maxTokens }
+  };
+  const res = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.message);
+  return json.candidates?.[0]?.content?.parts?.[0]?.text || "No response received.";
+}
+
 // ─── AI HUB — COMPLETE LIVE FINANCIAL ADVISOR (18+ Features) ─────────────────
 // Sections: Core Chat | Alerts | Calculators | Deep Analysis
 // Replaces: AIAdviser, AIBuilder, AICodeFixer, Milestones
 
 function AIHub({ data }) {
   const [activeSection, setActiveSection] = useState("chat");
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem("pf_gemini_key") || "");
+  const [keyInput,  setKeyInput]  = useState("");
+  const saveKey = () => { const k=keyInput.trim(); if(k){setGeminiKey(k);localStorage.setItem("pf_gemini_key",k);setKeyInput("");} };
+  const clearKey = () => { setGeminiKey(""); setKeyInput(""); localStorage.removeItem("pf_gemini_key"); };
   const d = data;
 
   // ── Shared derived values ──
@@ -1413,6 +1435,27 @@ YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ num
 
   return (
     <div className="fade">
+      {/* ── Gemini API Key Banner ── */}
+      {!geminiKey ? (
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:`linear-gradient(135deg,${P.gold}18,${P.orange}0A)`,border:`1px solid ${P.gold}44`,borderRadius:12,flexWrap:"wrap"}}>
+          <span style={{fontSize:18}}>🔑</span>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,color:P.gold,marginBottom:2}}>Gemini API Key Required</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>Free key from <span style={{color:P.sapphire}}>aistudio.google.com</span> — saved locally, never uploaded</div>
+          </div>
+          <input value={keyInput} onChange={e=>setKeyInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveKey()}
+            placeholder="Paste your AIzaSy... key here"
+            style={{flex:2,minWidth:220,padding:"8px 12px",background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,color:P.text,fontFamily:"'Fira Code',monospace",fontSize:11,outline:"none"}}/>
+          <button onClick={saveKey} style={{padding:"8px 16px",background:`linear-gradient(135deg,${P.gold},${P.orange})`,border:"none",borderRadius:8,color:"#000",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"'Fira Code',monospace"}}>Save Key</button>
+        </div>
+      ) : (
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 14px",background:`${P.emerald}12`,border:`1px solid ${P.emerald}33`,borderRadius:10}}>
+          <span style={{color:P.emerald,fontSize:13}}>✓</span>
+          <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald}}>Gemini API connected · AI features active</span>
+          <button onClick={clearKey} style={{marginLeft:"auto",padding:"3px 10px",background:"transparent",border:`1px solid ${P.muted}44`,borderRadius:6,color:P.muted,fontSize:9,cursor:"pointer",fontFamily:"'Fira Code',monospace"}}>Change Key</button>
+        </div>
+      )}
+
       {/* ── Section Nav ── */}
       <div style={{display:"flex",gap:8,marginBottom:20,background:P.card2,borderRadius:14,padding:6,border:`1px solid ${P.border}`}}>
         {SECTIONS.map(s=>(
@@ -1426,10 +1469,10 @@ YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ num
         ))}
       </div>
 
-      {activeSection==="chat"        && <AIChatSection data={d} systemPrompt={buildSystemPrompt()} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
-      {activeSection==="alerts"      && <AIAlertsSection data={d} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary}/>}
-      {activeSection==="calculators" && <AICalculatorsSection data={d} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
-      {activeSection==="analysis"    && <AIAnalysisSection data={d} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+      {activeSection==="chat"        && <AIChatSection data={d} geminiKey={geminiKey} systemPrompt={buildSystemPrompt()} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+      {activeSection==="alerts"      && <AIAlertsSection data={d} geminiKey={geminiKey} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary}/>}
+      {activeSection==="calculators" && <AICalculatorsSection data={d} geminiKey={geminiKey} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+      {activeSection==="analysis"    && <AIAnalysisSection data={d} geminiKey={geminiKey} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
     </div>
   );
 }
@@ -1437,7 +1480,7 @@ YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ num
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 1 — LIVE ADVISOR CHAT
 // ═══════════════════════════════════════════════════════════════════════════════
-function AIChatSection({ data, systemPrompt, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
+function AIChatSection({ data, geminiKey, systemPrompt, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [messages, setMessages] = useState([]);
@@ -1488,18 +1531,7 @@ Ask me anything — I know your complete financial picture!`;
     setMessages(history);
     setLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
-          system: systemPrompt,
-          messages: history.slice(-10).map(m=>({ role:m.role, content:m.content }))
-        })
-      });
-      const json = await res.json();
-      const reply = json.content?.map(c=>c.text||"").join("") || "Sorry, I couldn't respond.";
+      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:history.slice(-10), maxTokens:1000 });
       setMessages(prev=>[...prev,{ role:"assistant", content:reply }]);
     } catch(e) {
       setMessages(prev=>[...prev,{ role:"assistant", content:`⚠ Connection error: ${e.message}` }]);
@@ -1622,7 +1654,7 @@ Ask me anything — I know your complete financial picture!`;
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 2 — SMART ALERTS
 // ═══════════════════════════════════════════════════════════════════════════════
-function AIAlertsSection({ data, totalDebt, totalAssets, netWorth, emiTotal, salary }) {
+function AIAlertsSection({ data, geminiKey, totalDebt, totalAssets, netWorth, emiTotal, salary }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [reportLoading, setReportLoading] = useState(false);
@@ -1675,11 +1707,7 @@ function AIAlertsSection({ data, totalDebt, totalAssets, netWorth, emiTotal, sal
   const generateReport = async () => {
     setReportLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:1000,
-          messages:[{role:"user",content:`Generate a concise month-end financial review for ${d.settings?.name||"Naresh"} (${d.income?.month||"Mar-26"}).
+      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Generate a concise month-end financial review for ${d.settings?.name||"Naresh"} (${d.income?.month||"Mar-26"}).
 
 Data:
 - Salary: ₹${n(d.income?.salary).toLocaleString("en-IN")} | In-hand: ₹${n(d.income?.inHand).toLocaleString("en-IN")}
@@ -1691,11 +1719,8 @@ Data:
 - Budget spent: ₹${totalActual.toLocaleString("en-IN")} vs budget ₹${totalBudget.toLocaleString("en-IN")}
 - Health score: ${healthScore}/100
 
-Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) investment progress (4) debt status (5) one key recommendation for next month. Be specific with numbers.`}]
-        })
-      });
-      const json = await res.json();
-      setReport(json.content?.map(c=>c.text||"").join("")||"");
+Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) investment progress (4) debt status (5) one key recommendation for next month. Be specific with numbers.`}], maxTokens:1000 });
+      setReport(reply);
     } catch(e) { setReport("Error generating report: "+e.message); }
     setReportLoading(false);
   };
@@ -1704,15 +1729,8 @@ Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) in
   const generateWhatsApp = async () => {
     setWpLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:300,
-          messages:[{role:"user",content:`Write a firm but professional WhatsApp message from ${d.settings?.name||"Naresh"} to KishanRao following up on ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")} overdue interest (${n(d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"))?.monthsElapsed||2)} months). Loan amount: ₹${n(kishanRao?.amount||100000).toLocaleString("en-IN")} @ 2%/month. Keep it polite but clear about urgency. Under 100 words. No emojis spam.`}]
-        })
-      });
-      const json = await res.json();
-      setWhatsapp(json.content?.map(c=>c.text||"").join("")||"");
+      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Write a firm but professional WhatsApp message from ${d.settings?.name||"Naresh"} to KishanRao following up on ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")} overdue interest (${n(d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"))?.monthsElapsed||2)} months). Loan amount: ₹${n(kishanRao?.amount||100000).toLocaleString("en-IN")} @ 2%/month. Keep it polite but clear about urgency. Under 100 words. No emojis spam.`}], maxTokens:300 });
+      setWhatsapp(reply);
     } catch(e) { setWhatsapp("Error: "+e.message); }
     setWpLoading(false);
   };
@@ -1818,7 +1836,7 @@ Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) in
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 3 — SMART CALCULATORS
 // ═══════════════════════════════════════════════════════════════════════════════
-function AICalculatorsSection({ data, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
+function AICalculatorsSection({ data, geminiKey, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [calcTab, setCalcTab] = useState("debt");
@@ -2339,7 +2357,7 @@ function EmergencyFundCalc({ data, emiTotal, salary, inHand }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 4 — DEEP ANALYSIS
 // ═══════════════════════════════════════════════════════════════════════════════
-function AIAnalysisSection({ data, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
+function AIAnalysisSection({ data, geminiKey, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [analysisTab, setAnalysisTab] = useState("whatif");
@@ -2363,18 +2381,18 @@ function AIAnalysisSection({ data, totalDebt, totalAssets, netWorth, emiTotal, s
           </button>
         ))}
       </div>
-      {analysisTab==="whatif"   && <WhatIfEngine data={d} systemPrompt={`You are a financial scenario analyst. Analyze what-if scenarios for ${d.settings?.name||"Naresh"} using their real data: Salary ₹${n(d.income?.salary).toLocaleString("en-IN")}, in-hand ₹${n(d.income?.inHand).toLocaleString("en-IN")}, HDFC loan ₹${Math.round(n(d.loans?.hdfc?.outstanding)).toLocaleString("en-IN")} @10.5%, IDFC ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} @13.5%, net worth ₹${Math.round(netWorth).toLocaleString("en-IN")}, investments ₹${Math.round(totalAssets).toLocaleString("en-IN")}. Show side-by-side current vs scenario with specific numbers. Be precise and actionable.`}/>}
-      {analysisTab==="tax"      && <TaxPlanner data={d} salary={salary}/>}
-      {analysisTab==="spend"    && <SpendAudit data={d}/>}
+      {analysisTab==="whatif"   && <WhatIfEngine data={d} geminiKey={geminiKey} systemPrompt={`You are a financial scenario analyst. Analyze what-if scenarios for ${d.settings?.name||"Naresh"} using their real data: Salary ₹${n(d.income?.salary).toLocaleString("en-IN")}, in-hand ₹${n(d.income?.inHand).toLocaleString("en-IN")}, HDFC loan ₹${Math.round(n(d.loans?.hdfc?.outstanding)).toLocaleString("en-IN")} @10.5%, IDFC ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} @13.5%, net worth ₹${Math.round(netWorth).toLocaleString("en-IN")}, investments ₹${Math.round(totalAssets).toLocaleString("en-IN")}. Show side-by-side current vs scenario with specific numbers. Be precise and actionable.`}/>}
+      {analysisTab==="tax"      && <TaxPlanner data={d} geminiKey={geminiKey} salary={salary}/>}
+      {analysisTab==="spend"    && <SpendAudit data={d} geminiKey={geminiKey}/>}
       {analysisTab==="salaryup" && <SalaryImpact data={d} salary={salary} emiTotal={emiTotal} inHand={inHand} netWorth={netWorth} totalAssets={totalAssets}/>}
-      {analysisTab==="goals"    && <GoalTracker data={d} netWorth={netWorth} totalAssets={totalAssets} totalDebt={totalDebt} inHand={inHand} emiTotal={emiTotal}/>}
+      {analysisTab==="goals"    && <GoalTracker data={d} geminiKey={geminiKey} netWorth={netWorth} totalAssets={totalAssets} totalDebt={totalDebt} inHand={inHand} emiTotal={emiTotal}/>}
       {analysisTab==="stress"   && <DebtStressTest data={d} salary={salary} emiTotal={emiTotal} inHand={inHand} totalDebt={totalDebt}/>}
     </div>
   );
 }
 
 // ── 15: What-If Scenario Engine ──
-function WhatIfEngine({ data, systemPrompt }) {
+function WhatIfEngine({ data, geminiKey, systemPrompt }) {
   const [scenario, setScenario] = useState("");
   const [result, setResult]     = useState(null);
   const [loading, setLoading]   = useState(false);
@@ -2393,16 +2411,8 @@ function WhatIfEngine({ data, systemPrompt }) {
     if (!s || loading) return;
     setLoading(true); setResult(null);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:800,
-          system: systemPrompt,
-          messages:[{role:"user",content:`Analyze this scenario with real numbers: "${s}"\n\nProvide:\n1. CURRENT SITUATION (with actual numbers)\n2. SCENARIO OUTCOME (what changes, what doesn't)\n3. NET IMPACT (better or worse, by how much ₹)\n4. RECOMMENDATION (should they do it?)\n\nBe specific. Use ₹ amounts. Keep it under 250 words.`}]
-        })
-      });
-      const json = await res.json();
-      setResult(json.content?.map(c=>c.text||"").join("")||"");
+      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:[{role:"user",content:`Analyze this scenario with real numbers: "${s}"\n\nProvide:\n1. CURRENT SITUATION (with actual numbers)\n2. SCENARIO OUTCOME (what changes, what doesn't)\n3. NET IMPACT (better or worse, by how much ₹)\n4. RECOMMENDATION (should they do it?)\n\nBe specific. Use ₹ amounts. Keep it under 250 words.`}], maxTokens:800 });
+      setResult(reply);
     } catch(e) { setResult("Error: "+e.message); }
     setLoading(false);
   };
@@ -2442,7 +2452,7 @@ function WhatIfEngine({ data, systemPrompt }) {
 }
 
 // ── 16: Tax Planner ──
-function TaxPlanner({ data, salary }) {
+function TaxPlanner({ data, geminiKey, salary }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [loading, setLoading] = useState(false);
@@ -2487,11 +2497,7 @@ function TaxPlanner({ data, salary }) {
   const runFullAnalysis = async () => {
     setLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:800,
-          messages:[{role:"user",content:`Do a complete tax analysis for ${d.settings?.name||"Naresh"} FY 2025-26:
+      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Do a complete tax analysis for ${d.settings?.name||"Naresh"} FY 2025-26:
 
 Gross annual income: ₹${grossAnnual.toLocaleString("en-IN")}
 Home loan interest paid: ₹${Math.round(homeInterest).toLocaleString("en-IN")} (Section 24(b) — max ₹2L deduction)
@@ -2501,11 +2507,8 @@ Crypto gains: ₹${cryptoGain.toLocaleString("en-IN")} (30% flat tax, no offsett
 Old regime tax: ₹${oldTax.toLocaleString("en-IN")}
 New regime tax: ₹${newTax.toLocaleString("en-IN")}
 
-Cover: (1) Which regime is better and by how much (2) Unused 80C opportunity (3) NPS 80CCD(1B) deduction available (4) F&O loss implications (5) Crypto tax obligation (6) Advance tax deadlines. Be specific with ₹ amounts.`}]
-        })
-      });
-      const json = await res.json();
-      setAnalysis(json.content?.map(c=>c.text||"").join("")||"");
+Cover: (1) Which regime is better and by how much (2) Unused 80C opportunity (3) NPS 80CCD(1B) deduction available (4) F&O loss implications (5) Crypto tax obligation (6) Advance tax deadlines. Be specific with ₹ amounts.`}], maxTokens:800 });
+      setAnalysis(reply);
     } catch(e) { setAnalysis("Error: "+e.message); }
     setLoading(false);
   };
@@ -2550,7 +2553,7 @@ Cover: (1) Which regime is better and by how much (2) Unused 80C opportunity (3)
 }
 
 // ── 17: Spend Audit ──
-function SpendAudit({ data }) {
+function SpendAudit({ data, geminiKey }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [loading, setLoading] = useState(false);
@@ -2564,22 +2567,15 @@ function SpendAudit({ data }) {
   const runAudit = async () => {
     setLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:600,
-          messages:[{role:"user",content:`Analyze spending patterns for ${d.settings?.name||"Naresh"} and flag issues:
+      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Analyze spending patterns for ${d.settings?.name||"Naresh"} and flag issues:
 
 Category totals this month: ${JSON.stringify(catTotals)}
 Auto-debit subscriptions: ${JSON.stringify(subscriptions.map(e=>({desc:e.desc,amount:n(e.amount)})))}
 Budget vs actual: ${JSON.stringify({budget:d.budget, actual:d.budget?.actual})}
 Income this month: ₹${n(d.income?.inHand).toLocaleString("en-IN")}
 
-Identify: (1) Top 3 overspend categories vs budget (2) Any forgotten/unnecessary subscriptions (3) Unusual spending patterns (4) 2 specific cuts that would free up most cash. Be direct and specific.`}]
-        })
-      });
-      const json = await res.json();
-      setAudit(json.content?.map(c=>c.text||"").join("")||"");
+Identify: (1) Top 3 overspend categories vs budget (2) Any forgotten/unnecessary subscriptions (3) Unusual spending patterns (4) 2 specific cuts that would free up most cash. Be direct and specific.`}], maxTokens:600 });
+      setAudit(reply);
     } catch(e) { setAudit("Error: "+e.message); }
     setLoading(false);
   };
@@ -2661,7 +2657,7 @@ function SalaryImpact({ data, salary, emiTotal, inHand, netWorth, totalAssets })
 }
 
 // ── Goal Tracker ──
-function GoalTracker({ data, netWorth, totalAssets, totalDebt, inHand, emiTotal }) {
+function GoalTracker({ data, geminiKey, netWorth, totalAssets, totalDebt, inHand, emiTotal }) {
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [loading, setLoading] = useState(false);
   const [check, setCheck]     = useState(null);
@@ -2678,21 +2674,14 @@ function GoalTracker({ data, netWorth, totalAssets, totalDebt, inHand, emiTotal 
   const runCheck = async () => {
     setLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:500,
-          messages:[{role:"user",content:`Review goal progress for ${data.settings?.name||"Naresh"} and give an honest assessment:
+      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Review goal progress for ${data.settings?.name||"Naresh"} and give an honest assessment:
 
 Goals: ${JSON.stringify(goals.map(g=>({name:g.name, progress:`${Math.min(100,g.lower?(g.current>0?(1-g.current/Math.max(1,g.target+g.current))*100:100):(g.target>0?(g.current/g.target)*100:100)).toFixed(0)}%`, current:g.current, target:g.target})))}
 Monthly savings capacity: ₹${Math.max(0,n(inHand)-15000).toLocaleString("en-IN")}
 Net worth: ₹${Math.round(netWorth).toLocaleString("en-IN")}
 
-For each goal: on-track or off-track? What's the specific action to accelerate it? Keep it to 2-3 lines per goal.`}]
-        })
-      });
-      const json = await res.json();
-      setCheck(json.content?.map(c=>c.text||"").join("")||"");
+For each goal: on-track or off-track? What's the specific action to accelerate it? Keep it to 2-3 lines per goal.`}], maxTokens:500 });
+      setCheck(reply);
     } catch(e) { setCheck("Error: "+e.message); }
     setLoading(false);
   };
