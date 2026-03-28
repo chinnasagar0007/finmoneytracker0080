@@ -3141,7 +3141,7 @@ function LendenClubTab({ data }) {
   const totalDisbursedFromLoans=allLoans.reduce((s,l)=>s+n(l.amount),0);
   const totalReceivedFromLoans=allLoans.reduce((s,l)=>s+n(l.totalRecv),0);
   const totalFees=allLoans.reduce((s,l)=>s+n(l.fee),0);
-  const totalPL=allLoans.reduce((s,l)=>s+n(l.pl),0);
+  const totalPL=closedLoans.reduce((s,l)=>s+n(l.pl),0);  // only closed loans have a finalised P&L
   const outstandingFromLoans=activeLoans.reduce((s,l)=>s+n(l.outstandingAmount),0);
   const totalDisbursed=d.lendenClub.tabSummary.reduce((s,t)=>s+t.disbursed,0);
   const totalReceived=d.lendenClub.tabSummary.reduce((s,t)=>s+t.received,0);
@@ -3149,6 +3149,9 @@ function LendenClubTab({ data }) {
   const totalInterestFromTab=d.lendenClub.tabSummary.reduce((s,t)=>s+t.interest,0);
   const displayTotalDisbursed=totalDisbursedFromLoans||totalDisbursed;
   const displayTotalReceived=totalReceivedFromLoans||totalReceived;
+  // Closed-loan-only figures for accurate Recovery % (active loans have only partial repayments)
+  const closedTotalRecv=closedLoans.reduce((s,l)=>s+n(l.totalRecv),0);
+  const closedTotalAmount=closedLoans.reduce((s,l)=>s+n(l.amount),0);
   const displayTotalOutstanding=outstandingFromLoans||totalOutstanding;
   const currentCapitalDeployed=allLoans.length>0?outstandingFromLoans:totalOutstanding;
   const displayTotalInterest=totalInterestEarned||totalInterestFromTab;
@@ -3156,7 +3159,9 @@ function LendenClubTab({ data }) {
   const capitalAfterEarnings=externalCapitalAdded+displayTotalInterest;
   const idleCash=capitalAfterEarnings-currentCapitalDeployed;
   const avgClosedDuration=closedLoans.length?(closedLoans.reduce((s,l)=>s+(l.monthsToClose||l.tenure||0),0)/closedLoans.length).toFixed(1):0;
-  const avgClosedMonthlyRate=closedLoans.length?(closedLoans.reduce((s,l)=>s+l.interestRecv,0)/Math.max(closedLoans.reduce((s,l)=>s+(n(l.amount)*Math.max(1,n(l.monthsToClose))),0),1)*100).toFixed(2):"0.00";
+  // Only include loans whose duration was actually parsed (monthsToClose > 0) to avoid inflating the rate
+  const validClosedLoans=closedLoans.filter(l=>l.monthsToClose>0);
+  const avgClosedMonthlyRate=validClosedLoans.length?(validClosedLoans.reduce((s,l)=>s+l.interestRecv,0)/Math.max(validClosedLoans.reduce((s,l)=>s+(n(l.amount)*l.monthsToClose),0),1)*100).toFixed(2):"N/A";
   const summaryTotalLoans=num(d.lendenClub.reportedTotalLoans)||d.lendenClub.tabSummary.reduce((s,t)=>s+t.loans,0)||allLoans.length;
   const summaryClosedLoans=num(d.lendenClub.reportedClosedLoans)||closedLoans.length;
   const summaryOverdueLoans=num(d.lendenClub.reportedOverdueLoans)||overdueLoans.length;
@@ -3167,7 +3172,9 @@ function LendenClubTab({ data }) {
   const closedDisbursed=closedLoans.reduce((s,l)=>s+n(l.amount),0);
   const closedInterest=closedLoans.reduce((s,l)=>s+n(l.interestRecv),0);
   const closedRate=closedDisbursed>0?((closedInterest/closedDisbursed)*100):0;
-  const roi=d.lendenClub.totalPooled>0?((displayTotalInterest/d.lendenClub.totalPooled)*(12/3)*100).toFixed(0):0;
+  const txDates=d.lendenClub.transactions.map(t=>parseDateValue(t.date)).filter(Boolean);
+  const elapsedMonths=txDates.length>=2?Math.max(1,diffMonthsBetweenDates(new Date(Math.min(...txDates)),new Date(Math.max(...txDates)))):3;
+  const roi=d.lendenClub.totalPooled>0?((displayTotalInterest/d.lendenClub.totalPooled)*(12/elapsedMonths)*100).toFixed(0):0;
   const avgScore=allLoans.length?Math.round(allLoans.reduce((s,l)=>s+n(l.score),0)/allLoans.length):0;
   const matchesLoanTabFilter=(loan)=>!hasLoanTabFilter||selectedLoanTabs.includes(String(loan.tab||"").trim());
   const matchesClosureFilter=(loan)=>{if(!hasLoanTabFilter)return true;const parts=getDateParts(loan.closure);if(!parts)return false;return(loanYearFilter==="ALL_YEARS"||parts.year===loanYearFilter)&&(loanMonthNameFilter==="ALL_MONTHS"||parts.month===loanMonthNameFilter);};
@@ -3201,9 +3208,9 @@ function LendenClubTab({ data }) {
         <GlassKPI label="Capital Available"              value={fmtF(capitalAfterEarnings)}   sub="Capital added + interest received"                                  color={P.teal}     icon="💹"/>
         <GlassKPI label="Current Capital Deployed"       value={fmtF(currentCapitalDeployed)} sub="Sum of active principal outstanding"                                color={P.gold}     icon="🏦"/>
         <GlassKPI label="Portfolio Annualised ROI"       value={`${roi}%`}                    sub="Interest received annualised on pooled capital"                    color={P.emerald}  icon="📈"/>
-        <GlassKPI label="Closed Loan Avg Monthly Yield"  value={`${avgClosedMonthlyRate}%`}   sub={`Across ${summaryClosedLoans} closed loans · ${avgClosedDuration} mo avg`} color={P.sapphire} icon="⏱"/>
-        <GlassKPI label="Active / Closed / Pending"      value={`${summaryActiveLoans} / ${summaryClosedLoans} / ${summaryPendingLoans}`} sub={`Overdue ${summaryOverdueLoans} · Recovery ${pct(displayTotalReceived,displayTotalDisbursed)}%`} color={P.violet} icon="🔄"/>
-        <GlassKPI label="Interest Rate"                  value={`${Math.round(grossRate)}%`}  sub="Overall interest received on disbursed capital"                    color={P.rose}     icon="🧮"/>
+        <GlassKPI label="Closed Loan Avg Monthly Yield"  value={avgClosedMonthlyRate==="N/A"?avgClosedMonthlyRate:`${avgClosedMonthlyRate}%`} sub={`${validClosedLoans.length} loans w/ known dates · ${avgClosedDuration} mo avg`} color={P.sapphire} icon="⏱"/>
+        <GlassKPI label="Active / Closed / Pending"      value={`${summaryActiveLoans} / ${summaryClosedLoans} / ${summaryPendingLoans}`} sub={`Overdue ${summaryOverdueLoans} · Closed Recovery ${pct(closedTotalRecv,closedTotalAmount)}%`} color={P.violet} icon="🔄"/>
+        <GlassKPI label="Cumulative Yield (on disbursed)" value={`${Math.round(grossRate)}%`} sub="Total interest ÷ total disbursed (not annualised)"                  color={P.rose}     icon="🧮"/>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}}>
@@ -3261,11 +3268,11 @@ function LendenClubTab({ data }) {
         <SectionHead title="Interest & Fee Analysis" icon="🧾" color={P.sapphire}/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
           {[
-            {label:"Disbursed",        value:fmtF(displayTotalDisbursed),  color:P.sapphire},
-            {label:"Received",         value:fmtF(displayTotalReceived),   color:P.emerald},
-            {label:"Interest Received",value:fmtF(displayTotalInterest),   color:P.teal},
-            {label:"Fees",             value:fmtF(totalFees),              color:P.ruby},
-            {label:"Net P&L",          value:fmtF(totalPL),                color:totalPL>=0?P.emerald:P.ruby},
+            {label:"Total Disbursed",            value:fmtF(displayTotalDisbursed),  color:P.sapphire},
+            {label:"Total Collected (all loans)", value:fmtF(displayTotalReceived),   color:P.emerald},
+            {label:"Interest Received",           value:fmtF(displayTotalInterest),   color:P.teal},
+            {label:"Fees",                        value:fmtF(totalFees),              color:P.ruby},
+            {label:"Net P&L (closed loans only)", value:fmtF(totalPL),                color:totalPL>=0?P.emerald:P.ruby},
           ].map(item=>(
             <div key={item.label} style={{background:P.card3,border:`1px solid ${item.color}22`,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{item.label}</div>
@@ -3275,7 +3282,7 @@ function LendenClubTab({ data }) {
         </div>
         <div style={{marginTop:10,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
           {[
-            {label:"Recovery %",          value:`${pct(displayTotalReceived,displayTotalDisbursed)}%`, color:P.emerald},
+            {label:"Closed-Loan Recovery %", value:`${pct(closedTotalRecv,closedTotalAmount)}%`,         color:P.emerald},
             {label:"Fee Drag",            value:`${Math.round(feesDrag)}%`,   color:P.sapphire},
             {label:"Closed Loan ROI",     value:`${Math.round(closedRate)}%`, color:P.gold},
             {label:"Avg Closed Duration", value:`${avgClosedDuration} mo`,    color:P.violet},
