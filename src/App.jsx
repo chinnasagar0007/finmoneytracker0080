@@ -550,9 +550,10 @@ function mapLendenClubData(raw) {
     "Outstanding"
   ));
 
-  const totalPooled = monthSummary.length > 0
-    ? monthSummary[monthSummary.length-1].closingPool
-    : totalPooledFromSummary || (transactions.length > 0 ? n(transactions[transactions.length-1].pool) : tabSummary.reduce((s,t)=>s+t.outstanding,0));
+  const lastClosingPool = monthSummary.length > 0 ? monthSummary[monthSummary.length-1].closingPool : 0;
+  const txPool = transactions.length > 0 ? n(transactions[transactions.length-1].pool) : 0;
+  const tabOutstanding = tabSummary.reduce((s,t)=>s+t.outstanding,0);
+  const totalPooled = lastClosingPool || totalPooledFromSummary || txPool || tabOutstanding;
 
   const reportedTotalLoans = num(getField(summaryMeta, "Total Loans", "Loans", "Loan Count", "Total Loan Count"));
   const reportedClosedLoans = num(getField(summaryMeta, "Closed Loans", "Loans Closed", "Total Closed", "Closed Count"));
