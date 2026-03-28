@@ -1369,7 +1369,7 @@ function renderMD(text) {
 }
 
 // ─── GEMINI HELPER ────────────────────────────────────────────────────────────
-async function geminiChat({ key, system="", messages=[], maxTokens=1000 }) {
+async function geminiChat({ key, system="", messages=[], maxTokens=2048 }) {
   if (!key) throw new Error("Gemini API key not set. Please enter your key above.");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
   const body = {
@@ -1548,7 +1548,7 @@ Ask me anything — I know your complete financial picture!`;
     setMessages(history);
     setLoading(true);
     try {
-      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:history.slice(-10), maxTokens:1000 });
+      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:history.slice(-10), maxTokens:2048 });
       setMessages(prev=>[...prev,{ role:"assistant", content:reply }]);
     } catch(e) {
       setMessages(prev=>[...prev,{ role:"assistant", content:`⚠ Connection error: ${e.message}` }]);
