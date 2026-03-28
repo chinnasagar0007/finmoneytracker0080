@@ -3187,6 +3187,7 @@ function LendenClubTab({ data }) {
   const displayedTotalCounts={loans:visibleMonthlyTotals.loans,active:visibleMonthlyTotals.active,closed:visibleMonthlyTotals.closed,pending:visibleMonthlyTotals.pending,overdue:visibleMonthlyTotals.overdue,npa:visibleMonthlyTotals.npa};
   const REPAYMENT_OPTIONS=["","On Track","DUE TODAY","DUE SOON","OVERDUE","NPA","Closed"];
   const selStyle={background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10};
+  const fmtD=v=>{const x=typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;const neg=x<0;const s=`₹${Math.abs(x).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}`;return neg?`-${s}`:s;};
 
   return (
     <div className="fade">
@@ -3199,14 +3200,14 @@ function LendenClubTab({ data }) {
         </div>
         <div style={{marginLeft:"auto",textAlign:"right"}}>
           <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>Total Pooled</div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:800,color:P.rose}}>{fmt(d.lendenClub.totalPooled)}</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:800,color:P.rose}}>{fmtD(d.lendenClub.totalPooled)}</div>
         </div>
       </div>
 
       {/* KPI grid */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}}>
-        <GlassKPI label="Capital Available"              value={fmtF(capitalAfterEarnings)}   sub="Capital added + interest received"                                  color={P.teal}     icon="💹"/>
-        <GlassKPI label="Current Capital Deployed"       value={fmtF(currentCapitalDeployed)} sub="Sum of active principal outstanding"                                color={P.gold}     icon="🏦"/>
+        <GlassKPI label="Capital Available"              value={fmtD(capitalAfterEarnings)}   sub="Capital added + interest received"                                  color={P.teal}     icon="💹"/>
+        <GlassKPI label="Current Capital Deployed"       value={fmtD(currentCapitalDeployed)} sub="Sum of active principal outstanding"                                color={P.gold}     icon="🏦"/>
         <GlassKPI label="Portfolio Annualised ROI"       value={`${roi}%`}                    sub="Interest received annualised on pooled capital"                    color={P.emerald}  icon="📈"/>
         <GlassKPI label="Closed Loan Avg Monthly Yield"  value={avgClosedMonthlyRate==="N/A"?avgClosedMonthlyRate:`${avgClosedMonthlyRate}%`} sub={`${validClosedLoans.length} loans w/ known dates · ${avgClosedDuration} mo avg`} color={P.sapphire} icon="⏱"/>
         <GlassKPI label="Active / Closed / Pending"      value={`${summaryActiveLoans} / ${summaryClosedLoans} / ${summaryPendingLoans}`} sub={`Overdue ${summaryOverdueLoans} · Closed Recovery ${pct(closedTotalRecv,closedTotalAmount)}%`} color={P.violet} icon="🔄"/>
@@ -3268,11 +3269,11 @@ function LendenClubTab({ data }) {
         <SectionHead title="Interest & Fee Analysis" icon="🧾" color={P.sapphire}/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
           {[
-            {label:"Total Disbursed",            value:fmtF(displayTotalDisbursed),  color:P.sapphire},
-            {label:"Total Collected (all loans)", value:fmtF(displayTotalReceived),   color:P.emerald},
-            {label:"Interest Received",           value:fmtF(displayTotalInterest),   color:P.teal},
-            {label:"Fees",                        value:fmtF(totalFees),              color:P.ruby},
-            {label:"Net P&L (closed loans only)", value:fmtF(totalPL),                color:totalPL>=0?P.emerald:P.ruby},
+            {label:"Total Disbursed",            value:fmtD(displayTotalDisbursed),  color:P.sapphire},
+            {label:"Total Collected (all loans)", value:fmtD(displayTotalReceived),   color:P.emerald},
+            {label:"Interest Received",           value:fmtD(displayTotalInterest),   color:P.teal},
+            {label:"Fees",                        value:fmtD(totalFees),              color:P.ruby},
+            {label:"Net P&L (closed loans only)", value:fmtD(totalPL),                color:totalPL>=0?P.emerald:P.ruby},
           ].map(item=>(
             <div key={item.label} style={{background:P.card3,border:`1px solid ${item.color}22`,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{item.label}</div>
@@ -3298,11 +3299,11 @@ function LendenClubTab({ data }) {
           <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>Capital Reconciliation</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
             {[
-              {label:"Capital Added",     value:fmtF(externalCapitalAdded),    color:P.gold},
-              {label:"Capital Available", value:fmtF(capitalAfterEarnings),    color:P.teal},
-              {label:"Fees Deducted",     value:fmtF(totalFees),               color:P.ruby},
-              {label:"Current Deployed",  value:fmtF(currentCapitalDeployed),  color:P.sapphire},
-              {label:"Idle Cash",         value:fmtF(idleCash),                color:idleCash>=0?P.emerald:P.ruby},
+              {label:"Capital Added",     value:fmtD(externalCapitalAdded),    color:P.gold},
+              {label:"Capital Available", value:fmtD(capitalAfterEarnings),    color:P.teal},
+              {label:"Fees Deducted",     value:fmtD(totalFees),               color:P.ruby},
+              {label:"Current Deployed",  value:fmtD(currentCapitalDeployed),  color:P.sapphire},
+              {label:"Idle Cash",         value:fmtD(idleCash),                color:idleCash>=0?P.emerald:P.ruby},
             ].map(item=>(
               <div key={item.label} style={{background:`${item.color}0A`,border:`1px solid ${item.color}22`,borderRadius:10,padding:"10px 12px"}}>
                 <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:3}}>{item.label}</div>
@@ -3311,8 +3312,8 @@ function LendenClubTab({ data }) {
             ))}
           </div>
           <div style={{marginTop:10,fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.8}}>
-            Formula: <span style={{color:P.gold}}>Capital Added</span> + <span style={{color:P.teal}}>Interest Earned</span> = <span style={{color:P.text}}>Capital Available</span> {fmtF(capitalAfterEarnings)}.
-            Remaining after current deployment = <span style={{color:idleCash>=0?P.emerald:P.ruby}}>{fmtF(idleCash)}</span>.
+            Formula: <span style={{color:P.gold}}>Capital Added</span> + <span style={{color:P.teal}}>Interest Earned</span> = <span style={{color:P.text}}>Capital Available</span> {fmtD(capitalAfterEarnings)}.
+            Remaining after current deployment = <span style={{color:idleCash>=0?P.emerald:P.ruby}}>{fmtD(idleCash)}</span>.
           </div>
         </div>
       </Card>
@@ -3341,9 +3342,9 @@ function LendenClubTab({ data }) {
                   <TD bold color={P.gold}>{t.tab}</TD>
                   <TD color={P.text}>{t.loans}</TD><TD color={P.emerald}>{t.active}</TD><TD color={P.sapphire}>{t.closed}</TD>
                   <TD color={P.gold}>{t.pending}</TD><TD color={P.ruby}>{t.overdue}</TD><TD color={P.rose}>{t.npa}</TD>
-                  <TD color={P.sapphire}>{fmtF(t.monthDisbursed)}</TD><TD color={P.text}>{fmtF(t.monthPrincipal)}</TD>
-                  <TD bold color={P.teal}>{fmtF(t.monthInterest)}</TD><TD color={P.muted}>{fmtF(t.monthFees)}</TD>
-                  <TD color={P.ruby}>{fmtF(t.monthOutstanding)}</TD>
+                  <TD color={P.sapphire}>{fmtD(t.monthDisbursed)}</TD><TD color={P.text}>{fmtD(t.monthPrincipal)}</TD>
+                  <TD bold color={P.teal}>{fmtD(t.monthInterest)}</TD><TD color={P.muted}>{fmtD(t.monthFees)}</TD>
+                  <TD color={P.ruby}>{fmtD(t.monthOutstanding)}</TD>
                   <TD color={parseFloat(pct(t.received,t.disbursed))>50?P.emerald:P.gold}>{pct(t.received,t.disbursed)}%</TD>
                   <TD bold color={P.emerald}>{Math.round(t.monthNetRate)}%</TD>
                 </tr>
@@ -3353,11 +3354,11 @@ function LendenClubTab({ data }) {
                 <TD bold>{displayedTotalCounts.loans}</TD><TD bold color={P.emerald}>{displayedTotalCounts.active}</TD>
                 <TD bold color={P.sapphire}>{displayedTotalCounts.closed}</TD><TD bold color={P.gold}>{displayedTotalCounts.pending}</TD>
                 <TD bold color={P.ruby}>{displayedTotalCounts.overdue}</TD><TD bold color={P.rose}>{displayedTotalCounts.npa}</TD>
-                <TD bold color={P.sapphire}>{fmtF(visibleMonthlyTotals.disbursed)}</TD>
-                <TD bold color={P.text}>{fmtF(visibleMonthlyTotals.principal)}</TD>
-                <TD bold color={P.teal}>{fmtF(visibleMonthlyTotals.interest)}</TD>
-                <TD bold color={P.muted}>{fmtF(visibleMonthlyTotals.fee)}</TD>
-                <TD bold color={P.ruby}>{fmtF(visibleMonthlyTotals.outstanding)}</TD>
+                <TD bold color={P.sapphire}>{fmtD(visibleMonthlyTotals.disbursed)}</TD>
+                <TD bold color={P.text}>{fmtD(visibleMonthlyTotals.principal)}</TD>
+                <TD bold color={P.teal}>{fmtD(visibleMonthlyTotals.interest)}</TD>
+                <TD bold color={P.muted}>{fmtD(visibleMonthlyTotals.fee)}</TD>
+                <TD bold color={P.ruby}>{fmtD(visibleMonthlyTotals.outstanding)}</TD>
                 <TD bold color={P.emerald}>{pct(visibleMonthlyTotals.received,visibleMonthlyTotals.disbursed)}%</TD>
                 <TD bold color={P.emerald}>{visibleMonthlyTotals.disbursed>0?Math.round((visibleMonthlyTotals.interest/visibleMonthlyTotals.disbursed)*100):0}%</TD>
               </tr>
@@ -3368,7 +3369,7 @@ function LendenClubTab({ data }) {
           {[
             {label:"Visible Months",        v:String(visibleMonthlyRows.length),              color:P.teal},
             {label:"Visible Closed Loans",  v:String(visibleMonthlyTotals.closed),            color:P.emerald},
-            {label:"Visible Outstanding",   v:fmtF(visibleMonthlyTotals.outstanding),         color:P.rose},
+            {label:"Visible Outstanding",   v:fmtD(visibleMonthlyTotals.outstanding),         color:P.rose},
             {label:"Visible Recovery",      v:`${pct(visibleMonthlyTotals.received,visibleMonthlyTotals.disbursed)}%`, color:P.violet},
           ].map((s,i)=>(
             <div key={i} style={{background:`${s.color}0A`,border:`1px solid ${s.color}22`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
@@ -3411,29 +3412,29 @@ function LendenClubTab({ data }) {
                   <TD color={l.score>=720?P.emerald:P.gold}>{l.score}</TD>
                   <TD color={P.muted}>{l.disbDate}</TD><TD color={P.text}>{l.repayStart||"-"}</TD>
                   <TD color={l.rs==="OVERDUE"?P.ruby:P.muted}>{l.dueDate}</TD>
-                  <TD>{fmtF(l.amount)}</TD>
+                  <TD>{fmtD(l.amount)}</TD>
                   <TD><Pill color={l.status==="CLOSED"?P.muted:l.status==="OVERDUE"?P.ruby:l.status==="PENDING"?P.gold:P.emerald}>{l.status}</Pill></TD>
                   <TD><Pill color={l.rs==="NPA"?P.rose:l.rs==="OVERDUE"?P.ruby:l.rs==="DUE TODAY"?P.gold:l.rs==="DUE SOON"?P.sapphire:l.rs==="Closed"?P.muted:P.emerald}>{l.rs}</Pill></TD>
                   <TD color={n(l.dpd)>0?P.ruby:P.muted}>{n(l.dpd)||0}</TD>
                   <TD color={n(l.npa)>0?P.rose:P.muted}>{n(l.npa)||0}</TD>
-                  <TD color={P.text}>{fmtF(l.principalRecv)}</TD>
-                  <TD bold color={P.teal}>{fmtF(l.interestRecv)}</TD>
+                  <TD color={P.text}>{fmtD(l.principalRecv)}</TD>
+                  <TD bold color={P.teal}>{fmtD(l.interestRecv)}</TD>
                   <TD color={l.status==="CLOSED"?P.sapphire:P.muted}>{l.status==="CLOSED"?`${l.monthlyRateToClose}%`:"—"}</TD>
-                  <TD color={P.muted}>{fmtF(l.fee)}</TD>
-                  <TD color={P.gold}>{fmtF(l.totalRecv)}</TD>
-                  <TD color={l.pl>0?P.emerald:P.muted}>{l.pl>0?"+":""}{fmtF(l.pl)}</TD>
+                  <TD color={P.muted}>{fmtD(l.fee)}</TD>
+                  <TD color={P.gold}>{fmtD(l.totalRecv)}</TD>
+                  <TD color={l.pl>0?P.emerald:P.muted}>{l.pl>0?"+":""}{fmtD(l.pl)}</TD>
                   <TD color={P.text}>{l.monthsToClose||"—"}</TD>
                   <TD color={P.muted}>{l.closure}</TD>
                 </tr>
               ))}
               <tr style={{background:P.card2}}>
                 <TD bold colSpan={13} left color={P.gold}>SUBTOTAL ({filteredLoans.length} loans)</TD>
-                <TD bold color={P.text}>{fmtF(filteredLoans.reduce((s,l)=>s+l.principalRecv,0))}</TD>
-                <TD bold color={P.teal}>{fmtF(filteredLoans.reduce((s,l)=>s+l.interestRecv,0))}</TD>
+                <TD bold color={P.text}>{fmtD(filteredLoans.reduce((s,l)=>s+l.principalRecv,0))}</TD>
+                <TD bold color={P.teal}>{fmtD(filteredLoans.reduce((s,l)=>s+l.interestRecv,0))}</TD>
                 <TD bold color={P.sapphire}>{filteredLoans.filter(l=>l.status==="CLOSED").length?`${(filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s+l.interestRecv,0)/Math.max(filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s+(n(l.amount)*Math.max(1,n(l.monthsToClose))),0),1)*100).toFixed(1)}%`:"—"}</TD>
-                <TD bold color={P.muted}>{fmtF(filteredLoans.reduce((s,l)=>s+l.fee,0))}</TD>
-                <TD bold color={P.gold}>{fmtF(filteredLoans.reduce((s,l)=>s+l.totalRecv,0))}</TD>
-                <TD bold color={P.emerald}>{fmtF(filteredLoans.reduce((s,l)=>s+l.pl,0))}</TD>
+                <TD bold color={P.muted}>{fmtD(filteredLoans.reduce((s,l)=>s+l.fee,0))}</TD>
+                <TD bold color={P.gold}>{fmtD(filteredLoans.reduce((s,l)=>s+l.totalRecv,0))}</TD>
+                <TD bold color={P.emerald}>{fmtD(filteredLoans.reduce((s,l)=>s+l.pl,0))}</TD>
                 <TD bold color={P.text}>{filteredLoans.filter(l=>l.status==="CLOSED").length?filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s+n(l.monthsToClose),0):"—"}</TD>
                 <TD/>
               </tr>
@@ -3455,8 +3456,8 @@ function LendenClubTab({ data }) {
               {d.lendenClub.transactions.map((t,i)=>(
                 <tr key={i}>
                   <TD color={P.muted}>{t.date}</TD>
-                  <TD bold color={t.invested>0?P.emerald:P.ruby}>{t.invested>0?"+":""}{fmtF(t.invested)}</TD>
-                  <TD color={P.gold}>{fmtF(t.pool)}</TD>
+                  <TD bold color={t.invested>0?P.emerald:P.ruby}>{t.invested>0?"+":""}{fmtD(t.invested)}</TD>
+                  <TD color={P.gold}>{fmtD(t.pool)}</TD>
                   <TD left color={P.text}>{t.remark}</TD>
                 </tr>
               ))}
