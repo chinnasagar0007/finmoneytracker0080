@@ -1368,27 +1368,27 @@ function renderMD(text) {
     .replace(/\n/g,"<br/>");
 }
 
-// ─── GEMINI HELPER ────────────────────────────────────────────────────────────
-async function geminiChat({ key, system="", messages=[], maxTokens=8192 }) {
-  if (!key) throw new Error("Gemini API key not set. Please enter your key above.");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+// ─── GROQ HELPER (Llama 3.3 70B) ─────────────────────────────────────────────
+async function groqChat({ key, system="", messages=[], maxTokens=8192 }) {
+  if (!key) throw new Error("Groq API key not set. Please enter your key above.");
+  const url = "https://api.groq.com/openai/v1/chat/completions";
+  const allMessages = [
+    ...(system ? [{ role:"system", content:system }] : []),
+    ...messages
+  ];
   const body = {
-    ...(system ? { system_instruction:{ parts:[{ text:system }] } } : {}),
-    contents: messages.map(m => ({
-      role: m.role==="assistant" ? "model" : "user",
-      parts: [{ text: m.content }]
-    })),
-    generationConfig: {
-      maxOutputTokens: maxTokens,
-      thinkingConfig: { thinkingBudget: 0 }
-    }
+    model: "llama-3.3-70b-versatile",
+    messages: allMessages,
+    max_tokens: maxTokens
   };
-  const res = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type":"application/json", "Authorization":`Bearer ${key}` },
+    body: JSON.stringify(body)
+  });
   const json = await res.json();
-  if (json.error) throw new Error(json.error.message);
-  // Collect all text parts (thinking model may return multiple parts)
-  const parts = json.candidates?.[0]?.content?.parts || [];
-  return parts.map(p => p.text || "").join("") || "No response received.";
+  if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
+  return json.choices?.[0]?.message?.content || "No response received.";
 }
 
 // ─── AI HUB — COMPLETE LIVE FINANCIAL ADVISOR (18+ Features) ─────────────────
@@ -1397,10 +1397,10 @@ async function geminiChat({ key, system="", messages=[], maxTokens=8192 }) {
 
 function AIHub({ data }) {
   const [activeSection, setActiveSection] = useState("chat");
-  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem("pf_gemini_key") || "");
+  const [groqKey,   setGroqKey]   = useState(() => localStorage.getItem("pf_groq_key") || "");
   const [keyInput,  setKeyInput]  = useState("");
-  const saveKey = () => { const k=keyInput.trim(); if(k){setGeminiKey(k);localStorage.setItem("pf_gemini_key",k);setKeyInput("");} };
-  const clearKey = () => { setGeminiKey(""); setKeyInput(""); localStorage.removeItem("pf_gemini_key"); };
+  const saveKey = () => { const k=keyInput.trim(); if(k){setGroqKey(k);localStorage.setItem("pf_groq_key",k);setKeyInput("");} };
+  const clearKey = () => { setGroqKey(""); setKeyInput(""); localStorage.removeItem("pf_groq_key"); };
   const d = data;
 
   // ── Shared derived values ──
@@ -1457,23 +1457,23 @@ YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ num
 
   return (
     <div className="fade">
-      {/* ── Gemini API Key Banner ── */}
-      {!geminiKey ? (
+      {/* ── Groq API Key Banner ── */}
+      {!groqKey ? (
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:`linear-gradient(135deg,${P.gold}18,${P.orange}0A)`,border:`1px solid ${P.gold}44`,borderRadius:12,flexWrap:"wrap"}}>
           <span style={{fontSize:18}}>🔑</span>
           <div style={{flex:1,minWidth:200}}>
-            <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,color:P.gold,marginBottom:2}}>Gemini API Key Required</div>
-            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>Free key from <span style={{color:P.sapphire}}>aistudio.google.com</span> — saved locally, never uploaded</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,color:P.gold,marginBottom:2}}>Groq API Key Required</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>Free key from <span style={{color:P.sapphire}}>console.groq.com</span> — saved locally, never uploaded</div>
           </div>
           <input value={keyInput} onChange={e=>setKeyInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveKey()}
-            placeholder="Paste your AIzaSy... key here"
+            placeholder="Paste your gsk_... key here"
             style={{flex:2,minWidth:220,padding:"8px 12px",background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,color:P.text,fontFamily:"'Fira Code',monospace",fontSize:11,outline:"none"}}/>
           <button onClick={saveKey} style={{padding:"8px 16px",background:`linear-gradient(135deg,${P.gold},${P.orange})`,border:"none",borderRadius:8,color:"#000",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"'Fira Code',monospace"}}>Save Key</button>
         </div>
       ) : (
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 14px",background:`${P.emerald}12`,border:`1px solid ${P.emerald}33`,borderRadius:10}}>
           <span style={{color:P.emerald,fontSize:13}}>✓</span>
-          <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald}}>Gemini API connected · AI features active</span>
+          <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald}}>Groq (Llama 3.3 70B) connected · AI features active</span>
           <button onClick={clearKey} style={{marginLeft:"auto",padding:"3px 10px",background:"transparent",border:`1px solid ${P.muted}44`,borderRadius:6,color:P.muted,fontSize:9,cursor:"pointer",fontFamily:"'Fira Code',monospace"}}>Change Key</button>
         </div>
       )}
@@ -1491,10 +1491,10 @@ YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ num
         ))}
       </div>
 
-      {activeSection==="chat"        && <AIChatSection data={d} geminiKey={geminiKey} systemPrompt={buildSystemPrompt()} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
-      {activeSection==="alerts"      && <AIAlertsSection data={d} geminiKey={geminiKey} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary}/>}
-      {activeSection==="calculators" && <AICalculatorsSection data={d} geminiKey={geminiKey} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
-      {activeSection==="analysis"    && <AIAnalysisSection data={d} geminiKey={geminiKey} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+      {activeSection==="chat"        && <AIChatSection data={d} groqKey={groqKey} systemPrompt={buildSystemPrompt()} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+      {activeSection==="alerts"      && <AIAlertsSection data={d} groqKey={groqKey} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary}/>}
+      {activeSection==="calculators" && <AICalculatorsSection data={d} groqKey={groqKey} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+      {activeSection==="analysis"    && <AIAnalysisSection data={d} groqKey={groqKey} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
     </div>
   );
 }
@@ -1502,7 +1502,7 @@ YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ num
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 1 — LIVE ADVISOR CHAT
 // ═══════════════════════════════════════════════════════════════════════════════
-function AIChatSection({ data, geminiKey, systemPrompt, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
+function AIChatSection({ data, groqKey, systemPrompt, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [messages, setMessages] = useState([]);
@@ -1553,7 +1553,7 @@ Ask me anything — I know your complete financial picture!`;
     setMessages(history);
     setLoading(true);
     try {
-      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:history.slice(-10) });
+      const reply = await groqChat({ key:groqKey, system:systemPrompt, messages:history.slice(-10) });
       setMessages(prev=>[...prev,{ role:"assistant", content:reply }]);
     } catch(e) {
       setMessages(prev=>[...prev,{ role:"assistant", content:`⚠ Connection error: ${e.message}` }]);
@@ -1676,7 +1676,7 @@ Ask me anything — I know your complete financial picture!`;
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 2 — SMART ALERTS
 // ═══════════════════════════════════════════════════════════════════════════════
-function AIAlertsSection({ data, geminiKey, totalDebt, totalAssets, netWorth, emiTotal, salary }) {
+function AIAlertsSection({ data, groqKey, totalDebt, totalAssets, netWorth, emiTotal, salary }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [reportLoading, setReportLoading] = useState(false);
@@ -1729,7 +1729,7 @@ function AIAlertsSection({ data, geminiKey, totalDebt, totalAssets, netWorth, em
   const generateReport = async () => {
     setReportLoading(true);
     try {
-      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Generate a concise month-end financial review for ${d.settings?.name||"Naresh"} (${d.income?.month||"Mar-26"}).
+      const reply = await groqChat({ key:groqKey, messages:[{role:"user",content:`Generate a concise month-end financial review for ${d.settings?.name||"Naresh"} (${d.income?.month||"Mar-26"}).
 
 Data:
 - Salary: ₹${n(d.income?.salary).toLocaleString("en-IN")} | In-hand: ₹${n(d.income?.inHand).toLocaleString("en-IN")}
@@ -1751,7 +1751,7 @@ Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) in
   const generateWhatsApp = async () => {
     setWpLoading(true);
     try {
-      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Write a firm but professional WhatsApp message from ${d.settings?.name||"Naresh"} to KishanRao following up on ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")} overdue interest (${n(d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"))?.monthsElapsed||2)} months). Loan amount: ₹${n(kishanRao?.amount||100000).toLocaleString("en-IN")} @ 2%/month. Keep it polite but clear about urgency. Under 100 words. No emojis spam.`}], maxTokens:512 });
+      const reply = await groqChat({ key:groqKey, messages:[{role:"user",content:`Write a firm but professional WhatsApp message from ${d.settings?.name||"Naresh"} to KishanRao following up on ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")} overdue interest (${n(d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"))?.monthsElapsed||2)} months). Loan amount: ₹${n(kishanRao?.amount||100000).toLocaleString("en-IN")} @ 2%/month. Keep it polite but clear about urgency. Under 100 words. No emojis spam.`}], maxTokens:512 });
       setWhatsapp(reply);
     } catch(e) { setWhatsapp("Error: "+e.message); }
     setWpLoading(false);
@@ -1857,7 +1857,7 @@ Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) in
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 3 — SMART CALCULATORS
 // ═══════════════════════════════════════════════════════════════════════════════
-function AICalculatorsSection({ data, geminiKey, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
+function AICalculatorsSection({ data, groqKey, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [calcTab, setCalcTab] = useState("debt");
@@ -2378,7 +2378,7 @@ function EmergencyFundCalc({ data, emiTotal, salary, inHand }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 4 — DEEP ANALYSIS
 // ═══════════════════════════════════════════════════════════════════════════════
-function AIAnalysisSection({ data, geminiKey, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
+function AIAnalysisSection({ data, groqKey, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [analysisTab, setAnalysisTab] = useState("whatif");
@@ -2402,18 +2402,18 @@ function AIAnalysisSection({ data, geminiKey, totalDebt, totalAssets, netWorth, 
           </button>
         ))}
       </div>
-      {analysisTab==="whatif"   && <WhatIfEngine data={d} geminiKey={geminiKey} systemPrompt={`You are a financial scenario analyst. Analyze what-if scenarios for ${d.settings?.name||"Naresh"} using their real data: Salary ₹${n(d.income?.salary).toLocaleString("en-IN")}, in-hand ₹${n(d.income?.inHand).toLocaleString("en-IN")}, HDFC loan ₹${Math.round(n(d.loans?.hdfc?.outstanding)).toLocaleString("en-IN")} @10.5%, IDFC ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} @13.5%, net worth ₹${Math.round(netWorth).toLocaleString("en-IN")}, investments ₹${Math.round(totalAssets).toLocaleString("en-IN")}. Show side-by-side current vs scenario with specific numbers. Be precise and actionable.`}/>}
-      {analysisTab==="tax"      && <TaxPlanner data={d} geminiKey={geminiKey} salary={salary}/>}
-      {analysisTab==="spend"    && <SpendAudit data={d} geminiKey={geminiKey}/>}
+      {analysisTab==="whatif"   && <WhatIfEngine data={d} groqKey={groqKey} systemPrompt={`You are a financial scenario analyst. Analyze what-if scenarios for ${d.settings?.name||"Naresh"} using their real data: Salary ₹${n(d.income?.salary).toLocaleString("en-IN")}, in-hand ₹${n(d.income?.inHand).toLocaleString("en-IN")}, HDFC loan ₹${Math.round(n(d.loans?.hdfc?.outstanding)).toLocaleString("en-IN")} @10.5%, IDFC ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} @13.5%, net worth ₹${Math.round(netWorth).toLocaleString("en-IN")}, investments ₹${Math.round(totalAssets).toLocaleString("en-IN")}. Show side-by-side current vs scenario with specific numbers. Be precise and actionable.`}/>}
+      {analysisTab==="tax"      && <TaxPlanner data={d} groqKey={groqKey} salary={salary}/>}
+      {analysisTab==="spend"    && <SpendAudit data={d} groqKey={groqKey}/>}
       {analysisTab==="salaryup" && <SalaryImpact data={d} salary={salary} emiTotal={emiTotal} inHand={inHand} netWorth={netWorth} totalAssets={totalAssets}/>}
-      {analysisTab==="goals"    && <GoalTracker data={d} geminiKey={geminiKey} netWorth={netWorth} totalAssets={totalAssets} totalDebt={totalDebt} inHand={inHand} emiTotal={emiTotal}/>}
+      {analysisTab==="goals"    && <GoalTracker data={d} groqKey={groqKey} netWorth={netWorth} totalAssets={totalAssets} totalDebt={totalDebt} inHand={inHand} emiTotal={emiTotal}/>}
       {analysisTab==="stress"   && <DebtStressTest data={d} salary={salary} emiTotal={emiTotal} inHand={inHand} totalDebt={totalDebt}/>}
     </div>
   );
 }
 
 // ── 15: What-If Scenario Engine ──
-function WhatIfEngine({ data, geminiKey, systemPrompt }) {
+function WhatIfEngine({ data, groqKey, systemPrompt }) {
   const [scenario, setScenario] = useState("");
   const [result, setResult]     = useState(null);
   const [loading, setLoading]   = useState(false);
@@ -2432,7 +2432,7 @@ function WhatIfEngine({ data, geminiKey, systemPrompt }) {
     if (!s || loading) return;
     setLoading(true); setResult(null);
     try {
-      const reply = await geminiChat({ key:geminiKey, system:systemPrompt, messages:[{role:"user",content:`Analyze this scenario with real numbers: "${s}"\n\nProvide:\n1. CURRENT SITUATION (with actual numbers)\n2. SCENARIO OUTCOME (what changes, what doesn't)\n3. NET IMPACT (better or worse, by how much ₹)\n4. RECOMMENDATION (should they do it?)\n\nBe specific. Use ₹ amounts. Keep it under 250 words.`}] });
+      const reply = await groqChat({ key:groqKey, system:systemPrompt, messages:[{role:"user",content:`Analyze this scenario with real numbers: "${s}"\n\nProvide:\n1. CURRENT SITUATION (with actual numbers)\n2. SCENARIO OUTCOME (what changes, what doesn't)\n3. NET IMPACT (better or worse, by how much ₹)\n4. RECOMMENDATION (should they do it?)\n\nBe specific. Use ₹ amounts. Keep it under 250 words.`}] });
       setResult(reply);
     } catch(e) { setResult("Error: "+e.message); }
     setLoading(false);
@@ -2472,7 +2472,7 @@ function WhatIfEngine({ data, geminiKey, systemPrompt }) {
 }
 
 // ── 16: Tax Planner ──
-function TaxPlanner({ data, geminiKey, salary }) {
+function TaxPlanner({ data, groqKey, salary }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [loading, setLoading] = useState(false);
@@ -2517,7 +2517,7 @@ function TaxPlanner({ data, geminiKey, salary }) {
   const runFullAnalysis = async () => {
     setLoading(true);
     try {
-      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Do a complete tax analysis for ${d.settings?.name||"Naresh"} FY 2025-26:
+      const reply = await groqChat({ key:groqKey, messages:[{role:"user",content:`Do a complete tax analysis for ${d.settings?.name||"Naresh"} FY 2025-26:
 
 Gross annual income: ₹${grossAnnual.toLocaleString("en-IN")}
 Home loan interest paid: ₹${Math.round(homeInterest).toLocaleString("en-IN")} (Section 24(b) — max ₹2L deduction)
@@ -2573,7 +2573,7 @@ Cover: (1) Which regime is better and by how much (2) Unused 80C opportunity (3)
 }
 
 // ── 17: Spend Audit ──
-function SpendAudit({ data, geminiKey }) {
+function SpendAudit({ data, groqKey }) {
   const d = data;
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [loading, setLoading] = useState(false);
@@ -2587,7 +2587,7 @@ function SpendAudit({ data, geminiKey }) {
   const runAudit = async () => {
     setLoading(true);
     try {
-      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Analyze spending patterns for ${d.settings?.name||"Naresh"} and flag issues:
+      const reply = await groqChat({ key:groqKey, messages:[{role:"user",content:`Analyze spending patterns for ${d.settings?.name||"Naresh"} and flag issues:
 
 Category totals this month: ${JSON.stringify(catTotals)}
 Auto-debit subscriptions: ${JSON.stringify(subscriptions.map(e=>({desc:e.desc,amount:n(e.amount)})))}
@@ -2677,7 +2677,7 @@ function SalaryImpact({ data, salary, emiTotal, inHand, netWorth, totalAssets })
 }
 
 // ── Goal Tracker ──
-function GoalTracker({ data, geminiKey, netWorth, totalAssets, totalDebt, inHand, emiTotal }) {
+function GoalTracker({ data, groqKey, netWorth, totalAssets, totalDebt, inHand, emiTotal }) {
   const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
   const [loading, setLoading] = useState(false);
   const [check, setCheck]     = useState(null);
@@ -2694,7 +2694,7 @@ function GoalTracker({ data, geminiKey, netWorth, totalAssets, totalDebt, inHand
   const runCheck = async () => {
     setLoading(true);
     try {
-      const reply = await geminiChat({ key:geminiKey, messages:[{role:"user",content:`Review goal progress for ${data.settings?.name||"Naresh"} and give an honest assessment:
+      const reply = await groqChat({ key:groqKey, messages:[{role:"user",content:`Review goal progress for ${data.settings?.name||"Naresh"} and give an honest assessment:
 
 Goals: ${JSON.stringify(goals.map(g=>({name:g.name, progress:`${Math.min(100,g.lower?(g.current>0?(1-g.current/Math.max(1,g.target+g.current))*100:100):(g.target>0?(g.current/g.target)*100:100)).toFixed(0)}%`, current:g.current, target:g.target})))}
 Monthly savings capacity: ₹${Math.max(0,n(inHand)-15000).toLocaleString("en-IN")}
