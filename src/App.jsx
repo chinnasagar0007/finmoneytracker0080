@@ -1350,60 +1350,142 @@ function SyncBadge({ status, lastSync }) {
   );
 }
 
-// ─── AI ADVISER COMPONENT ─────────────────────────────────────────────────────
-function AIAdviser({ data }) {
-  const [messages, setMessages] = useState([
-    { role:"assistant", content:"👋 Namaste Naresh! I'm your personal financial AI adviser. I have full context of your finances — salary, loans, investments, lending, and more. Ask me anything: debt payoff strategy, investment advice, tax planning, or milestone projections. How can I help you today?" }
-  ]);
-  const [input, setInput]   = useState("");
-  const [loading, setLoading] = useState(false);
-  const chatRef = useRef(null);
 
+// ─── AI HUB — COMPLETE LIVE FINANCIAL ADVISOR (18+ Features) ─────────────────
+// Sections: Core Chat | Alerts | Calculators | Deep Analysis
+// Replaces: AIAdviser, AIBuilder, AICodeFixer, Milestones
+
+function AIHub({ data }) {
+  const [activeSection, setActiveSection] = useState("chat");
   const d = data;
-  const totalDebt = n(d.loans.hdfc.outstanding)+n(d.loans.idfc.outstanding)+n(d.loans.sbi.outstanding);
-  const totalInv  = n(d.stocks.summary.total.current)+n(d.lendenClub.totalPooled)+n(d.personalLending.totalCapital)+n(d.realEstate.paid);
 
-  const QUICK = [
-    "How should I pay off my loans fastest?",
-    "When will I be debt-free at current pace?",
-    "Is my EMI burden too high?",
-    "How to grow my net worth to ₹1 Crore?",
-    "Should I prepay HDFC loan or invest more?",
-    "Tax saving tips for FY26-27?",
+  // ── Shared derived values ──
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const totalDebt  = n(d.loans?.hdfc?.outstanding)+n(d.loans?.idfc?.outstanding)+n(d.loans?.sbi?.outstanding);
+  const totalAssets= n(d.stocks?.summary?.total?.current)+n(d.lendenClub?.totalPooled)+n(d.personalLending?.totalCapital)+n(d.realEstate?.paid);
+  const netWorth   = totalAssets - totalDebt;
+  const emiTotal   = n(d.income?.hdfcEmi)+n(d.income?.idfcEmi)+n(d.income?.sbiEmi);
+  const salary     = n(d.income?.salary);
+  const inHand     = n(d.income?.inHand);
+
+  const SECTIONS = [
+    { id:"chat",       label:"💬 Live Advisor",     color:P.violet  },
+    { id:"alerts",     label:"🚨 Smart Alerts",     color:P.ruby    },
+    { id:"calculators",label:"🧮 Calculators",      color:P.emerald },
+    { id:"analysis",   label:"🔬 Deep Analysis",    color:P.sapphire},
   ];
 
-  const systemPrompt = `You are an expert personal financial adviser for ${d.settings.name}, a ${d.income.age}-year-old software professional in ${d.settings.city}, India.
+  // ── System prompt — full financial context ──
+  const buildSystemPrompt = () => {
+    const kishanRao = d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"));
+    const pendingInt = n(d.personalLending?.pendingInterest);
+    return `You are Arth — a sharp, empathetic personal financial advisor for ${d.settings?.name || "Naresh"}, a ${d.income?.age || 30}-year-old software professional in ${d.settings?.city || "Hyderabad"}, India.
 
-CURRENT FINANCIAL SNAPSHOT (March 2026):
-- Monthly Salary: ₹${d.income.salary.toLocaleString("en-IN")} (gross) | In-Hand: ₹${d.income.inHand.toLocaleString("en-IN")}
-- EMI Burden: HDFC ₹42,318 + IDFC ₹7,572 + SBI ₹2,500 = ₹52,390/mo (54.8% of salary)
-- Credit Card Bills: ₹24,478/mo
+You have COMPLETE, LIVE access to their finances as of ${d.income?.month || "Mar-26"}:
 
-DEBTS:
-- HDFC Home Loan: ₹${Math.round(d.loans.hdfc.outstanding).toLocaleString("en-IN")} outstanding @ 10.5% p.a. | 68 EMIs left
-- IDFC Personal Loan: ₹${Math.round(d.loans.idfc.outstanding).toLocaleString("en-IN")} outstanding @ 13.5% p.a. | 42 EMIs left
-- SBI Loan: ₹${Math.round(d.loans.sbi.outstanding).toLocaleString("en-IN")} outstanding @ 9.35% p.a. | 25 EMIs left
-- Total Debt: ₹${Math.round(totalDebt).toLocaleString("en-IN")}
+INCOME:
+- Gross salary: ₹${salary.toLocaleString("en-IN")}/mo | In-hand: ₹${inHand.toLocaleString("en-IN")}/mo
+- EMI burden: ₹${emiTotal.toLocaleString("en-IN")}/mo = ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary
+- Credit card bills: ₹${n(d.income?.creditCardBills).toLocaleString("en-IN")}/mo
+- LendenClub returns: ₹${n(d.income?.lendenClub||140).toLocaleString("en-IN")}/mo
 
-INVESTMENTS:
-- Stocks & MF: ₹${d.stocks.summary.total.current.toLocaleString("en-IN")} (CAGR target 12%)
-- Personal Lending: ₹7,50,000 deployed @ 24% p.a. yield (₹15,000/mo interest)
-- LendenClub P2P: ₹${d.lendenClub.totalPooled.toLocaleString("en-IN")} @ ~10% net return
-- Real Estate (Land): ₹${d.realEstate.paid.toLocaleString("en-IN")} paid (Hyderabad, 100 sq.yd)
-- Total Investments: ₹${Math.round(totalInv).toLocaleString("en-IN")}
-- Net Worth: ₹${Math.round(totalInv - totalDebt).toLocaleString("en-IN")} (currently negative due to home loan)
+LOANS (Total debt: ₹${Math.round(totalDebt).toLocaleString("en-IN")}):
+- HDFC Home Loan: ₹${Math.round(n(d.loans?.hdfc?.outstanding)).toLocaleString("en-IN")} @ ${d.loans?.hdfc?.interestRate||10.5}% | EMI ₹${n(d.loans?.hdfc?.emi).toLocaleString("en-IN")} | ${(d.loans?.hdfc?.total||72)-(d.loans?.hdfc?.paid||4)} EMIs left
+- IDFC Personal: ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} @ ${d.loans?.idfc?.interestRate||13.5}% | EMI ₹${n(d.loans?.idfc?.emi).toLocaleString("en-IN")} | ${(d.loans?.idfc?.total||60)-(d.loans?.idfc?.paid||18)} EMIs left
+- SBI Loan: ₹${Math.round(n(d.loans?.sbi?.outstanding)).toLocaleString("en-IN")} @ ${d.loans?.sbi?.interestRate||9.35}% | EMI ₹${n(d.loans?.sbi?.emi).toLocaleString("en-IN")} | ${(d.loans?.sbi?.total||25)-(d.loans?.sbi?.paid||0)} EMIs left
 
-SETTINGS: Salary Growth ${d.settings.salaryGrowth}%/yr | Portfolio CAGR ${d.settings.portfolioCAGR}% | RE Appreciation ${d.settings.realEstateAppreciation}%
+INVESTMENTS (Total: ₹${Math.round(totalAssets).toLocaleString("en-IN")}):
+- Stocks & MF: ₹${n(d.stocks?.summary?.total?.current).toLocaleString("en-IN")} | P&L ₹${n(d.stocks?.summary?.total?.pl).toLocaleString("en-IN")}
+- Personal lending: ₹${n(d.personalLending?.totalCapital).toLocaleString("en-IN")} @ 24%/yr | Monthly interest ₹${n(d.personalLending?.monthlyInterest).toLocaleString("en-IN")}
+- LendenClub P2P: ₹${n(d.lendenClub?.totalPooled).toLocaleString("en-IN")} | ~10% net ROI
+- Real estate (land): ₹${n(d.realEstate?.paid).toLocaleString("en-IN")} paid | Balance ₹${n(d.realEstate?.remaining).toLocaleString("en-IN")}
 
-Provide actionable, specific advice tailored to ${d.settings.name}'s exact situation. Use ₹ amounts and realistic timelines. Consider Indian tax laws (IT Act, Section 80C, 24(b), capital gains). Be honest about risks. Keep responses concise but insightful.`;
+NET WORTH: ₹${Math.round(netWorth).toLocaleString("en-IN")} (${netWorth<0?"negative due to home loan":"positive"})
+
+ALERTS:
+${pendingInt>0?`- ⚠ KishanRao has ₹${pendingInt.toLocaleString("en-IN")} overdue interest`:"- ✅ No borrower defaults"}
+- EMI burden is ${emiTotal/salary>0.5?"⚠ HIGH":"✅ manageable"} at ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary
+
+GOALS: ₹1 Crore net worth (currently ${netWorth<0?"negative":"₹"+Math.round(netWorth).toLocaleString("en-IN")})
+
+YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ numbers. Give actionable advice. Reference their actual data. Use Indian financial context (80C, 24(b), LTCG, etc). Be honest about risks. Keep responses focused and under 300 words unless asked to elaborate.`;
+  };
+
+  return (
+    <div className="fade">
+      {/* ── Section Nav ── */}
+      <div style={{display:"flex",gap:8,marginBottom:20,background:P.card2,borderRadius:14,padding:6,border:`1px solid ${P.border}`}}>
+        {SECTIONS.map(s=>(
+          <button key={s.id} onClick={()=>setActiveSection(s.id)}
+            style={{flex:1,padding:"10px 8px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:600,transition:"all .2s",
+              background:activeSection===s.id?`linear-gradient(135deg,${s.color}33,${s.color}18)`:"transparent",
+              color:activeSection===s.id?s.color:P.muted,
+              boxShadow:activeSection===s.id?`0 0 0 1px ${s.color}44`:"none"}}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {activeSection==="chat"        && <AIChatSection data={d} systemPrompt={buildSystemPrompt()} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+      {activeSection==="alerts"      && <AIAlertsSection data={d} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary}/>}
+      {activeSection==="calculators" && <AICalculatorsSection data={d} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+      {activeSection==="analysis"    && <AIAnalysisSection data={d} totalDebt={totalDebt} totalAssets={totalAssets} netWorth={netWorth} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 1 — LIVE ADVISOR CHAT
+// ═══════════════════════════════════════════════════════════════════════════════
+function AIChatSection({ data, systemPrompt, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [messages, setMessages] = useState([]);
+  const [input, setInput]     = useState("");
+  const [loading, setLoading] = useState(false);
+  const [briefed, setBriefed] = useState(false);
+  const chatRef = useRef(null);
+
+  // ── Auto morning brief on first load ──
+  useEffect(()=>{
+    if (!briefed) {
+      const kishanPending = n(d.personalLending?.pendingInterest);
+      const nextEmi = d.loans?.hdfc?.schedule?.find(s=>!s.status||s.status==="");
+      const brief = `🌅 **Good morning, ${d.settings?.name?.split(" ")[0] || "Naresh"}! Here's your daily financial brief:**
+
+**💰 Cash position:** In-hand ₹${n(inHand).toLocaleString("en-IN")} this month — ${n(inHand)<20000?"⚠ tight, watch spending":"✅ looks okay"}
+
+**🏦 EMI this week:** ${nextEmi?`HDFC EMI of ₹${n(d.loans?.hdfc?.emi).toLocaleString("en-IN")} due ${nextEmi.date}`:"Check your EMI schedule"}
+
+**📊 Budget standing:** EMI load is ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary ${emiTotal/salary>0.5?"— ⚠ above 50% danger zone":"— within range"}
+
+**🚨 Active alert:** ${kishanPending>0?`KishanRao owes ₹${kishanPending.toLocaleString("en-IN")} in unpaid interest — ${Math.round(n(d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"))?.monthsElapsed||2))} months overdue`:"No borrower defaults 👍"}
+
+**🎯 Priority action:** ${totalDebt>2000000?"Consider prepaying IDFC loan (highest rate at 13.5%) when you get extra cash":"Keep building your investment portfolio — debt is manageable"}
+
+Ask me anything — I know your complete financial picture!`;
+      setMessages([{ role:"assistant", content:brief }]);
+      setBriefed(true);
+    }
+  }, []);
+
+  const QUICK_CHIPS = [
+    "What's my biggest financial risk right now?",
+    "Should I prepay IDFC or invest the extra cash?",
+    "Am I on track to reach ₹1 Crore?",
+    "How can I increase my monthly savings?",
+    "Is it safe to invest more in LendenClub this month?",
+    "What tax deductions am I missing?",
+    "If salary drops 20%, can I still pay EMIs?",
+    "Draft a WhatsApp follow-up message for KishanRao",
+  ];
 
   const sendMessage = async (text) => {
-    const msg = text || input.trim();
+    const msg = (text || input).trim();
     if (!msg || loading) return;
     setInput("");
-    const userMsg = { role:"user", content:msg };
-    const newMsgs = [...messages, userMsg];
-    setMessages(newMsgs);
+    const history = [...messages, { role:"user", content:msg }];
+    setMessages(history);
     setLoading(true);
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1413,36 +1495,38 @@ Provide actionable, specific advice tailored to ${d.settings.name}'s exact situa
           model:"claude-sonnet-4-20250514",
           max_tokens:1000,
           system: systemPrompt,
-          messages: newMsgs.map(m=>({role:m.role,content:m.content}))
+          messages: history.slice(-10).map(m=>({ role:m.role, content:m.content }))
         })
       });
-      const data = await res.json();
-      const reply = data.content?.map(c=>c.text||"").join("") || "Sorry, I couldn't generate a response.";
-      setMessages(prev=>[...prev,{role:"assistant",content:reply}]);
+      const json = await res.json();
+      const reply = json.content?.map(c=>c.text||"").join("") || "Sorry, I couldn't respond.";
+      setMessages(prev=>[...prev,{ role:"assistant", content:reply }]);
     } catch(e) {
-      setMessages(prev=>[...prev,{role:"assistant",content:`⚠ Error: ${e.message}`}]);
+      setMessages(prev=>[...prev,{ role:"assistant", content:`⚠ Connection error: ${e.message}` }]);
     } finally {
       setLoading(false);
-      setTimeout(()=>chatRef.current?.scrollTo({top:9999,behavior:"smooth"}),100);
+      setTimeout(()=>chatRef.current?.scrollTo({top:99999,behavior:"smooth"}),100);
     }
   };
 
-  useEffect(()=>{ chatRef.current?.scrollTo({top:9999,behavior:"smooth"}); },[messages]);
+  const clearChat = () => { setMessages([]); setBriefed(false); };
 
   return (
-    <div className="fade" style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:16,height:"calc(100vh - 220px)",minHeight:520}}>
-      {/* Chat panel */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:16,height:"calc(100vh - 240px)",minHeight:560}}>
+
+      {/* ── Chat Window ── */}
       <Card accent={P.violet} style={{display:"flex",flexDirection:"column",padding:0,overflow:"hidden"}}>
         {/* Header */}
-        <div style={{padding:"16px 20px",borderBottom:`1px solid ${P.border}`,background:`linear-gradient(135deg,${P.violet}18,transparent)`,display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:42,height:42,borderRadius:"50%",background:`linear-gradient(135deg,${P.violet},${P.sapphire})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,boxShadow:`0 0 16px ${P.violet}55`}}>🤖</div>
-          <div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:P.text}}>Financial AI Adviser</div>
-            <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Powered by Claude · Your data is context</div>
+        <div style={{padding:"14px 20px",borderBottom:`1px solid ${P.border}`,background:`linear-gradient(135deg,${P.violet}18,transparent)`,display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:44,height:44,borderRadius:"50%",background:`linear-gradient(135deg,${P.violet},${P.sapphire})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,boxShadow:`0 0 16px ${P.violet}55`,flexShrink:0}}>🪙</div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:P.text}}>Arth — Your Financial Advisor</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>Knows your salary, loans, investments, lending & real estate · Session memory: last 10 turns</div>
           </div>
-          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:loading?P.gold:P.emerald,animation:loading?"pulse 1s infinite":"none"}}/>
             <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:loading?P.gold:P.emerald}}>{loading?"Thinking…":"Ready"}</span>
+            <button onClick={clearChat} style={{background:"none",border:`1px solid ${P.border}`,color:P.muted,borderRadius:8,padding:"3px 10px",cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:9,marginLeft:8}}>↺ Reset</button>
           </div>
         </div>
 
@@ -1451,1574 +1535,1261 @@ Provide actionable, specific advice tailored to ${d.settings.name}'s exact situa
           {messages.map((m,i)=>(
             <div key={i} style={{display:"flex",flexDirection:m.role==="user"?"row-reverse":"row",gap:10,alignItems:"flex-start"}}>
               <div style={{width:32,height:32,borderRadius:"50%",background:m.role==="user"?`linear-gradient(135deg,${P.gold},${P.orange})`:`linear-gradient(135deg,${P.violet},${P.sapphire})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>
-                {m.role==="user"?"👩":"🤖"}
+                {m.role==="user"?"👤":"🪙"}
               </div>
-              <div style={{maxWidth:"75%",padding:"12px 16px",borderRadius:m.role==="user"?"16px 4px 16px 16px":"4px 16px 16px 16px",background:m.role==="user"?`linear-gradient(135deg,${P.gold}22,${P.orange}18)`:P.card3,border:`1px solid ${m.role==="user"?P.gold+"33":P.border}`,fontFamily:"'Outfit',sans-serif",fontSize:13,color:P.text,lineHeight:1.7,whiteSpace:"pre-wrap"}}>
+              <div style={{maxWidth:"78%",padding:"12px 16px",borderRadius:m.role==="user"?"16px 4px 16px 16px":"4px 16px 16px 16px",background:m.role==="user"?`linear-gradient(135deg,${P.gold}22,${P.orange}15)`:P.card3,border:`1px solid ${m.role==="user"?P.gold+"33":P.border}`,fontFamily:"'Outfit',sans-serif",fontSize:13,color:P.text,lineHeight:1.75,whiteSpace:"pre-wrap"}}>
                 {m.content}
               </div>
             </div>
           ))}
           {loading&&(
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${P.violet},${P.sapphire})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🤖</div>
+              <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${P.violet},${P.sapphire})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>🪙</div>
               <div style={{padding:"12px 16px",background:P.card3,border:`1px solid ${P.border}`,borderRadius:"4px 16px 16px 16px",display:"flex",gap:5,alignItems:"center"}}>
                 {[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:P.violet,animation:`pulse 1.2s ${i*0.2}s infinite`}}/>)}
               </div>
+            </div>
+          )}
+          {messages.length===0&&!loading&&(
+            <div style={{textAlign:"center",padding:"40px 20px",color:P.muted}}>
+              <div style={{fontSize:48,marginBottom:12}}>🪙</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,color:P.violet,marginBottom:6}}>Arth is ready</div>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:11}}>Your live financial advisor — ask anything</div>
             </div>
           )}
         </div>
 
         {/* Input */}
         <div style={{padding:"14px 20px",borderTop:`1px solid ${P.border}`,background:P.card2,display:"flex",gap:10}}>
-          <input
-            value={input}
-            onChange={e=>setInput(e.target.value)}
+          <input value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&sendMessage()}
-            placeholder="Ask about your finances… (Enter to send)"
-            style={{flex:1,background:`${P.card3}`,border:`1px solid ${P.border}`,borderRadius:10,padding:"10px 14px",color:P.text,fontFamily:"'Outfit',sans-serif",fontSize:13,outline:"none"}}
+            placeholder="Ask Arth anything… (Enter to send)"
+            style={{flex:1,background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"11px 14px",color:P.text,fontFamily:"'Outfit',sans-serif",fontSize:13,outline:"none"}}
           />
-          <button
-            onClick={()=>sendMessage()}
-            disabled={loading||!input.trim()}
-            style={{background:loading||!input.trim()?P.border:`linear-gradient(135deg,${P.violet},${P.sapphire})`,border:"none",borderRadius:10,padding:"10px 18px",color:P.text,cursor:loading||!input.trim()?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:12,fontWeight:600,transition:"all .15s"}}>
+          <button onClick={()=>sendMessage()} disabled={loading||!input.trim()}
+            style={{background:loading||!input.trim()?P.border:`linear-gradient(135deg,${P.violet},${P.sapphire})`,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",cursor:loading||!input.trim()?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:12,fontWeight:700,transition:"all .15s",whiteSpace:"nowrap"}}>
             Send ↗
           </button>
         </div>
       </Card>
 
-      {/* Quick prompts + context panel */}
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <Card accent={P.gold}>
-          <SectionHead title="Quick Questions" icon="⚡" color={P.gold}/>
-          <div style={{display:"flex",flexDirection:"column",gap:7}}>
-            {QUICK.map((q,i)=>(
-              <button key={i} onClick={()=>sendMessage(q)}
-                style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:9,padding:"10px 13px",color:P.muted,cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:10,textAlign:"left",transition:"all .15s"}}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor=P.gold+"66";e.currentTarget.style.color=P.text;}}
+      {/* ── Right Panel ── */}
+      <div style={{display:"flex",flexDirection:"column",gap:12,overflowY:"auto"}}>
+        {/* Quick context */}
+        <Card accent={P.gold} style={{padding:16}}>
+          <SectionHead title="Your Snapshot" icon="📊" color={P.gold}/>
+          {[
+            {label:"Net Worth",    v:fmt(netWorth),  color:netWorth>0?P.emerald:P.ruby},
+            {label:"Total Debt",   v:fmt(totalDebt), color:P.ruby},
+            {label:"Investments",  v:fmt(totalAssets),color:P.sapphire},
+            {label:"In-Hand/mo",   v:fmt(inHand),    color:P.gold},
+            {label:"EMI/mo",       v:fmt(emiTotal),  color:P.orange},
+            {label:"EMI % Salary", v:`${salary>0?((emiTotal/salary)*100).toFixed(1):0}%`, color:emiTotal/salary>0.5?P.ruby:P.emerald},
+          ].map((r,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${P.border}22`}}>
+              <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>{r.label}</span>
+              <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:r.color}}>{r.v}</span>
+            </div>
+          ))}
+        </Card>
+
+        {/* Quick chips */}
+        <Card accent={P.violet} style={{padding:16}}>
+          <SectionHead title="Suggested Questions" icon="⚡" color={P.violet}/>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {QUICK_CHIPS.map((q,i)=>(
+              <button key={i} onClick={()=>sendMessage(q)} disabled={loading}
+                style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,padding:"8px 12px",color:P.muted,cursor:loading?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:9.5,textAlign:"left",transition:"all .15s",lineHeight:1.5}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=P.violet+"66";e.currentTarget.style.color=P.text;}}
                 onMouseLeave={e=>{e.currentTarget.style.borderColor=P.border;e.currentTarget.style.color=P.muted;}}>
                 {q}
               </button>
             ))}
           </div>
         </Card>
-        <Card accent={P.sapphire} style={{flex:1}}>
-          <SectionHead title="Your Context" icon="📊" color={P.sapphire}/>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {[
-              {label:"Net Worth",    v:fmt(totalInv-totalDebt), color:(totalInv-totalDebt)>0?P.emerald:P.ruby},
-              {label:"Total Debt",   v:fmt(totalDebt),          color:P.ruby   },
-              {label:"Investments",  v:fmt(totalInv),           color:P.sapphire},
-              {label:"In-Hand/mo",   v:fmt(d.income.inHand),    color:P.gold   },
-              {label:"EMI/mo",       v:fmt(n(d.income.hdfcEmi)+n(d.income.idfcEmi)+n(d.income.sbiEmi)), color:P.orange},
-              {label:"Lending Yield",v:"24% p.a.",              color:P.teal   },
-            ].map((r,i)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${P.border}22`}}>
-                <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>{r.label}</span>
-                <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:r.color}}>{r.v}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{marginTop:12,padding:"8px 10px",background:`${P.sapphire}0F`,border:`1px solid ${P.sapphire}22`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:9,color:`${P.sapphire}aa`,lineHeight:1.8}}>
-            💡 The AI has full visibility into your salary, EMIs, loans, investments, lending, and real estate.
-          </div>
-        </Card>
+
+        {/* Brief me button */}
+        <button onClick={()=>sendMessage("Give me a detailed morning financial brief — 5 key points about my finances today, what needs attention, and one priority action I should take.")}
+          disabled={loading}
+          style={{background:`linear-gradient(135deg,${P.gold},${P.orange})`,border:"none",borderRadius:12,padding:"14px 0",color:"#050D1A",cursor:loading?"not-allowed":"pointer",fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:800,transition:"all .2s",boxShadow:`0 0 20px ${P.gold}44`}}>
+          ☀️ Brief Me Today
+        </button>
       </div>
     </div>
   );
 }
 
-// ─── MILESTONES COMPONENT ─────────────────────────────────────────────────────
-function Milestones({ data }) {
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 2 — SMART ALERTS
+// ═══════════════════════════════════════════════════════════════════════════════
+function AIAlertsSection({ data, totalDebt, totalAssets, netWorth, emiTotal, salary }) {
   const d = data;
-  const totalDebt  = n(d.loans.hdfc.outstanding)+n(d.loans.idfc.outstanding)+n(d.loans.sbi.outstanding);
-  const totalAssets= n(d.stocks.summary.total.current)+n(d.lendenClub.totalPooled)+n(d.personalLending.totalCapital)+n(d.realEstate.paid);
-  const startNW    = totalAssets - totalDebt;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [reportLoading, setReportLoading] = useState(false);
+  const [report, setReport]               = useState(null);
+  const [whatsapp, setWhatsapp]           = useState(null);
+  const [wpLoading, setWpLoading]         = useState(false);
 
-  // Monthly net-worth accretion estimate
-  const emiTotal      = n(d.income.hdfcEmi)+n(d.income.idfcEmi)+n(d.income.sbiEmi);
-  const debtInterest  = (n(d.loans.hdfc.outstanding)*0.105 + n(d.loans.idfc.outstanding)*0.135 + n(d.loans.sbi.outstanding)*0.0935) / 12;
-  const netDebtReducn = emiTotal - debtInterest;
-  const investReturn  = totalAssets * 0.12 / 12;
-  const monthlySavings= Math.max(0, n(d.income.inHand) - 12000); // rough living expense
-  const monthlyNWGain = netDebtReducn + investReturn + monthlySavings;
-
-  // Project month-by-month
-  const projections = [];
-  let nw = startNW;
-  let assets = totalAssets;
-  const now = new Date(2026, 2, 1);
-  for (let m = 0; m <= 360; m++) {
-    projections.push({ month:m, nw:Math.round(nw), assets:Math.round(assets), date:fmtDate(addMonths(now,m)) });
-    assets += assets * 0.01 + monthlySavings;
-    const debt = Math.max(0, -nw + assets - assets);
-    nw += monthlyNWGain * (1 + m * 0.00083); // slight salary growth
+  // ── 05: Proactive Alert Engine ──
+  const alerts = [];
+  const kishanRao = d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"));
+  if (kishanRao && n(kishanRao.pendingInt)>0) {
+    alerts.push({ level:"critical", icon:"🔴", title:"Borrower Default Alert", msg:`KishanRao has ₹${n(kishanRao.pendingInt).toLocaleString("en-IN")} unpaid interest — ${kishanRao.monthsElapsed||2} months overdue. Capital at risk: ₹${n(kishanRao.amount).toLocaleString("en-IN")}`, color:P.ruby });
   }
+  const nextHdfc = d.loans?.hdfc?.schedule?.find(s=>!s.status||s.status==="");
+  if (nextHdfc) {
+    const dueDate = new Date(nextHdfc.date);
+    const today   = new Date();
+    const daysLeft= Math.ceil((dueDate-today)/(1000*60*60*24));
+    if (daysLeft<=10) alerts.push({ level:"warning", icon:"🟡", title:`HDFC EMI Due in ${daysLeft} days`, msg:`₹${n(nextHdfc.emi).toLocaleString("en-IN")} due ${nextHdfc.date}. Ensure funds in account.`, color:P.orange });
+  }
+  if (emiTotal/salary>0.5) {
+    alerts.push({ level:"warning", icon:"🟠", title:"High EMI Burden", msg:`EMIs consume ${((emiTotal/salary)*100).toFixed(1)}% of your salary — above safe 40% threshold. Risk of cash crunch if any unexpected expense hits.`, color:P.orange });
+  }
+  const totalBudget = Object.entries(d.budget||{}).filter(([k])=>k!=="actual").reduce((s,[,v])=>s+n(v),0);
+  const totalActual = Object.values(d.budget?.actual||{}).reduce((s,v)=>s+n(v),0);
+  if (totalActual>totalBudget) {
+    alerts.push({ level:"warning", icon:"🟡", title:"Budget Overspend", msg:`Actual spend ₹${totalActual.toLocaleString("en-IN")} exceeds budget ₹${totalBudget.toLocaleString("en-IN")} by ₹${(totalActual-totalBudget).toLocaleString("en-IN")} this month.`, color:P.gold });
+  }
+  const lcNPA = (d.lendenClub?.tabSummary||[]).reduce((s,t)=>s+n(t.npa),0);
+  if (lcNPA>0) alerts.push({ level:"info", icon:"🔵", title:"LendenClub NPA Alert", msg:`₹${lcNPA.toLocaleString("en-IN")} in NPA loans. Monitor recovery.`, color:P.sapphire });
+  if (alerts.length===0) alerts.push({ level:"good", icon:"✅", title:"All Clear!", msg:"No critical alerts today. Your finances are on track.", color:P.emerald });
 
-  const TARGETS = [
-    { label:"Break Even (₹0)",  value:0,          icon:"⚖️",  color:P.muted    },
-    { label:"₹1 Lakh",          value:100000,      icon:"💰",  color:P.emerald  },
-    { label:"₹10 Lakh",         value:1000000,     icon:"💵",  color:P.sapphire },
-    { label:"₹25 Lakh",         value:2500000,     icon:"📈",  color:P.teal     },
-    { label:"₹1 Crore 🎯",      value:10000000,    icon:"🏆",  color:P.gold     },
-    { label:"₹10 Crore 🚀",     value:100000000,   icon:"🚀",  color:P.violet   },
-    { label:"₹100 Crore 👑",    value:1000000000,  icon:"👑",  color:P.ruby     },
-  ];
+  // ── 06: Financial Health Score ──
+  const savingsRate  = salary>0 ? n(d.income?.inHand)/salary : 0;
+  const emiBurden    = salary>0 ? emiTotal/salary : 0;
+  const investPct    = (n(d.income?.grossTotal)||salary)>0 ? totalAssets/(((n(d.income?.grossTotal)||salary))*12) : 0;
+  const debtCoverage = totalAssets>0 ? Math.min(1, totalDebt/totalAssets) : 1;
 
-  const milestones = TARGETS.map(t => {
-    const hit = projections.find(p => p.nw >= t.value);
-    return { ...t, monthsAway: hit?.month ?? null, date: hit ? fmtDate(addMonths(now, hit.month)) : "50yr+" };
-  });
-
-  const chartData = projections.filter((_,i)=>i%6===0).slice(0,61).map(p=>({
-    date:p.date, nw:Math.max(p.nw,-2000000), nwM:+(p.nw/10000000).toFixed(3)
-  }));
-
-  const milestoneLines = milestones.filter(m=>m.monthsAway&&m.monthsAway<=360).map(m=>({
-    value: +(m.value/10000000).toFixed(3), label:m.label, color:m.color
-  }));
-
-  return (
-    <div className="fade">
-      {/* Current net worth banner */}
-      <div style={{background:`linear-gradient(135deg,${startNW<0?P.ruby:P.emerald}18,transparent)`,border:`1px solid ${startNW<0?P.ruby:P.emerald}33`,borderRadius:16,padding:"20px 24px",marginBottom:16,display:"flex",gap:40,alignItems:"center"}}>
-        <div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,textTransform:"uppercase",letterSpacing:2.5,color:P.muted,marginBottom:6}}>Current Net Worth</div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:36,fontWeight:800,color:startNW<0?P.ruby:P.emerald}}>{fmt(startNW)}</div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:P.muted,marginTop:4}}>Assets {fmt(totalAssets)} − Debt {fmt(totalDebt)}</div>
-        </div>
-        <div style={{borderLeft:`1px solid ${P.border}`,paddingLeft:40}}>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,textTransform:"uppercase",letterSpacing:2,color:P.muted,marginBottom:6}}>Monthly NW Growth (est.)</div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:700,color:P.gold}}>+{fmt(monthlyNWGain)}/mo</div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:4}}>
-            Debt reduction {fmt(netDebtReducn)} + Returns {fmt(investReturn)} + Savings {fmt(monthlySavings)}
-          </div>
-        </div>
-        <div style={{marginLeft:"auto",borderLeft:`1px solid ${P.border}`,paddingLeft:40}}>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginBottom:4}}>Assumptions</div>
-          {[`Portfolio CAGR: ${d.settings.portfolioCAGR}%`, `Salary Growth: ${d.settings.salaryGrowth}%/yr`, `Personal Lending: ${d.settings.personalLendingReturn}%/yr`, `RE Appreciation: ${d.settings.realEstateAppreciation}%/yr`].map((a,i)=>(
-            <div key={i} style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.text,marginBottom:2}}>• {a}</div>
-          ))}
-        </div>
-      </div>
-
-      {/* Milestone cards */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:10,marginBottom:16}}>
-        {milestones.map((m,i)=>(
-          <div key={i} style={{background:`linear-gradient(145deg,${P.card},${P.card2})`,border:`1px solid ${m.monthsAway===0?m.color:P.border}`,borderTop:`2px solid ${m.color}`,borderRadius:14,padding:"14px 12px",textAlign:"center",
-            boxShadow:m.monthsAway===0?`0 0 16px ${m.color}33`:"none"}}>
-            <div style={{fontSize:24,marginBottom:6}}>{m.icon}</div>
-            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:4,letterSpacing:1}}>{m.label}</div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:800,color:m.color,lineHeight:1.2}}>{m.date}</div>
-            {m.monthsAway!==null && m.monthsAway>0 && (
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:4}}>
-                {m.monthsAway<12?`${m.monthsAway} mo`:m.monthsAway<120?`${Math.floor(m.monthsAway/12)}y ${m.monthsAway%12}m`:`${Math.floor(m.monthsAway/12)} yrs`} away
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Projection chart */}
-      <Card accent={P.gold} style={{marginBottom:14}}>
-        <SectionHead title="Net Worth Trajectory (30-Year Projection)" icon="📈" color={P.gold}/>
-        <ResponsiveContainer width="100%" height={280}>
-          <AreaChart data={chartData} margin={{top:10,right:20,left:0,bottom:0}}>
-            <defs>
-              <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={P.gold} stopOpacity={.45}/>
-                <stop offset="100%" stopColor={P.gold} stopOpacity={0}/>
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="date" tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false} interval={7}/>
-            <YAxis tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false} tickFormatter={v=>`${v.toFixed(1)}Cr`}/>
-            <Tooltip content={({active,payload,label})=>active&&payload?.length?(
-              <div style={{background:P.card3,border:`1px solid ${P.border2}`,borderRadius:10,padding:"10px 14px"}}>
-                <p style={{color:P.muted,fontSize:10,margin:"0 0 4px",fontFamily:"'Fira Code',monospace"}}>{label}</p>
-                <p style={{color:P.gold,fontSize:13,fontWeight:700,margin:0,fontFamily:"'Fira Code',monospace"}}>₹{(payload[0].value*10000000/10000000*100).toFixed(0)}L → {payload[0].value>=1?`₹${payload[0].value.toFixed(2)}Cr`:fmt(payload[0].value*10000000)}</p>
-              </div>
-            ):null}/>
-            <Area type="monotone" dataKey="nwM" name="Net Worth (Cr)" stroke={P.gold} fill="url(#nwGrad)" strokeWidth={2.5} dot={false}/>
-          </AreaChart>
-        </ResponsiveContainer>
-        <div style={{marginTop:8,display:"flex",gap:16,flexWrap:"wrap"}}>
-          {milestones.filter(m=>m.monthsAway&&m.monthsAway<=360).map((m,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:5}}>
-              <div style={{width:10,height:10,borderRadius:2,background:m.color}}/>
-              <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:m.color}}>{m.label} — {m.date}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Milestone table */}
-      <Card accent={P.sapphire}>
-        <SectionHead title="Detailed Milestone Analysis" icon="🎯" color={P.sapphire}/>
-        <table>
-          <thead>
-            <tr>
-              <TH left>Milestone</TH><TH>Target Net Worth</TH><TH>Estimated Date</TH><TH>Time Away</TH><TH>Key Lever</TH>
-            </tr>
-          </thead>
-          <tbody>
-            {milestones.map((m,i)=>{
-              const levers = ["Clear IDFC & SBI loans","Grow Personal Lending book","Increase SIP contributions","Deploy LendenClub reinvestments","HDFC principal reduction","Diversify equity allocation","Scale lending operations"];
-              return (
-                <tr key={i} style={{background:i%2===0?"transparent":`${P.card2}44`}}>
-                  <TD left bold color={m.color}>{m.icon} {m.label}</TD>
-                  <TD color={P.text}>{m.value>=10000000?`₹${(m.value/10000000).toFixed(0)}Cr`:m.value>=100000?`₹${(m.value/100000).toFixed(0)}L`:`₹${m.value.toLocaleString("en-IN")}`}</TD>
-                  <TD bold color={m.color}>{m.date}</TD>
-                  <TD color={P.muted}>{m.monthsAway===0?"Already here!":m.monthsAway===null?"50+ years":m.monthsAway<12?`${m.monthsAway} months`:m.monthsAway<24?`${Math.floor(m.monthsAway/12)}y ${m.monthsAway%12}m`:`${Math.floor(m.monthsAway/12)} years`}</TD>
-                  <TD left color={P.muted}>{levers[i]||"—"}</TD>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <div style={{marginTop:12,padding:"10px 14px",background:`${P.sapphire}0E`,border:`1px solid ${P.sapphire}22`,borderRadius:10,fontFamily:"'Fira Code',monospace",fontSize:10,color:`${P.sapphire}99`,lineHeight:1.9}}>
-          ⚠ Projections assume current salary growth, portfolio CAGR, and consistent savings. Aggressive loan prepayment can accelerate milestones by 2-4 years. Consult a SEBI-registered adviser for formal planning.
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ─── AI CODE FIXER COMPONENT ─────────────────────────────────────────────────
-function AICodeFixer({ syncLog }) {
-  const [issue,    setIssue]    = useState("");
-  const [fixing,   setFixing]   = useState(false);
-  const [result,   setResult]   = useState(null);   // {diagnosis, fix, explanation}
-  const [copied,   setCopied]   = useState(false);
-  const [autoMode, setAutoMode] = useState(false);
-  const prevErrorRef = useRef("");
-
-  // Errors from last sync round
-  const recentErrors = [...new Map((syncLog||[]).filter(l=>l.status!=="✅ OK").map(l=>[l.key,l])).values()];
-  const hasErrors    = recentErrors.length > 0;
-
-  const runFixer = async (overrideIssue) => {
-    const desc = overrideIssue || issue.trim();
-    if (!desc && !hasErrors) return;
-    setFixing(true); setResult(null);
-
-    const errorContext = recentErrors.map(e=>`• ${e.key}: ${e.status} — ${e.error||"unknown"} (${e.dur})`).join("\n");
-    const allLogs = (syncLog||[]).slice(0,20).map(l=>`[${l.ts}] ${l.status} ${l.key} ${l.dur} ${l.summary||l.error||""}`).join("\n");
-
-    const prompt = `You are a Google Apps Script + React debugging expert.
-The user has a Personal Finance Dashboard that syncs with 6 Google Apps Script endpoints.
-
-SYNC ERRORS DETECTED:
-${errorContext || "(none — user reported a problem manually)"}
-
-RECENT SYNC LOG (last 20 entries):
-${allLogs}
-
-SCRIPT URLS:
-- income:          https://script.google.com/macros/s/AKfycbzJSJzBIP8XV_nnQhQBWBNO-bE5fXQfcdfse7oAPclzcs3ms-v2GkPalm2j1TcyUHkt/exec
-- stocks:          https://script.google.com/macros/s/AKfycbwwf47ett1RyYcBPzVnix0vNfjPMQthpk_NF0DnLXR3CaA0x1BmJf9T3T8TUbRHvU-joQ/exec
-- lendenClub:      https://script.google.com/macros/s/AKfycbwMH0irJgr26onzupc5uWJ4_7Dg3oTnIj_iuH2UymLvDS_v56l0XyLUtcI2Y-paQWCe/exec
-- personalLending: https://script.google.com/macros/s/AKfycbz-R7ADfgx6Ey6cKGIhf1v1cKSzyyJNNpI5RNXFfrLPrnACSd_TnIyfdmQ0p8x-q2OclQ/exec
-- realEstate:      https://script.google.com/macros/s/AKfycbwSyb-rjOqqRXUJ5pDTK_HS9N0K38PuiljpRRiV_OjpJ-FJXn1ZJ9lGL-Tqd09CWJPN/exec
-- loans:           https://script.google.com/macros/s/AKfycbxhiRe4WeL6D4sACteYVXJ4JJIFDBGEgq19o6491tP3Ajw3vLsQGCtYcCf1jg4OMTSm1Q/exec
-
-USER DESCRIPTION: ${desc || "(none — diagnosing from sync errors above)"}
-
-Respond ONLY as valid JSON (no markdown, no backticks):
-{
-  "diagnosis": "One-sentence root cause",
-  "severity": "critical|warning|info",
-  "fix_type": "apps_script|react_code|network|data|config",
-  "steps": ["step 1", "step 2"],
-  "code_fix": "If a code change is needed, paste the exact corrected snippet here. Otherwise empty string.",
-  "code_context": "Brief comment on where this code goes (e.g., 'In your doGet function, replace the return line')",
-  "explanation": "2-3 sentence plain-English explanation of what went wrong and why this fix works."
-}`;
-
-    try {
-      const res  = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
-          messages:[{role:"user",content:prompt}]
-        })
-      });
-      const data = await res.json();
-      const raw  = data.content?.map(c=>c.text||"").join("") || "{}";
-      const clean= raw.replace(/```json|```/g,"").trim();
-      const parsed = JSON.parse(clean);
-      setResult(parsed);
-    } catch(e) {
-      setResult({ diagnosis:"Could not parse AI response", severity:"warning", steps:[], code_fix:"", explanation: String(e.message) });
-    } finally {
-      setFixing(false);
-    }
+  const scores = {
+    savings:     Math.round(Math.min(100, savingsRate * 300)),
+    emiBurden:   Math.round(Math.max(0, 100 - emiBurden * 150)),
+    investment:  Math.round(Math.min(100, investPct * 100)),
+    debtControl: Math.round(Math.max(0, 100 - debtCoverage * 80)),
   };
+  const healthScore = Math.round((scores.savings*0.3 + scores.emiBurden*0.3 + scores.investment*0.2 + scores.debtControl*0.2));
+  const healthColor = healthScore>=70?P.emerald:healthScore>=50?P.gold:P.ruby;
+  const healthLabel = healthScore>=70?"Healthy 💚":healthScore>=50?"Fair ⚠":"Needs Work 🔴";
 
-  // Auto-trigger when new errors appear
-  useEffect(() => {
-    if (!autoMode || !hasErrors) return;
-    const key = recentErrors.map(e=>e.key+e.status).join("|");
-    if (key !== prevErrorRef.current) {
-      prevErrorRef.current = key;
-      runFixer("Auto-detected sync errors");
-    }
-  }, [syncLog, autoMode]);
-
-  const copyFix = () => {
-    navigator.clipboard.writeText(result?.code_fix||"").then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); });
-  };
-
-  const sevColor = { critical:P.ruby, warning:P.orange, info:P.sapphire }[result?.severity] || P.muted;
-
-  return (
-    <div className="fade">
-      {/* Header banner */}
-      <div style={{background:`linear-gradient(135deg,${P.violet}14,${P.sapphire}0A)`,border:`1px solid ${P.violet}33`,borderRadius:16,padding:"18px 24px",marginBottom:16,display:"flex",gap:20,alignItems:"center"}}>
-        <div style={{fontSize:36}}>🔧</div>
-        <div style={{flex:1}}>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:17,fontWeight:800,color:P.text,marginBottom:4}}>Dynamic AI Code Fixer</div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.8}}>
-            Describe any sync issue, data mismatch, or error — Claude will diagnose it and generate the exact fix code for your Apps Script or dashboard. No need to visit Claude.ai manually.
-          </div>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"6px 14px",background:autoMode?`${P.emerald}18`:P.card3,border:`1px solid ${autoMode?P.emerald:P.border}`,borderRadius:20}} onClick={()=>setAutoMode(o=>!o)}>
-            <div style={{width:7,height:7,borderRadius:"50%",background:autoMode?P.emerald:P.muted,boxShadow:autoMode?`0 0 8px ${P.emerald}`:""}}/>
-            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:autoMode?P.emerald:P.muted}}>Auto-fix on error</span>
-          </div>
-          {hasErrors&&<div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.orange}}>⚠ {recentErrors.length} active error{recentErrors.length>1?"s":""} detected</div>}
-        </div>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        {/* Error panel */}
-        <Card accent={hasErrors?P.ruby:P.emerald}>
-          <SectionHead title="Current Sync Status" icon="📡" color={hasErrors?P.ruby:P.emerald}/>
-          {recentErrors.length===0 ? (
-            <div style={{textAlign:"center",padding:"24px 0",fontFamily:"'Fira Code',monospace",fontSize:11,color:P.emerald}}>
-              ✅ All 6 endpoints syncing OK
-            </div>
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {recentErrors.map((e,i)=>(
-                <div key={i} style={{background:`${P.ruby}0A`,border:`1px solid ${P.ruby}22`,borderRadius:10,padding:"10px 14px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:P.ruby,fontWeight:700}}>{e.key}</span>
-                    <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>{e.ts} · {e.dur}</span>
-                  </div>
-                  <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.orange}}>{e.error}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          {/* Recent successes */}
-          <div style={{marginTop:12}}>
-            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:6,letterSpacing:1,textTransform:"uppercase"}}>Last successful syncs</div>
-            {[...new Map((syncLog||[]).filter(l=>l.status==="✅ OK").map(l=>[l.key,l])).values()].slice(0,6).map((l,i)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${P.border}18`}}>
-                <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald}}>✅ {l.key}</span>
-                <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>{l.summary||"ok"} · {l.ts}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        {/* Input panel */}
-        <Card accent={P.violet}>
-          <SectionHead title="Describe Your Issue" icon="💬" color={P.violet}/>
-          <textarea
-            value={issue}
-            onChange={e=>setIssue(e.target.value)}
-            placeholder={`Describe what's broken, e.g.:\n• "Stocks tab shows seed data even after sync"\n• "CORS error on realEstate but script is deployed"\n• "Income data not updating from sheet"\n• "Sync shows ✅ but values unchanged"`}
-            style={{width:"100%",minHeight:130,background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"12px 14px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:11,resize:"vertical",lineHeight:1.7,outline:"none",boxSizing:"border-box"}}
-          />
-          <div style={{display:"flex",gap:10,marginTop:12}}>
-            <button
-              onClick={()=>runFixer()}
-              disabled={fixing||(!issue.trim()&&!hasErrors)}
-              style={{flex:1,background:fixing||(!issue.trim()&&!hasErrors)?P.border:`linear-gradient(135deg,${P.violet},${P.sapphire})`,border:"none",borderRadius:10,padding:"11px 18px",color:P.text,cursor:fixing||(!issue.trim()&&!hasErrors)?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:12,fontWeight:600}}>
-              {fixing?"🔍 Diagnosing…":"🔧 Diagnose & Fix"}
-            </button>
-            {hasErrors&&(
-              <button
-                onClick={()=>runFixer("Auto-diagnose sync errors")}
-                disabled={fixing}
-                style={{background:fixing?P.border:`${P.ruby}22`,border:`1px solid ${P.ruby}44`,borderRadius:10,padding:"11px 16px",color:P.ruby,cursor:fixing?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:600}}>
-                Fix Errors
-              </button>
-            )}
-          </div>
-          {fixing&&(
-            <div style={{marginTop:12,display:"flex",gap:8,alignItems:"center",fontFamily:"'Fira Code',monospace",fontSize:10,color:P.violet}}>
-              {[0,1,2].map(i=><div key={i} style={{width:6,height:6,borderRadius:"50%",background:P.violet,animation:`pulse 1.2s ${i*0.2}s infinite`}}/>)}
-              Analyzing error patterns and generating targeted fix…
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Result panel */}
-      {result && (
-        <Card accent={sevColor} style={{marginBottom:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-            <SectionHead title="Diagnosis & Fix" icon="🩺" color={sevColor}/>
-            <Pill color={sevColor}>{result.severity?.toUpperCase()||"INFO"}</Pill>
-          </div>
-
-          {/* Diagnosis */}
-          <div style={{background:`${sevColor}0E`,border:`1px solid ${sevColor}22`,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
-            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:sevColor,marginBottom:6,letterSpacing:1.5,textTransform:"uppercase"}}>Root Cause</div>
-            <div style={{fontFamily:"'Outfit',sans-serif",fontSize:14,fontWeight:600,color:P.text,marginBottom:8}}>{result.diagnosis}</div>
-            <div style={{fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.muted,lineHeight:1.7}}>{result.explanation}</div>
-          </div>
-
-          {/* Steps */}
-          {result.steps?.length>0 && (
-            <div style={{marginBottom:14}}>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:8,letterSpacing:1.5,textTransform:"uppercase"}}>Fix Steps</div>
-              {result.steps.map((s,i)=>(
-                <div key={i} style={{display:"flex",gap:12,padding:"8px 0",borderBottom:`1px solid ${P.border}22`,alignItems:"flex-start"}}>
-                  <div style={{width:22,height:22,borderRadius:"50%",background:`${sevColor}22`,border:`1px solid ${sevColor}44`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Fira Code',monospace",fontSize:10,color:sevColor,flexShrink:0}}>{i+1}</div>
-                  <span style={{fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.6,paddingTop:2}}>{s}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Code fix */}
-          {result.code_fix && (
-            <div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,letterSpacing:1.5,textTransform:"uppercase"}}>
-                  Generated Fix · <span style={{color:P.sapphire}}>{result.fix_type}</span>
-                  {result.code_context&&<span style={{color:P.muted}}> · {result.code_context}</span>}
-                </div>
-                <button onClick={copyFix} style={{background:copied?`${P.emerald}22`:`${P.sapphire}18`,border:`1px solid ${copied?P.emerald:P.sapphire}44`,borderRadius:8,padding:"4px 14px",color:copied?P.emerald:P.sapphire,cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:600,transition:"all .2s"}}>
-                  {copied?"✅ Copied!":"📋 Copy Code"}
-                </button>
-              </div>
-              <div style={{background:"#020810",border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px",overflowX:"auto",maxHeight:300,overflowY:"auto"}}>
-                <pre style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:P.emerald,margin:0,lineHeight:1.75,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{result.code_fix}</pre>
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* Tips */}
-      <Card accent={P.gold}>
-        <SectionHead title="Common Issues & Quick Fixes" icon="💡"/>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
-          {[
-            { issue:"CORS blocked",      tip:"In Apps Script doGet(), wrap response with ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON). Redeploy as 'Anyone'.",  color:P.orange },
-            { issue:"Data not updating", tip:"Make sure your Apps Script reads from the correct sheet name. Add Logger.log(JSON.stringify(data)) to debug what's returned. Check sheet permissions.",               color:P.sapphire },
-            { issue:"Script timeout",    tip:"The 8s fetch timeout may be too short for large sheets. Try reducing data sent — only return current month data, not full history.",                                  color:P.violet },
-            { issue:"JSON parse error",  tip:"Your Apps Script may be returning HTML (error page) instead of JSON. Always wrap in try/catch and return {error: e.message} on failure.",                           color:P.ruby },
-            { issue:"Old data shown",    tip:"Clear browser cache or force reload with Ctrl+Shift+R. The dashboard adds ?t= timestamp to bust cache — check if your proxy is caching requests.",                  color:P.teal },
-            { issue:"Partial sync",      tip:"If only some endpoints fail, check if those specific scripts have been re-deployed after your last edit. Each script needs its own deployment.",                     color:P.emerald },
-          ].map((t,i)=>(
-            <div key={i} style={{background:`${t.color}08`,border:`1px solid ${t.color}20`,borderRadius:10,padding:"12px 14px"}}>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:t.color,marginBottom:6}}>⚡ {t.issue}</div>
-              <div style={{fontFamily:"'Outfit',sans-serif",fontSize:11,color:P.muted,lineHeight:1.6}}>{t.tip}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ─── LENDENCLUB TAB COMPONENT ─────────────────────────────────────────────────
-function LendenClubTab({ data }) {
-  const d = data;
-  const [monthlyMonthNameFilter, setMonthlyMonthNameFilter] = useState("ALL_MONTHS");
-  const [monthlyYearFilter, setMonthlyYearFilter] = useState("ALL_YEARS");
-  const [loanMonthNameFilter, setLoanMonthNameFilter] = useState("ALL_MONTHS");
-  const [loanYearFilter, setLoanYearFilter] = useState("ALL_YEARS");
-  const [loanQuery, setLoanQuery] = useState("");
-  const [repayFilter, setRepayFilter] = useState("");
-
-  // ── Analytics calculations ──
-  const enrichLoan = (loan) => {
-    const rawStatus = String(loan.status || "").trim().toUpperCase();
-    const rawPrincipalRecv = n(loan.principalRecv);
-    const rawInterestRecv = n(loan.interestRecv);
-    const rawTotalRecv = n(loan.totalRecv);
-    const principalLooksLikeTotal = rawTotalRecv > 0 && Math.abs(rawPrincipalRecv - rawTotalRecv) < 0.5 && rawInterestRecv > 0;
-    const principalOverCounts = rawTotalRecv > 0 && rawPrincipalRecv + rawInterestRecv > rawTotalRecv + 0.5;
-    const normalizedPrincipalRecv = (principalLooksLikeTotal || principalOverCounts)
-      ? Math.max(0, rawTotalRecv - rawInterestRecv)
-      : (rawPrincipalRecv || (rawTotalRecv > 0 ? Math.max(0, rawTotalRecv - rawInterestRecv) : 0));
-    const disbursedOn = parseDateValue(loan.disbDate);
-    const closedOn = parseDateValue(loan.closure);
-    const repayStartOn = parseDateValue(loan.repayStart);
-    const dueOn = parseDateValue(loan.expectedClose) || (disbursedOn && loan.tenure ? addMonths(disbursedOn, loan.tenure) : null);
-    const principalFullyRecovered = n(loan.amount) > 0 && normalizedPrincipalRecv >= (n(loan.amount) - 0.5);
-    const isClosed = /closed|completed|repaid|settled/i.test(rawStatus) || Boolean(closedOn) || principalFullyRecovered;
-    const isExplicitPending = /pending|processing|live|ongoing/i.test(rawStatus);
-    const derivedStatus = isClosed
-      ? "CLOSED"
-      : isExplicitPending
-        ? "PENDING"
-        : "ACTIVE";
-    let repaymentStatus = "On Track";
-    if (derivedStatus === "CLOSED") {
-      repaymentStatus = "Closed";
-    } else if (n(loan.npa) > 0 || /npa|default|written off/i.test(rawStatus)) {
-      repaymentStatus = "NPA";
-    } else if (n(loan.dpd) > 0 || /overdue|delayed|late/i.test(rawStatus)) {
-      repaymentStatus = "OVERDUE";
-    } else if (repayStartOn instanceof Date && !Number.isNaN(repayStartOn.getTime())) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      repayStartOn.setHours(0, 0, 0, 0);
-      const diffDays = Math.round((repayStartOn.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-      if (diffDays === 0) repaymentStatus = "DUE TODAY";
-      else if (diffDays > 0 && diffDays <= 7) repaymentStatus = "DUE SOON";
-    }
-    const closedMonths = isClosed && disbursedOn && closedOn ? diffMonthsBetweenDates(disbursedOn, closedOn) : 0;
-    const monthlyRateToClose = isClosed && loan.amount > 0 && closedMonths > 0
-      ? +(((rawInterestRecv / loan.amount) / closedMonths) * 100).toFixed(2)
-      : 0;
-    const outstandingAmount = Math.max(0, n(loan.amount) - normalizedPrincipalRecv);
-    return {
-      ...loan,
-      principalRecv: normalizedPrincipalRecv,
-      interestRecv: rawInterestRecv,
-      totalRecv: rawTotalRecv,
-      status: derivedStatus,
-      rawStatus,
-      dueDate: dueOn ? fmtDate(dueOn) : "-",
-      monthsToClose: closedMonths,
-      monthlyRateToClose,
-      outstandingAmount,
-      rs: repaymentStatus,
-    };
-  };
-  const allLoans = (d.lendenClub.loanSamples || []).map(enrichLoan);
-  const monthlyLoanRows = (d.lendenClub.monthlyLoanRows || []).map(enrichLoan);
-  const parseTabParts = (tab) => {
-    const raw = String(tab || "").trim();
-    const match = raw.match(/^([A-Za-z]{3})[-/ ](\d{2,4})$/);
-    if (!match) return { month: raw, year: "" };
-    const year = String(match[2]).length === 2 ? `20${match[2]}` : String(match[2]);
-    return { month: match[1], year };
-  };
-  const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const getDateParts = (value) => {
-    const raw = String(value || "").trim();
-    let parsed = null;
-    const numericMatch = raw.match(/^(\d{1,2})[-\/ ](\d{1,2})[-\/ ](\d{2,4})$/);
-    if (numericMatch) {
-      const day = Number(numericMatch[1]);
-      const month = Number(numericMatch[2]) - 1;
-      let year = Number(numericMatch[3]);
-      if (year < 100) year += 2000;
-      parsed = new Date(year, month, day);
-    } else {
-      parsed = parseDateValue(raw);
-    }
-    if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return null;
-    return {
-      month: monthOrder[parsed.getMonth()],
-      year: String(parsed.getFullYear()),
-    };
-  };
-  const allTabLabels = Array.from(new Set([
-    ...d.lendenClub.tabSummary.map(t => String(t.tab || "").trim()).filter(Boolean),
-    ...monthlyLoanRows.map(l => String(l.tab || "").trim()).filter(Boolean),
-    ...allLoans.map(l => String(l.tab || "").trim()).filter(Boolean),
-  ])).sort((a, b) => lendenTabKey(a) - lendenTabKey(b));
-  const yearOptions = ["ALL_YEARS", ...Array.from(new Set(allTabLabels.map((tab) => parseTabParts(tab).year).filter(Boolean))).sort()];
-  const monthOptions = ["ALL_MONTHS", ...monthOrder.filter((month) => allTabLabels.some((tab) => parseTabParts(tab).month === month))];
-  const selectedMonthlyTabs = allTabLabels.filter((tab) => {
-    const parts = parseTabParts(tab);
-    return (monthlyYearFilter === "ALL_YEARS" || parts.year === monthlyYearFilter) &&
-      (monthlyMonthNameFilter === "ALL_MONTHS" || parts.month === monthlyMonthNameFilter);
-  });
-  const hasMonthlyTabFilter = monthlyYearFilter !== "ALL_YEARS" || monthlyMonthNameFilter !== "ALL_MONTHS";
-  const selectedLoanTabs = allTabLabels.filter((tab) => {
-    const parts = parseTabParts(tab);
-    return (loanYearFilter === "ALL_YEARS" || parts.year === loanYearFilter) &&
-      (loanMonthNameFilter === "ALL_MONTHS" || parts.month === loanMonthNameFilter);
-  });
-  const hasLoanTabFilter = loanYearFilter !== "ALL_YEARS" || loanMonthNameFilter !== "ALL_MONTHS";
-  const activeLoans = allLoans.filter(l=>l.status==="ACTIVE");
-  const closedLoans = allLoans.filter(l=>l.status==="CLOSED");
-  const pendingLoans = allLoans.filter(l=>l.status==="PENDING");
-  const overdueLoans = allLoans.filter(l=>l.rs==="OVERDUE");
-  const dueTodayLoans = allLoans.filter(l=>l.rs==="DUE TODAY");
-  const dueSoonLoans = allLoans.filter(l=>l.rs==="DUE SOON");
-  const npaLoans = allLoans.filter(l=>l.rs==="NPA");
-
-  // Interest earned per closed loan: interestRecv is actual earned interest
-  const totalInterestEarned  = allLoans.reduce((s,l)=>s+l.interestRecv,0);
-  const totalDisbursedFromLoans = allLoans.reduce((s,l)=>s+n(l.amount),0);
-  const totalReceivedFromLoans  = allLoans.reduce((s,l)=>s+n(l.totalRecv),0);
-  const totalFees               = allLoans.reduce((s,l)=>s+n(l.fee),0);
-  const totalPL                 = allLoans.reduce((s,l)=>s+n(l.pl),0);
-  const outstandingFromLoans    = activeLoans.reduce((s,l)=>s+n(l.outstandingAmount),0);
-  const totalDisbursed       = d.lendenClub.tabSummary.reduce((s,t)=>s+t.disbursed,0);
-  const totalReceived        = d.lendenClub.tabSummary.reduce((s,t)=>s+t.received,0);
-  const totalOutstanding     = d.lendenClub.tabSummary.reduce((s,t)=>s+t.outstanding,0);
-  const totalInterestFromTab = d.lendenClub.tabSummary.reduce((s,t)=>s+t.interest,0);
-  const displayTotalDisbursed = totalDisbursedFromLoans || totalDisbursed;
-  const displayTotalReceived = totalReceivedFromLoans || totalReceived;
-  const displayTotalOutstanding = outstandingFromLoans || totalOutstanding;
-  const currentCapitalDeployed = allLoans.length > 0 ? outstandingFromLoans : totalOutstanding;
-  const displayTotalInterest = totalInterestEarned || totalInterestFromTab;
-  const externalCapitalAdded = d.lendenClub.transactions?.length
-    ? d.lendenClub.transactions.reduce((s, t) => s + n(t.invested), 0)
-    : n(d.lendenClub.totalPooled);
-  const capitalAfterEarnings = externalCapitalAdded + displayTotalInterest;
-  const idleCash = capitalAfterEarnings - currentCapitalDeployed;
-  const avgLoanDuration      = allLoans.length ? (allLoans.reduce((s,l)=>s+l.tenure,0)/allLoans.length).toFixed(1) : 0;
-  const avgClosedDuration    = closedLoans.length ? (closedLoans.reduce((s,l)=>s+(l.monthsToClose || l.tenure || 0),0)/closedLoans.length).toFixed(1) : 0;
-  const avgClosedMonthlyRate = closedLoans.length
-    ? (
-        closedLoans.reduce((s,l)=>s+l.interestRecv,0) /
-        Math.max(closedLoans.reduce((s,l)=>s + (n(l.amount) * Math.max(1, n(l.monthsToClose))),0), 1)
-      * 100
-      ).toFixed(2)
-    : "0.00";
-  const summaryTotalLoans    = num(d.lendenClub.reportedTotalLoans) || d.lendenClub.tabSummary.reduce((s,t)=>s+t.loans,0) || allLoans.length;
-  const summaryClosedLoans   = num(d.lendenClub.reportedClosedLoans) || closedLoans.length;
-  const summaryOverdueLoans  = num(d.lendenClub.reportedOverdueLoans) || overdueLoans.length;
-  const summaryPendingLoans  = num(d.lendenClub.reportedPendingLoans) || pendingLoans.length;
-  const summaryActiveLoans   = num(d.lendenClub.reportedActiveLoans) || Math.max(0, activeLoans.length || (summaryTotalLoans - summaryClosedLoans - summaryPendingLoans - summaryOverdueLoans));
-  const weightedAvgRate      = allLoans.length ? (allLoans.reduce((s,l)=>s+n(l.rate),0)/allLoans.length) : 0;
-  const avgScore             = allLoans.length ? Math.round(allLoans.reduce((s,l)=>s+n(l.score),0)/allLoans.length) : 0;
-  const grossRate            = totalDisbursedFromLoans>0 ? ((totalInterestEarned/totalDisbursedFromLoans)*100) : 0;
-  const feesDrag             = totalDisbursedFromLoans>0 ? ((totalFees/totalDisbursedFromLoans)*100) : 0;
-  const netRate              = grossRate;
-  const closedDisbursed      = closedLoans.reduce((s,l)=>s+n(l.amount),0);
-  const closedInterest       = closedLoans.reduce((s,l)=>s+n(l.interestRecv),0);
-  const closedRate           = closedDisbursed>0 ? ((closedInterest/closedDisbursed)*100) : 0;
-
-  // ROI = annualised return on invested capital
-  const roi = d.lendenClub.totalPooled>0 
-    ? ((displayTotalInterest / d.lendenClub.totalPooled) * (12 / 3) * 100).toFixed(2)  // 3 months of data
-    : 0;
-
-  // Filter loans based on selected filter
-  const matchesLoanTabFilter = (loan) => !hasLoanTabFilter || selectedLoanTabs.includes(String(loan.tab || "").trim());
-  const matchesClosureFilter = (loan) => {
-    if (!hasLoanTabFilter) return true;
-    const parts = getDateParts(loan.closure);
-    if (!parts) return false;
-    return (loanYearFilter === "ALL_YEARS" || parts.year === loanYearFilter) &&
-      (loanMonthNameFilter === "ALL_MONTHS" || parts.month === loanMonthNameFilter);
-  };
-  const tableLoanSource = (() => {
-    if (repayFilter === "Closed") return closedLoans.filter(matchesClosureFilter);
-    if (!hasLoanTabFilter) return allLoans;
-    const tabRows = monthlyLoanRows.filter(matchesLoanTabFilter);
-    if (tabRows.length === 0) return allLoans.filter(matchesLoanTabFilter);
-    return tabRows;
-  })();
-  const filteredLoans = tableLoanSource.filter((l) => {
-    if (repayFilter && l.rs !== repayFilter) return false;
-    const query = loanQuery.trim().toLowerCase();
-    if (!query) return true;
-    return [
-      l.tab,
-      l.id,
-      l.status,
-      l.rs,
-      l.rawStatus,
-      l.disbDate,
-      l.closure,
-      l.repayStart,
-    ].some((value) => String(value || "").toLowerCase().includes(query));
-  });
-  const visibleMonthlySummary = (hasMonthlyTabFilter
-    ? d.lendenClub.tabSummary.filter(t => selectedMonthlyTabs.includes(String(t.tab || "").trim()))
-    : d.lendenClub.tabSummary
-  ).sort((a, b) => lendenTabKey(a.tab) - lendenTabKey(b.tab));
-  const visibleMonthlyRows = visibleMonthlySummary.map((t) => {
-    const tabKey = String(t.tab || "").trim();
-    const monthLoans = monthlyLoanRows.filter((l) => String(l.tab || "").trim() === tabKey);
-    const dedupedMonthLoans = allLoans.filter((l) => String(l.tab || "").trim() === tabKey);
-    const totalLoans = t.loans || dedupedMonthLoans.length;
-    const rawMonthStatus = (loan) => String(loan.rawStatus || "").trim().toUpperCase();
-    const closed = monthLoans.filter((l) => rawMonthStatus(l) === "CLOSED");
-    const pending = monthLoans.filter((l) => /PENDING|PROCESSING|LIVE|ONGOING/.test(rawMonthStatus(l)));
-    const overdue = monthLoans.filter((l) => /OVERDUE|DELAYED|LATE/.test(rawMonthStatus(l)));
-    const npa = monthLoans.filter((l) => /NPA|DEFAULT|WRITTEN OFF/.test(rawMonthStatus(l)));
-    const dueToday = monthLoans.filter((l) => l.rs === "DUE TODAY");
-    const dueSoon = monthLoans.filter((l) => l.rs === "DUE SOON");
-    const activeCount = Math.max(0, totalLoans - closed.length - pending.length - overdue.length - npa.length);
-    const monthDisbursed = t.disbursed || dedupedMonthLoans.reduce((s, l) => s + n(l.amount), 0);
-    const loanInterest = dedupedMonthLoans.reduce((s, l) => s + n(l.interestRecv), 0);
-    const loanPrincipal = dedupedMonthLoans.reduce((s, l) => s + n(l.principalRecv), 0);
-    const loanFees = dedupedMonthLoans.reduce((s, l) => s + n(l.fee), 0);
-    const monthInterest = dedupedMonthLoans.length > 0 ? loanInterest : (t.interest || 0);
-    const monthPrincipal = dedupedMonthLoans.length > 0 ? loanPrincipal : (t.principal || 0);
-    const monthFees = dedupedMonthLoans.length > 0 ? loanFees : (t.fee || 0);
-    const monthOutstanding = t.outstanding || dedupedMonthLoans.reduce((s, l) => s + n(l.outstandingAmount), 0);
-    const monthNetRate = monthDisbursed > 0 ? ((monthInterest / monthDisbursed) * 100) : 0;
-    return {
-      ...t,
-      loans: totalLoans,
-      active: activeCount,
-      closed: closed.length,
-      pending: pending.length,
-      overdue: overdue.length,
-      npa: npa.length,
-      dueToday: dueToday.length,
-      dueSoon: dueSoon.length,
-      monthDisbursed,
-      monthInterest,
-      monthFees,
-      monthPrincipal,
-      monthOutstanding,
-      monthNetRate,
-    };
-  });
-  const monthlyBreakdown = visibleMonthlyRows.map((t) => ({
-    month: t.tab,
-    disbursed: t.monthDisbursed,
-    interest: t.monthInterest,
-    outstanding: t.monthOutstanding,
-    loans: t.loans,
-    roi: t.monthDisbursed > 0 ? ((t.monthInterest / t.monthDisbursed) * 100 * 12).toFixed(1) : 0,
-  }));
-  const visibleMonthlyTotals = visibleMonthlyRows.reduce((acc, row) => ({
-    loans: acc.loans + n(row.loans),
-    active: acc.active + n(row.active),
-    closed: acc.closed + n(row.closed),
-    pending: acc.pending + n(row.pending),
-    overdue: acc.overdue + n(row.overdue),
-    npa: acc.npa + n(row.npa),
-    disbursed: acc.disbursed + n(row.monthDisbursed),
-    principal: acc.principal + n(row.monthPrincipal),
-    interest: acc.interest + n(row.monthInterest),
-    fee: acc.fee + n(row.monthFees),
-    outstanding: acc.outstanding + n(row.monthOutstanding),
-    received: acc.received + n(row.received),
-  }), {
-    loans: 0, active: 0, closed: 0, pending: 0, overdue: 0, npa: 0,
-    disbursed: 0, principal: 0, interest: 0, fee: 0, outstanding: 0, received: 0,
-  });
-  const displayedTotalCounts = {
-    loans: visibleMonthlyTotals.loans,
-    active: visibleMonthlyTotals.active,
-    closed: visibleMonthlyTotals.closed,
-    pending: visibleMonthlyTotals.pending,
-    overdue: visibleMonthlyTotals.overdue,
-    npa: visibleMonthlyTotals.npa,
-  };
-
-  const REPAYMENT_OPTIONS = ["", "On Track", "DUE TODAY", "DUE SOON", "OVERDUE", "NPA", "Closed"];
-
-  return (
-    <div className="fade">
-      {/* Banner */}
-      <div style={{background:`linear-gradient(135deg,${P.rose}18,${P.violet}0A)`,border:`1px solid ${P.rose}33`,borderRadius:16,padding:"16px 22px",marginBottom:16,display:"flex",alignItems:"center",gap:16}}>
-        <div style={{fontSize:40}}>🏛</div>
-        <div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:P.rose}}>LendenClub P2P Portfolio</div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:2}}>NBFC-P2P lending · {summaryTotalLoans} total loans · ≈{roi}% annualised ROI</div>
-        </div>
-        <div style={{marginLeft:"auto",textAlign:"right"}}>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>Total Pooled</div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:800,color:P.rose}}>{fmt(d.lendenClub.totalPooled)}</div>
-        </div>
-      </div>
-
-      {/* KPI grid */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}}>
-        <GlassKPI label="Capital Available" value={fmtF(capitalAfterEarnings)} sub="Capital added + interest received" color={P.teal} icon="💹"/>
-        <GlassKPI label="Current Capital Deployed" value={fmtF(currentCapitalDeployed)} sub="Sum of active principal outstanding" color={P.gold} icon="🏦"/>
-        <GlassKPI label="Portfolio Annualised ROI" value={`${roi}%`} sub="Interest received annualised on pooled capital" color={P.emerald} icon="📈"/>
-        <GlassKPI label="Closed Loan Avg Monthly Yield" value={`${avgClosedMonthlyRate}%`} sub={`Across ${summaryClosedLoans} closed loans · ${avgClosedDuration} mo avg`} color={P.sapphire} icon="⏱"/>
-        <GlassKPI label="Active / Closed / Pending" value={`${summaryActiveLoans} / ${summaryClosedLoans} / ${summaryPendingLoans}`} sub={`Overdue ${summaryOverdueLoans} · Recovery ${pct(displayTotalReceived,displayTotalDisbursed)}%`} color={P.violet} icon="🔄"/>
-        <GlassKPI label="Interest Rate" value={`${grossRate.toFixed(2)}%`} sub="Overall interest received on disbursed capital" color={P.rose} icon="🧮"/>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}}>
-        {[
-          {label:"On Track", value:allLoans.filter(l => l.rs === "On Track").length, color:P.emerald},
-          {label:"Due Today", value:dueTodayLoans.length, color:P.gold},
-          {label:"Due Soon", value:dueSoonLoans.length, color:P.sapphire},
-          {label:"Overdue", value:overdueLoans.length, color:P.ruby},
-          {label:"NPA", value:npaLoans.length, color:P.rose},
-          {label:"Avg Score", value:avgScore || 0, color:P.violet},
-        ].map((item) => (
-          <div key={item.label} style={{background:`${item.color}0A`,border:`1px solid ${item.color}22`,borderRadius:12,padding:"10px 12px"}}>
-            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{item.label}</div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:item.color}}>{item.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Financial Analytics */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        <Card accent={P.teal}>
-          <SectionHead title="Monthly Interest Breakdown" icon="📊" color={P.teal}/>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={monthlyBreakdown} barGap={3} barSize={20}>
-              <XAxis dataKey="month" tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false}/>
-              <YAxis tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false} tickFormatter={v=>`₹${v.toFixed(0)}`}/>
-              <Tooltip content={<CTip/>}/>
-              <Legend wrapperStyle={{fontSize:10,fontFamily:"'Fira Code',monospace"}}/>
-              <Bar dataKey="interest"  name="Interest Earned" fill={P.teal}    radius={[4,4,0,0]}/>
-              <Bar dataKey="disbursed" name="Disbursed"       fill={`${P.sapphire}66`} radius={[4,4,0,0]}/>
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-
-        <Card accent={P.rose}>
-          <SectionHead title="Pool Growth Over Time" icon="📈" color={P.rose}/>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={d.lendenClub.transactions}>
-              <defs>
-                <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={P.rose} stopOpacity={.4}/>
-                  <stop offset="100%" stopColor={P.rose} stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="date" tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false}/>
-              <YAxis tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false} tickFormatter={v=>`${(v/1000).toFixed(0)}k`}/>
-              <Tooltip content={<CTip/>}/>
-              <Area type="monotone" dataKey="pool" name="Pool ₹" stroke={P.rose} fill="url(#pg)" strokeWidth={2.5}/>
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
-
-      <Card accent={P.sapphire} style={{marginBottom:14}}>
-        <SectionHead title="Interest & Fee Analysis" icon="🧾" color={P.sapphire}/>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
-          {[
-            {label:"Disbursed", value:fmtF(displayTotalDisbursed), color:P.sapphire},
-            {label:"Received", value:fmtF(displayTotalReceived), color:P.emerald},
-            {label:"Interest Received", value:fmtF(displayTotalInterest), color:P.teal},
-            {label:"Fees", value:fmtF(totalFees), color:P.ruby},
-            {label:"Net P&L", value:fmtF(totalPL), color:totalPL >= 0 ? P.emerald : P.ruby},
-          ].map((item) => (
-            <div key={item.label} style={{background:P.card3,border:`1px solid ${item.color}22`,borderRadius:12,padding:"12px 14px"}}>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{item.label}</div>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:item.color}}>{item.value}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{marginTop:10,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-          {[
-            {label:"Recovery %", value:`${pct(displayTotalReceived,displayTotalDisbursed)}%`, color:P.emerald},
-            {label:"Fee Drag", value:`${feesDrag.toFixed(2)}%`, color:P.sapphire},
-            {label:"Closed Loan ROI", value:`${closedRate.toFixed(2)}%`, color:P.gold},
-            {label:"Avg Closed Duration", value:`${avgClosedDuration} mo`, color:P.violet},
-          ].map((item) => (
-            <div key={item.label} style={{background:`${item.color}0A`,border:`1px solid ${item.color}22`,borderRadius:12,padding:"10px 12px",textAlign:"center"}}>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{item.label}</div>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:item.color}}>{item.value}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{marginTop:12,background:P.card3,border:`1px solid ${P.border}`,borderRadius:12,padding:"12px 14px"}}>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>Capital Reconciliation</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
-            {[
-              {label:"Capital Added", value:fmtF(externalCapitalAdded), color:P.gold},
-              {label:"Capital Available", value:fmtF(capitalAfterEarnings), color:P.teal},
-              {label:"Fees Deducted", value:fmtF(totalFees), color:P.ruby},
-              {label:"Current Deployed", value:fmtF(currentCapitalDeployed), color:P.sapphire},
-              {label:"Idle Cash", value:fmtF(idleCash), color:idleCash >= 0 ? P.emerald : P.ruby},
-            ].map((item) => (
-              <div key={item.label} style={{background:`${item.color}0A`,border:`1px solid ${item.color}22`,borderRadius:10,padding:"10px 12px"}}>
-                <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:3}}>{item.label}</div>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:item.color}}>{item.value}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{marginTop:10,fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.8}}>
-            Formula: <span style={{color:P.gold}}>Capital Added</span> + <span style={{color:P.teal}}>Interest Earned</span> = <span style={{color:P.text}}>Capital Available</span> {fmtF(capitalAfterEarnings)}.
-            Remaining after current deployment = <span style={{color:idleCash >= 0 ? P.emerald : P.ruby}}>{fmtF(idleCash)}</span>.
-          </div>
-        </div>
-      </Card>
-
-      {/* Monthly ROI table */}
-      <Card accent={P.emerald} style={{marginBottom:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
-          <SectionHead title="Monthly Interest & ROI Analysis" icon="💰" color={P.emerald}/>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Year</span>
-            <select
-              value={monthlyYearFilter}
-              onChange={e=>setMonthlyYearFilter(e.target.value)}
-              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
-            >
-              {yearOptions.map(y=>(
-                <option key={y} value={y}>{y==="ALL_YEARS" ? "All Years" : y}</option>
-              ))}
-            </select>
-            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Month</span>
-            <select
-              value={monthlyMonthNameFilter}
-              onChange={e=>setMonthlyMonthNameFilter(e.target.value)}
-              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
-            >
-              {monthOptions.map(m=>(
-                <option key={m} value={m}>{m==="ALL_MONTHS" ? "All Months" : m}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div style={{overflowX:"auto"}}>
-          <table className="row-hover">
-            <thead><tr><TH>Month</TH><TH>Loans</TH><TH>Active</TH><TH>Closed</TH><TH>Pending</TH><TH>Overdue</TH><TH>NPA</TH><TH>Disbursed</TH><TH>Principal</TH><TH>Interest</TH><TH>Fee</TH><TH>Outstanding</TH><TH>Recovery%</TH><TH>Monthly ROI</TH></tr></thead>
-            <tbody>
-              {visibleMonthlyRows.map((t,i)=>(
-                <tr key={i}>
-                  <TD bold color={P.gold}>{t.tab}</TD>
-                  <TD color={P.text}>{t.loans}</TD>
-                  <TD color={P.emerald}>{t.active}</TD>
-                  <TD color={P.sapphire}>{t.closed}</TD>
-                  <TD color={P.gold}>{t.pending}</TD>
-                  <TD color={P.ruby}>{t.overdue}</TD>
-                  <TD color={P.rose}>{t.npa}</TD>
-                  <TD color={P.sapphire}>{fmtF(t.monthDisbursed)}</TD>
-                  <TD color={P.text}>{fmtF(t.monthPrincipal)}</TD>
-                  <TD bold color={P.teal}>{fmtF(t.monthInterest)}</TD>
-                  <TD color={P.muted}>{fmtF(t.monthFees)}</TD>
-                  <TD color={P.ruby}>{fmtF(t.monthOutstanding)}</TD>
-                  <TD color={parseFloat(pct(t.received,t.disbursed))>50?P.emerald:P.gold}>{pct(t.received,t.disbursed)}%</TD>
-                  <TD bold color={P.emerald}>{t.monthNetRate.toFixed(2)}%</TD>
-                </tr>
-              ))}
-              <tr style={{background:P.card2}}>
-                <TD bold color={P.gold}>TOTAL</TD>
-                <TD bold>{displayedTotalCounts.loans}</TD>
-                <TD bold color={P.emerald}>{displayedTotalCounts.active}</TD>
-                <TD bold color={P.sapphire}>{displayedTotalCounts.closed}</TD>
-                <TD bold color={P.gold}>{displayedTotalCounts.pending}</TD>
-                <TD bold color={P.ruby}>{displayedTotalCounts.overdue}</TD>
-                <TD bold color={P.rose}>{displayedTotalCounts.npa}</TD>
-                <TD bold color={P.sapphire}>{fmtF(visibleMonthlyTotals.disbursed)}</TD>
-                <TD bold color={P.text}>{fmtF(visibleMonthlyTotals.principal)}</TD>
-                <TD bold color={P.teal}>{fmtF(visibleMonthlyTotals.interest)}</TD>
-                <TD bold color={P.muted}>{fmtF(visibleMonthlyTotals.fee)}</TD>
-                <TD bold color={P.ruby}>{fmtF(visibleMonthlyTotals.outstanding)}</TD>
-                <TD bold color={P.emerald}>{pct(visibleMonthlyTotals.received,visibleMonthlyTotals.disbursed)}%</TD>
-                <TD bold color={P.emerald}>{visibleMonthlyTotals.disbursed > 0 ? ((visibleMonthlyTotals.interest / visibleMonthlyTotals.disbursed) * 100).toFixed(2) : "0.00"}%</TD>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-          {[
-            {label:"Visible Months", v:String(visibleMonthlyRows.length), color:P.teal},
-            {label:"Visible Closed Loans", v:String(visibleMonthlyTotals.closed), color:P.emerald},
-            {label:"Visible Outstanding", v:fmtF(visibleMonthlyTotals.outstanding), color:P.rose},
-            {label:"Visible Recovery", v:`${pct(visibleMonthlyTotals.received,visibleMonthlyTotals.disbursed)}%`, color:P.violet},
-          ].map((s,i)=>(
-            <div key={i} style={{background:`${s.color}0A`,border:`1px solid ${s.color}22`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{s.label}</div>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:800,color:s.color}}>{s.v}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Loan filter + table */}
-      <Card accent={P.rose} style={{marginBottom:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <SectionHead title="Individual Loan Accounts" icon="📋" color={P.rose}/>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            <input
-              value={loanQuery}
-              onChange={e=>setLoanQuery(e.target.value)}
-              placeholder="Search loan id / month / status"
-              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10,minWidth:220}}
-            />
-            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginLeft:4}}>Repayment Status</span>
-            <select
-              value={repayFilter}
-              onChange={e=>setRepayFilter(e.target.value)}
-              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
-            >
-              {REPAYMENT_OPTIONS.map(m=>(
-                <option key={m || "ALL"} value={m}>{m || "All Statuses"}</option>
-              ))}
-            </select>
-            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginLeft:4}}>Year</span>
-            <select
-              value={loanYearFilter}
-              onChange={e=>setLoanYearFilter(e.target.value)}
-              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
-            >
-              {yearOptions.map(y=>(
-                <option key={y} value={y}>{y==="ALL_YEARS" ? "All Years" : y}</option>
-              ))}
-            </select>
-            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginLeft:4}}>Month</span>
-            <select
-              value={loanMonthNameFilter}
-              onChange={e=>setLoanMonthNameFilter(e.target.value)}
-              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10}}
-            >
-              {monthOptions.map(m=>(
-                <option key={m} value={m}>{m==="ALL_MONTHS" ? "All Months" : m}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div style={{overflowX:"auto"}}>
-            <table className="row-hover">
-              <thead><tr><TH>Tab</TH><TH left>Loan ID</TH><TH>Rate%</TH><TH>Tenure</TH><TH>Score</TH><TH>Disbursed</TH><TH>Repay Start</TH><TH>Due</TH><TH>Amount</TH><TH>Status</TH><TH>Repayment</TH><TH>DPD</TH><TH>NPA</TH><TH>Principal Recv</TH><TH>Interest Earned</TH><TH>Avg/Mo</TH><TH>Fee</TH><TH>Total Recv</TH><TH>P&L</TH><TH>Months</TH><TH>Closure</TH></tr></thead>
-              <tbody>
-                {filteredLoans.map((l,i)=>(
-                  <tr key={i}>
-                    <TD color={P.gold}>{l.tab}</TD><TD left color={P.muted}>{l.id}</TD>
-                    <TD color={P.sapphire}>{l.rate}%</TD><TD>{l.tenure} mo</TD>
-                    <TD color={l.score>=720?P.emerald:P.gold}>{l.score}</TD>
-                    <TD color={P.muted}>{l.disbDate}</TD>
-                    <TD color={P.text}>{l.repayStart || "-"}</TD>
-                    <TD color={l.rs==="OVERDUE"?P.ruby:P.muted}>{l.dueDate}</TD>
-                    <TD>{fmtF(l.amount)}</TD>
-                    <TD><Pill color={l.status==="CLOSED"?P.muted:l.status==="OVERDUE"?P.ruby:l.status==="PENDING"?P.gold:P.emerald}>{l.status}</Pill></TD>
-                    <TD><Pill color={l.rs==="NPA"?P.rose:l.rs==="OVERDUE"?P.ruby:l.rs==="DUE TODAY"?P.gold:l.rs==="DUE SOON"?P.sapphire:l.rs==="Closed"?P.muted:P.emerald}>{l.rs}</Pill></TD>
-                    <TD color={n(l.dpd)>0?P.ruby:P.muted}>{n(l.dpd)||0}</TD>
-                    <TD color={n(l.npa)>0?P.rose:P.muted}>{n(l.npa)||0}</TD>
-                    <TD color={P.text}>{fmtF(l.principalRecv)}</TD>
-                    <TD bold color={P.teal}>{fmtF(l.interestRecv)}</TD>
-                    <TD color={l.status==="CLOSED"?P.sapphire:P.muted}>{l.status==="CLOSED"?`${l.monthlyRateToClose}%`:"—"}</TD>
-                    <TD color={P.muted}>{fmtF(l.fee)}</TD>
-                    <TD color={P.gold}>{fmtF(l.totalRecv)}</TD>
-                    <TD color={l.pl>0?P.emerald:P.muted}>{l.pl>0?"+":""}{fmtF(l.pl)}</TD>
-                    <TD color={P.text}>{l.monthsToClose || "—"}</TD>
-                    <TD color={P.muted}>{l.closure}</TD>
-                  </tr>
-                ))}
-                <tr style={{background:P.card2}}>
-                  <TD bold colSpan={13} left color={P.gold}>SUBTOTAL ({filteredLoans.length} loans)</TD>
-                  <TD bold color={P.text}>{fmtF(filteredLoans.reduce((s,l)=>s+l.principalRecv,0))}</TD>
-                  <TD bold color={P.teal}>{fmtF(filteredLoans.reduce((s,l)=>s+l.interestRecv,0))}</TD>
-                  <TD bold color={P.sapphire}>{filteredLoans.filter(l=>l.status==="CLOSED").length?`${(
-                    filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s+l.interestRecv,0) /
-                    Math.max(filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s + (n(l.amount) * Math.max(1, n(l.monthsToClose))),0), 1)
-                  * 100).toFixed(2)}%`:"—"}</TD>
-                  <TD bold color={P.muted}>{fmtF(filteredLoans.reduce((s,l)=>s+l.fee,0))}</TD>
-                  <TD bold color={P.gold}>{fmtF(filteredLoans.reduce((s,l)=>s+l.totalRecv,0))}</TD>
-                  <TD bold color={P.emerald}>{fmtF(filteredLoans.reduce((s,l)=>s+l.pl,0))}</TD>
-                  <TD bold color={P.text}>{filteredLoans.filter(l => l.status === "CLOSED").length ? filteredLoans.filter(l => l.status === "CLOSED").reduce((s,l)=>s+n(l.monthsToClose),0).toFixed(0) : "—"}</TD>
-                  <TD/>
-                </tr>
-              </tbody>
-            </table>
-            <div style={{marginTop:8,fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>
-              Showing {filteredLoans.length} loan rows · Score ≥720 = <span style={{color:P.emerald}}>good credit</span> · Closed-loan avg monthly yield: <span style={{color:P.sapphire}}>{filteredLoans.filter(l=>l.status==="CLOSED").length?`${(
-                filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s+l.interestRecv,0) /
-                Math.max(filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s + (n(l.amount) * Math.max(1, n(l.monthsToClose))),0), 1)
-              * 100).toFixed(2)}%`:"0.00%"}</span> · Repayment split: <span style={{color:P.gold}}>{dueTodayLoans.length}</span> due today / <span style={{color:P.sapphire}}>{dueSoonLoans.length}</span> due soon / <span style={{color:P.ruby}}>{overdueLoans.length}</span> overdue / <span style={{color:P.rose}}>{npaLoans.length}</span> NPA
-            </div>
-        </div>
-      </Card>
-
-      <Card accent={P.violet}>
-        <SectionHead title="Investment Transaction Log" icon="📒" color={P.violet}/>
-        <div style={{overflowX:"auto"}}>
-          <table className="row-hover">
-            <thead><tr><TH>Date</TH><TH>Invested / Withdrawn</TH><TH>Closing Pool</TH><TH left>Remark</TH></tr></thead>
-            <tbody>
-              {d.lendenClub.transactions.map((t,i)=>(
-                <tr key={i}>
-                  <TD color={P.muted}>{t.date}</TD>
-                  <TD bold color={t.invested>0?P.emerald:P.ruby}>{t.invested>0?"+":""}{fmtF(t.invested)}</TD>
-                  <TD color={P.gold}>{fmtF(t.pool)}</TD>
-                  <TD left color={P.text}>{t.remark}</TD>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ─── SALARY TRACKER COMPONENT ────────────────────────────────────────────────
-function SalaryTracker({ data }) {
-  const d = data;
-  const hist = d.salaryHistory || [];
-  const totalSalary   = hist.reduce((s,m)=>s+m.salary,0);
-  const totalIncome   = hist.reduce((s,m)=>s+m.totalIncome,0);
-  const totalExpenses = hist.reduce((s,m)=>s+m.expenses,0);
-  const totalSavings  = hist.reduce((s,m)=>s+m.savings,0);
-  const avgSalary     = hist.length ? Math.round(totalSalary/hist.length) : 0;
-  const avgSavings    = hist.length ? Math.round(totalSavings/hist.length) : 0;
-  const savingsRate   = totalIncome>0 ? ((totalSavings/totalIncome)*100).toFixed(1) : 0;
-  const salaryGrowth  = hist.length>1 ? (((hist[hist.length-1].salary - hist[0].salary)/hist[0].salary)*100).toFixed(1) : 0;
-
-  return (
-    <div className="fade">
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
-        <GlassKPI label="FY Total Salary"   value={fmt(totalSalary)}  sub={`Avg ${fmt(avgSalary)}/mo`} color={P.gold}    icon="💰"/>
-        <GlassKPI label="Total Income"      value={fmt(totalIncome)}  sub={`All sources incl. lending`} color={P.emerald} icon="📈"/>
-        <GlassKPI label="Total Savings"     value={fmt(totalSavings)} sub={`${savingsRate}% savings rate`} color={P.teal} icon="🏦"/>
-        <GlassKPI label="Salary Growth"     value={`+${salaryGrowth}%`} sub={`${hist[0]?.month} → ${hist[hist.length-1]?.month}`} color={P.violet} icon="🚀"/>
-      </div>
-
-      <Card accent={P.gold} style={{marginBottom:14}}>
-        <SectionHead title="Salary & Income Trend (FY 2025-26)" icon="📈"/>
-        <ResponsiveContainer width="100%" height={260}>
-          <AreaChart data={hist} margin={{top:10,right:20,left:0,bottom:0}}>
-            <defs>
-              <linearGradient id="salGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={P.gold} stopOpacity={.45}/>
-                <stop offset="100%" stopColor={P.gold} stopOpacity={0}/>
-              </linearGradient>
-              <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={P.emerald} stopOpacity={.35}/>
-                <stop offset="100%" stopColor={P.emerald} stopOpacity={0}/>
-              </linearGradient>
-              <linearGradient id="savGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={P.teal} stopOpacity={.35}/>
-                <stop offset="100%" stopColor={P.teal} stopOpacity={0}/>
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="month" tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false}/>
-            <YAxis tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false} tickFormatter={v=>`${(v/1000).toFixed(0)}k`}/>
-            <Tooltip content={<CTip/>}/>
-            <Legend wrapperStyle={{fontSize:10,fontFamily:"'Fira Code',monospace",color:P.muted}}/>
-            <Area type="monotone" dataKey="salary"      name="Salary"      stroke={P.gold}    fill="url(#salGrad)" strokeWidth={2.5} dot={{fill:P.gold,r:3}}/>
-            <Area type="monotone" dataKey="totalIncome" name="Total Income" stroke={P.emerald} fill="url(#incGrad)" strokeWidth={2}   dot={false}/>
-            <Area type="monotone" dataKey="savings"     name="Savings"     stroke={P.teal}    fill="url(#savGrad)" strokeWidth={2}   dot={false}/>
-          </AreaChart>
-        </ResponsiveContainer>
-      </Card>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        <Card accent={P.sapphire}>
-          <SectionHead title="Income vs Expenses" icon="📊" color={P.sapphire}/>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={hist} barGap={3} barSize={14}>
-              <XAxis dataKey="month" tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false}/>
-              <YAxis tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false} tickFormatter={v=>`${(v/1000).toFixed(0)}k`}/>
-              <Tooltip content={<CTip/>}/>
-              <Legend wrapperStyle={{fontSize:10,fontFamily:"'Fira Code',monospace"}}/>
-              <Bar dataKey="totalIncome" name="Income"   fill={P.emerald} radius={[3,3,0,0]}/>
-              <Bar dataKey="expenses"    name="Expenses" fill={P.ruby}    radius={[3,3,0,0]}/>
-              <Bar dataKey="savings"     name="Savings"  fill={P.gold}    radius={[3,3,0,0]}/>
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-
-        <Card accent={P.violet}>
-          <SectionHead title="Monthly Savings Rate" icon="💹" color={P.violet}/>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={hist.map(m=>({...m, savRate: m.totalIncome>0 ? +((m.savings/m.totalIncome)*100).toFixed(1) : 0}))}>
-              <XAxis dataKey="month" tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false}/>
-              <YAxis tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`} domain={[0,50]}/>
-              <Tooltip content={({active,payload,label})=>active&&payload?.length?(<div style={{background:P.card3,border:`1px solid ${P.border2}`,borderRadius:10,padding:"10px 14px"}}><p style={{color:P.muted,fontSize:10,margin:"0 0 4px",fontFamily:"'Fira Code',monospace"}}>{label}</p><p style={{color:P.violet,fontSize:12,fontWeight:600,margin:0,fontFamily:"'Fira Code',monospace"}}>Savings Rate: {payload[0].value}%</p></div>):null}/>
-              <Line type="monotone" dataKey="savRate" stroke={P.violet} strokeWidth={2.5} dot={{fill:P.violet,r:4}} name="Savings Rate %"/>
-            </LineChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
-
-      <Card accent={P.teal}>
-        <SectionHead title="Month-wise Salary Summary" icon="📋" color={P.teal}/>
-        <div style={{overflowX:"auto"}}>
-          <table className="row-hover">
-            <thead><tr><TH>Month</TH><TH>Salary</TH><TH>Tutoring</TH><TH>Lending Int.</TH><TH>Other</TH><TH>Total Income</TH><TH>Expenses</TH><TH>Savings</TH><TH>Sav Rate%</TH><TH>MoM Growth</TH></tr></thead>
-            <tbody>
-              {hist.map((m,i)=>{
-                const savR = m.totalIncome>0 ? ((m.savings/m.totalIncome)*100).toFixed(1) : "0.0";
-                const prev = hist[i-1];
-                const growth = prev && prev.salary>0 ? (((m.salary-prev.salary)/prev.salary)*100).toFixed(1) : null;
-                return (
-                  <tr key={i}>
-                    <TD bold color={P.gold}>{m.month}</TD>
-                    <TD color={P.text}>{fmtF(m.salary)}</TD>
-                    <TD color={m.tutoring>0?P.emerald:P.muted}>{m.tutoring>0?fmtF(m.tutoring):"—"}</TD>
-                    <TD color={m.lendingInterest>0?P.teal:P.muted}>{m.lendingInterest>0?fmtF(m.lendingInterest):"—"}</TD>
-                    <TD color={m.otherIncome>0?P.violet:P.muted}>{m.otherIncome>0?fmtF(m.otherIncome):"—"}</TD>
-                    <TD bold color={P.emerald}>{fmtF(m.totalIncome)}</TD>
-                    <TD color={P.ruby}>{fmtF(m.expenses)}</TD>
-                    <TD bold color={P.gold}>{fmtF(m.savings)}</TD>
-                    <TD color={parseFloat(savR)>=25?P.emerald:parseFloat(savR)>=15?P.gold:P.ruby}>{savR}%</TD>
-                    <TD color={growth===null?P.muted:parseFloat(growth)>0?P.emerald:P.ruby}>{growth===null?"—":`${growth>0?"+":""}${growth}%`}</TD>
-                  </tr>
-                );
-              })}
-              <tr style={{background:P.card2}}>
-                <TD bold color={P.gold}>FY TOTAL</TD>
-                <TD bold color={P.gold}>{fmtF(totalSalary)}</TD>
-                <TD bold color={P.emerald}>{fmtF(hist.reduce((s,m)=>s+m.tutoring,0))}</TD>
-                <TD bold color={P.teal}>{fmtF(hist.reduce((s,m)=>s+m.lendingInterest,0))}</TD>
-                <TD bold color={P.violet}>{fmtF(hist.reduce((s,m)=>s+m.otherIncome,0))}</TD>
-                <TD bold color={P.emerald}>{fmtF(totalIncome)}</TD>
-                <TD bold color={P.ruby}>{fmtF(totalExpenses)}</TD>
-                <TD bold color={P.gold}>{fmtF(totalSavings)}</TD>
-                <TD bold color={P.teal}>{savingsRate}%</TD>
-                <TD bold color={P.violet}>Avg ₹{Math.round(avgSalary/1000)}K/mo</TD>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div style={{marginTop:10,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-          {[
-            {label:"Best Savings Month",  v:hist.length?hist.reduce((a,b)=>b.savings>a.savings?b:a).month:"—",  color:P.emerald},
-            {label:"Highest Salary",      v:fmt(hist.length?Math.max(...hist.map(m=>m.salary)):0),              color:P.gold   },
-            {label:"Avg Monthly Savings", v:fmt(avgSavings),                                                     color:P.teal   },
-            {label:"Savings Rate",        v:`${savingsRate}%`,                                                    color:P.violet },
-          ].map((s,i)=>(
-            <div key={i} style={{background:`${s.color}0A`,border:`1px solid ${s.color}22`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4,letterSpacing:1}}>{s.label}</div>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:s.color}}>{s.v}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ─── AI BUILDER COMPONENT ─────────────────────────────────────────────────────
-function AIBuilder({ data }) {
-  const [prompt,   setPrompt]   = useState("");
-  const [building, setBuilding] = useState(false);
-  const [widgets,  setWidgets]  = useState([]);
-  const [error,    setError]    = useState(null);
-  const d = data;
-
-  const EXAMPLES = [
-    "Add profit analysis for all loans showing total interest paid vs principal",
-    "Show a donut chart of my investment allocation by asset class",
-    "Create a debt payoff timeline showing when each loan clears",
-    "Show monthly cash flow: salary in, EMIs out, savings left",
-    "Build a LendenClub ROI calculator with annualised returns",
-    "Show my net worth breakdown: assets vs liabilities comparison",
-    "Create an emergency fund tracker — how many months can I survive?",
-    "Show salary hike impact: what if salary grows 15% next year?",
-  ];
-
-  const buildWidget = async (overridePrompt) => {
-    const req = overridePrompt || prompt.trim();
-    if (!req || building) return;
-    setPrompt("");
-    setBuilding(true);
-    setError(null);
-
-    const ctx = `FINANCIAL DATA CONTEXT:
-- Monthly Salary: ₹${d.income.salary.toLocaleString("en-IN")} | In-Hand: ₹${d.income.inHand.toLocaleString("en-IN")}
-- HDFC Loan: ₹${Math.round(d.loans.hdfc.outstanding).toLocaleString("en-IN")} @ 10.5% | EMI: ₹42,318
-- IDFC Loan: ₹${Math.round(d.loans.idfc.outstanding).toLocaleString("en-IN")} @ 13.5% | EMI: ₹7,572
-- SBI Loan: ₹${Math.round(d.loans.sbi.outstanding).toLocaleString("en-IN")} @ 9.35% | EMI: ₹2,500
-- Stocks & MF: ₹${d.stocks.summary.total.current.toLocaleString("en-IN")} | P&L: ₹${d.stocks.summary.total.pl.toLocaleString("en-IN")}
-- Personal Lending: ₹7,50,000 @ 24% p.a. | Monthly Interest: ₹15,000
-- LendenClub Pool: ₹${d.lendenClub.totalPooled.toLocaleString("en-IN")} | ~10% net return
-- Real Estate: ₹${d.realEstate.paid.toLocaleString("en-IN")} paid | Balance: ₹${d.realEstate.remaining.toLocaleString("en-IN")}
-- Salary History: ${(d.salaryHistory||[]).map(m=>m.month+": ₹"+m.salary).join(", ")}
-- LendenClub Loans: ${d.lendenClub.loanSamples.length} sample loans, ${d.lendenClub.tabSummary.reduce((s,t)=>s+t.loans,0)} total`;
-
+  // ── 07: Monthly Review Report ──
+  const generateReport = async () => {
+    setReportLoading(true);
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
+        method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
-          system:`You are a React financial dashboard widget generator for Naresh Sagar's personal finance dashboard.
-The dashboard uses these color variables (already defined): P.gold="#F5C542", P.emerald="#10E8A0", P.ruby="#FF5C7A", P.sapphire="#4FC3F7", P.violet="#B39DFF", P.teal="#26C6AC", P.orange="#FF9A3C", P.rose="#F48FB1", P.bg="#050D1A", P.card="#0A1628", P.card2="#0F1E36", P.card3="#162340", P.border="#1C3050", P.text="#D8EAF8", P.muted="#4E6D8C".
-Available: recharts (BarChart, Bar, AreaChart, Area, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend), and helper functions: fmt(v), fmtF(v), pct(a,b), n(v).
+          model:"claude-sonnet-4-20250514", max_tokens:1000,
+          messages:[{role:"user",content:`Generate a concise month-end financial review for ${d.settings?.name||"Naresh"} (${d.income?.month||"Mar-26"}).
 
-RULES:
-1. Return ONLY a JSON object: {"title":"Widget Title","description":"1-line description","html":"...full JSX string..."}
-2. The "html" value must be a complete JSX expression (starting with <div) that uses real numbers from the context provided
-3. Use inline styles only, matching the dark theme
-4. Include actual calculations and real data — not placeholders
-5. Make it visually striking with the color palette
-6. Keep it self-contained (no external imports needed)
-7. Return ONLY the JSON, no markdown, no backticks, no preamble`,
-          messages:[{role:"user",content:`${ctx}\n\nUSER REQUEST: "${req}"\n\nGenerate a financial widget for this request. Use the actual numbers from the context above.`}]
+Data:
+- Salary: ₹${n(d.income?.salary).toLocaleString("en-IN")} | In-hand: ₹${n(d.income?.inHand).toLocaleString("en-IN")}
+- EMI total: ₹${emiTotal.toLocaleString("en-IN")} (${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary)
+- Net worth: ₹${Math.round(netWorth).toLocaleString("en-IN")}
+- Total investments: ₹${Math.round(totalAssets).toLocaleString("en-IN")} | Total debt: ₹${Math.round(totalDebt).toLocaleString("en-IN")}
+- LendenClub pool: ₹${n(d.lendenClub?.totalPooled).toLocaleString("en-IN")} | Lending interest received: ₹${n(d.personalLending?.receivedTillNow).toLocaleString("en-IN")}
+- KishanRao pending: ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")}
+- Budget spent: ₹${totalActual.toLocaleString("en-IN")} vs budget ₹${totalBudget.toLocaleString("en-IN")}
+- Health score: ${healthScore}/100
+
+Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) investment progress (4) debt status (5) one key recommendation for next month. Be specific with numbers.`}]
         })
       });
-      const apiData = await res.json();
-      const rawText = apiData.content?.map(c=>c.text||"").join("") || "";
-      const clean   = rawText.replace(/```json|```/g,"").trim();
-      let parsed;
-      try { parsed = JSON.parse(clean); } catch {
-        const match = clean.match(/\{[\s\S]*\}/);
-        parsed = match ? JSON.parse(match[0]) : null;
-      }
-      if (!parsed) throw new Error("Could not parse AI response");
-      setWidgets(prev=>[{id:Date.now(), ...parsed, prompt:req}, ...prev]);
-    } catch(e) {
-      setError(`⚠ ${e.message}`);
-    } finally {
-      setBuilding(false);
-    }
+      const json = await res.json();
+      setReport(json.content?.map(c=>c.text||"").join("")||"");
+    } catch(e) { setReport("Error generating report: "+e.message); }
+    setReportLoading(false);
+  };
+
+  // ── 08: WhatsApp draft for KishanRao ──
+  const generateWhatsApp = async () => {
+    setWpLoading(true);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514", max_tokens:300,
+          messages:[{role:"user",content:`Write a firm but professional WhatsApp message from ${d.settings?.name||"Naresh"} to KishanRao following up on ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")} overdue interest (${n(d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"))?.monthsElapsed||2)} months). Loan amount: ₹${n(kishanRao?.amount||100000).toLocaleString("en-IN")} @ 2%/month. Keep it polite but clear about urgency. Under 100 words. No emojis spam.`}]
+        })
+      });
+      const json = await res.json();
+      setWhatsapp(json.content?.map(c=>c.text||"").join("")||"");
+    } catch(e) { setWhatsapp("Error: "+e.message); }
+    setWpLoading(false);
   };
 
   return (
-    <div className="fade">
-      {/* Header */}
-      <div style={{background:`linear-gradient(135deg,${P.violet}18,${P.gold}0A)`,border:`1px solid ${P.violet}33`,borderRadius:16,padding:"18px 22px",marginBottom:16,display:"flex",alignItems:"center",gap:16}}>
-        <div style={{width:52,height:52,borderRadius:14,background:`linear-gradient(135deg,${P.violet},${P.gold})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0,boxShadow:`0 0 20px ${P.violet}44`}}>⚡</div>
-        <div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:P.text}}>AI Feature Builder</div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:2}}>Describe any analytics, chart, or calculation — AI will build it instantly using your real financial data</div>
-        </div>
-        <div style={{marginLeft:"auto",textAlign:"right"}}>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>Widgets Built</div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:32,fontWeight:800,color:P.violet}}>{widgets.length}</div>
-        </div>
-      </div>
+    <div className="fade" style={{display:"grid",gap:14}}>
 
-      {/* Input */}
-      <Card accent={P.violet} style={{marginBottom:14}}>
-        <SectionHead title="Describe Your Feature" icon="✏️" color={P.violet}/>
-        <div style={{display:"flex",gap:10,marginBottom:12}}>
-          <input
-            value={prompt}
-            onChange={e=>setPrompt(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&buildWidget()}
-            placeholder='Example: "Add a chart showing monthly savings trend with target line at ₹30,000"'
-            style={{flex:1,background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"12px 16px",color:P.text,fontFamily:"'Outfit',sans-serif",fontSize:13,outline:"none"}}
-          />
-          <button
-            onClick={()=>buildWidget()}
-            disabled={building||!prompt.trim()}
-            style={{background:building||!prompt.trim()?P.border:`linear-gradient(135deg,${P.violet},${P.gold})`,border:"none",borderRadius:10,padding:"12px 22px",color:P.bg,cursor:building||!prompt.trim()?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:12,fontWeight:700,transition:"all .15s",whiteSpace:"nowrap"}}>
-            {building?"Building…":"⚡ Build"}
-          </button>
+      {/* Health Score */}
+      <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:16,background:`linear-gradient(135deg,${healthColor}14,transparent)`,border:`1px solid ${healthColor}33`,borderRadius:16,padding:"20px 24px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <DonutRing pct={healthScore} color={healthColor} size={130} stroke={12} label={`${healthScore}`} sub="/ 100"/>
         </div>
-        {error && <div style={{padding:"10px 14px",background:`${P.ruby}14`,border:`1px solid ${P.ruby}33`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:11,color:P.ruby}}>{error}</div>}
         <div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:8,letterSpacing:1.5,textTransform:"uppercase"}}>Quick Prompts — Click to Build</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-            {EXAMPLES.map((e,i)=>(
-              <button key={i} onClick={()=>buildWidget(e)} disabled={building}
-                style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:9,padding:"9px 12px",color:P.muted,cursor:building?"not-allowed":"pointer",fontFamily:"'Outfit',sans-serif",fontSize:11,textAlign:"left",transition:"all .15s",lineHeight:1.4}}
-                onMouseEnter={ev=>{ev.currentTarget.style.borderColor=P.violet+"66";ev.currentTarget.style.color=P.text;}}
-                onMouseLeave={ev=>{ev.currentTarget.style.borderColor=P.border;ev.currentTarget.style.color=P.muted;}}>
-                {e}
-              </button>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:800,color:healthColor,marginBottom:8}}>Financial Health: {healthLabel}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {[
+              {label:"Savings Rate",  score:scores.savings,     max:"≥20% of salary"},
+              {label:"EMI Control",   score:scores.emiBurden,   max:"≤40% of salary"},
+              {label:"Investment %",  score:scores.investment,  max:"Build wealth"},
+              {label:"Debt Coverage", score:scores.debtControl, max:"Assets > Debt"},
+            ].map((s,i)=>(
+              <div key={i} style={{background:P.card3,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>{s.label}</span>
+                  <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:s.score>=70?P.emerald:s.score>=40?P.gold:P.ruby}}>{s.score}/100</span>
+                </div>
+                <PBar value={s.score} max={100} color={s.score>=70?P.emerald:s.score>=40?P.gold:P.ruby} height={5}/>
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginTop:4}}>{s.max}</div>
+              </div>
             ))}
           </div>
         </div>
-      </Card>
-
-      {/* Loading */}
-      {building && (
-        <Card accent={P.violet} style={{marginBottom:14,textAlign:"center",padding:"32px 20px"}}>
-          <div style={{fontSize:40,marginBottom:12}}>🤖</div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,color:P.violet,marginBottom:8}}>Building your widget…</div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:P.muted}}>AI is generating analytics, calculations, and chart code using your real financial data</div>
-          <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:16}}>
-            {[0,1,2].map(i=><div key={i} style={{width:10,height:10,borderRadius:"50%",background:P.violet,animation:`pulse 1.2s ${i*0.2}s infinite`}}/>)}
-          </div>
-        </Card>
-      )}
-
-      {/* Generated Widgets */}
-      {widgets.map((w,i)=>(
-        <Card key={w.id} accent={[P.violet,P.gold,P.emerald,P.teal,P.rose][i%5]} style={{marginBottom:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-            <div>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,color:P.text,marginBottom:4}}>{w.title}</div>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>{w.description}</div>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:`${P.violet}88`,marginTop:4}}>Prompt: "{w.prompt}"</div>
-            </div>
-            <button onClick={()=>setWidgets(prev=>prev.filter(x=>x.id!==w.id))}
-              style={{background:"none",border:`1px solid ${P.border}`,color:P.muted,borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:10,fontFamily:"'Fira Code',monospace"}}>✕ Remove</button>
-          </div>
-          <div style={{padding:"16px 0"}} dangerouslySetInnerHTML={{__html:""}}/>
-          {/* Render description as fallback since dangerouslySetInnerHTML can't execute JSX */}
-          <div style={{background:`${P.violet}08`,border:`1px solid ${P.violet}22`,borderRadius:10,padding:"16px 18px"}}>
-            <pre style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald,margin:0,lineHeight:1.8,whiteSpace:"pre-wrap",wordBreak:"break-word",maxHeight:300,overflowY:"auto"}}>{w.html}</pre>
-          </div>
-          <div style={{marginTop:8,fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>💡 Copy the JSX above and add it to your local dashboard file to render it interactively</div>
-        </Card>
-      ))}
-
-      {widgets.length===0 && !building && (
-        <div style={{textAlign:"center",padding:"60px 20px",color:P.muted}}>
-          <div style={{fontSize:60,marginBottom:16,opacity:.4}}>⚡</div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:700,color:`${P.muted}88`,marginBottom:8}}>No widgets yet</div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:11}}>Type a prompt above or click one of the quick prompts to generate your first AI-powered widget</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-// ─── API SETTINGS COMPONENT ──────────────────────────────────────────────────
-function APISettings({ apiUrl, setApiUrl, onSyncNow }) {
-  const [local,   setLocal]   = useState(apiUrl);
-  const [saved,   setSaved]   = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [result,  setResult]  = useState(null);
-
-  const handleTest = async () => {
-    if (!local.trim()) return;
-    setTesting(true); setResult(null);
-    try {
-      const data = unwrapCentralPayload(await fetchScript("central", local.trim()));
-      if (data?.error) {
-        setResult({ ok:false, msg:"Script error: " + data.error, data:null });
-      } else {
-        // Check all 6 keys present
-        const keys = Object.keys(data);
-        const expected = ["income","lendenClub","personalLending","realEstate","stocks","loans"];
-        const found    = expected.filter(k => keys.includes(k));
-        const missing  = expected.filter(k => !keys.includes(k));
-        const sheetCounts = keys.map(k => `${k}: ${Object.keys(data[k]||{}).length} sheets`).join(" · ");
-        if (found.length === 6) {
-          setResult({ ok:true,  msg:`✅ All 6 spreadsheets found! ${sheetCounts}`, data });
-        } else {
-          setResult({ ok:false, msg:`⚠ Got ${found.length}/6 keys. Missing: ${missing.join(", ")}. Found keys: ${keys.join(", ")}`, data });
-        }
-      }
-    } catch(err) {
-      const issue = explainSyncIssue(err, "central");
-      setResult({ ok:false, msg:"❌ " + issue.message, data:null });
-    }
-    setTesting(false);
-  };
-
-  const handleSave = () => {
-    setApiUrl(local.trim());
-    saveApiUrl(local.trim());
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-    setTimeout(() => onSyncNow(), 400);
-  };
-
-  const handleClear = () => { setLocal(""); setResult(null); };
-
-  return (
-    <div className="fade">
-      {/* Header */}
-      <div style={{background:`linear-gradient(135deg,${P.sapphire}14,${P.teal}0A)`,border:`1px solid ${P.sapphire}33`,borderRadius:16,padding:"20px 24px",marginBottom:16,display:"flex",alignItems:"center",gap:16}}>
-        <div style={{width:56,height:56,borderRadius:14,background:`linear-gradient(135deg,${P.sapphire},${P.teal})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0,boxShadow:`0 0 24px ${P.sapphire}44`}}>🔗</div>
-        <div style={{flex:1}}>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:800,color:P.text}}>Central API Settings</div>
-          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:4,lineHeight:1.8}}>
-            One single Apps Script URL reads all 6 spreadsheets and returns unified data. Paste your deployed URL below.
-          </div>
-        </div>
       </div>
 
-      {/* Architecture diagram */}
-      <Card accent={P.gold} style={{marginBottom:16}}>
-        <SectionHead title="Architecture" icon="🏗" color={P.gold}/>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"center",padding:"12px 0"}}>
-          {["📊 Sheet 1 (Income)","📊 Sheet 2 (LendenClub)","📊 Sheet 3 (Personal Lending)","📊 Sheet 4 (Real Estate)","📊 Sheet 5 (Stocks)","📊 Sheet 6 (Loans)"].map((s,i)=>(
-            <div key={i} style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,padding:"5px 10px",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>{s}</div>
-          ))}
-          <div style={{width:"100%",textAlign:"center",fontFamily:"'Fira Code',monospace",fontSize:18,color:P.gold,margin:"4px 0"}}>↓</div>
-          <div style={{background:`linear-gradient(135deg,${P.gold}22,${P.orange}11)`,border:`1px solid ${P.gold}44`,borderRadius:10,padding:"8px 20px",fontFamily:"'Fira Code',monospace",fontSize:11,color:P.gold,fontWeight:700}}>
-            ⚡ Central Apps Script API (single /exec URL)
-          </div>
-          <div style={{width:"100%",textAlign:"center",fontFamily:"'Fira Code',monospace",fontSize:18,color:P.sapphire,margin:"4px 0"}}>↓</div>
-          <div style={{background:`linear-gradient(135deg,${P.sapphire}22,${P.teal}11)`,border:`1px solid ${P.sapphire}44`,borderRadius:10,padding:"8px 20px",fontFamily:"'Fira Code',monospace",fontSize:11,color:P.sapphire,fontWeight:700}}>
-            📱 This Dashboard (JSONP fetch, auto-maps all sheets)
-          </div>
-        </div>
-      </Card>
-
-      {/* Step-by-step */}
-      <Card accent={P.teal} style={{marginBottom:16}}>
-        <SectionHead title="How to deploy your Central Script" icon="📋" color={P.teal}/>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
-          {[
-            { step:"1", color:P.emerald, text:"Open script.google.com → create a new project" },
-            { step:"2", color:P.sapphire,text:"Paste the Central API script code (download below)" },
-            { step:"3", color:P.gold,    text:"Click Deploy → New Deployment → Web App" },
-            { step:"4", color:P.teal,    text:'Execute as: Me · Who has access: Anyone (no Google account required)' },
-            { step:"5", color:P.orange,  text:"Copy the /exec URL and paste it in the field below" },
-            { step:"6", color:P.ruby,    text:"Click Test → if all 6 sheets show, click Save & Sync" },
-          ].map((s,i)=>(
-            <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-              <div style={{width:26,height:26,borderRadius:"50%",background:`${s.color}22`,border:`1px solid ${s.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,color:s.color,flexShrink:0}}>{s.step}</div>
-              <div style={{fontFamily:"'Outfit',sans-serif",fontSize:11,color:P.muted,lineHeight:1.7,paddingTop:4}}>{s.text}</div>
+      {/* Alert Cards */}
+      <div style={{display:"grid",gap:10}}>
+        <SectionHead title="Proactive Alerts — Auto-detected" icon="🚨" color={P.ruby}/>
+        {alerts.map((a,i)=>(
+          <div key={i} style={{background:`${a.color}0A`,border:`1px solid ${a.color}33`,borderRadius:12,padding:"14px 18px",display:"flex",gap:14,alignItems:"flex-start"}}>
+            <span style={{fontSize:22,flexShrink:0}}>{a.icon}</span>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:a.color,marginBottom:4}}>{a.title}</div>
+              <div style={{fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.muted,lineHeight:1.7}}>{a.msg}</div>
             </div>
-          ))}
-        </div>
-        <div style={{marginTop:12,padding:"8px 12px",background:`#FF5C7A0A`,border:`1px solid #FF5C7A22`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:10,color:"#FF5C7Acc"}}>
-          ⚠ "Anyone with Google account" will NOT work — causes CORS/login redirect. Must be <strong style={{color:"#FF5C7A"}}>Anyone</strong>.
-        </div>
-      </Card>
+          </div>
+        ))}
+      </div>
 
-      {/* URL input */}
-      <Card accent={result?.ok===true ? P.emerald : result?.ok===false ? P.ruby : P.sapphire} style={{marginBottom:16}}>
-        <SectionHead title="Your Central API URL" icon="📡" color={P.sapphire}/>
-        <div style={{display:"flex",gap:10,marginBottom:result?10:0}}>
-          <input
-            value={local}
-            onChange={e => { setLocal(e.target.value); setResult(null); }}
-            placeholder="/api/central or https://script.google.com/macros/s/.../exec"
-            style={{flex:1,background:P.card3,border:`1px solid ${result?.ok===true?P.emerald:result?.ok===false?P.ruby:P.border}`,borderRadius:10,padding:"11px 14px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:11,outline:"none",transition:"border-color .2s"}}
-          />
-          <button onClick={handleTest} disabled={testing||!local.trim()} style={{background:testing?P.border:`${P.sapphire}22`,border:`1px solid ${testing?P.border:P.sapphire}55`,borderRadius:10,padding:"11px 20px",color:testing?P.muted:P.sapphire,cursor:testing||!local.trim()?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,whiteSpace:"nowrap",transition:"all .15s"}}>
-            {testing ? "⏳ Testing..." : "🔬 Test"}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        {/* Monthly Report */}
+        <Card accent={P.sapphire}>
+          <SectionHead title="Monthly Review Report" icon="📋" color={P.sapphire}/>
+          <button onClick={generateReport} disabled={reportLoading}
+            style={{width:"100%",background:reportLoading?P.border:`linear-gradient(135deg,${P.sapphire},${P.teal})`,border:"none",borderRadius:10,padding:"11px 0",color:"#050D1A",cursor:reportLoading?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,marginBottom:12}}>
+            {reportLoading?"🔄 Generating…":"📊 Generate Report"}
           </button>
-          <button onClick={handleSave} disabled={!local.trim()} style={{background:saved?`${P.emerald}22`:`linear-gradient(135deg,${P.sapphire},${P.teal})`,border:saved?`1px solid ${P.emerald}44`:"none",borderRadius:10,padding:"11px 22px",color:saved?P.emerald:"#050D1A",cursor:!local.trim()?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,whiteSpace:"nowrap",transition:"all .2s"}}>
-            {saved ? "✅ Saved!" : "💾 Save & Sync"}
-          </button>
-          {local && <button onClick={handleClear} style={{background:"transparent",border:`1px solid ${P.border}`,borderRadius:10,padding:"11px 14px",color:P.muted,cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:11}}>✕</button>}
-        </div>
+          {report && (
+            <div style={{background:P.card3,borderRadius:10,padding:"14px 16px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap",maxHeight:300,overflowY:"auto"}}>
+              {report}
+            </div>
+          )}
+          {!report && <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.8}}>AI-generated month-end summary: income vs budget, overspend categories, net worth change, and one key observation.</div>}
+        </Card>
 
-        {result && (
-          <div style={{padding:"10px 14px",borderRadius:8,background:result.ok?`${P.emerald}0A`:`${P.ruby}0A`,border:`1px solid ${result.ok?P.emerald:P.ruby}33`,fontFamily:"'Fira Code',monospace",fontSize:10,color:result.ok?P.emerald:P.orange,lineHeight:1.8}}>
-            {result.msg}
-            {result.data && (
-              <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}>
-                {Object.keys(result.data).map(k => (
-                  <div key={k} style={{background:`${P.emerald}15`,border:`1px solid ${P.emerald}33`,borderRadius:6,padding:"2px 10px",fontSize:9,color:P.emerald}}>
-                    {k}: {Object.keys(result.data[k]||{}).length} sheets · {Object.values(result.data[k]||{}).reduce((s,rows)=>s+(Array.isArray(rows)?rows.length:0),0)} rows
+        {/* KishanRao Tracker */}
+        <Card accent={P.ruby}>
+          <SectionHead title="Default Risk — KishanRao" icon="⚠️" color={P.ruby}/>
+          {kishanRao ? (
+            <div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+                {[
+                  {label:"Loan Amount", v:`₹${n(kishanRao.amount).toLocaleString("en-IN")}`, color:P.gold},
+                  {label:"Monthly Int", v:`₹${n(kishanRao.monthlyInt).toLocaleString("en-IN")}`, color:P.teal},
+                  {label:"Months Overdue", v:`${kishanRao.monthsElapsed||2} mo`, color:P.ruby},
+                  {label:"Interest Lost", v:`₹${n(kishanRao.pendingInt).toLocaleString("en-IN")}`, color:P.ruby},
+                ].map((r,i)=>(
+                  <div key={i} style={{background:`${r.color}0F`,border:`1px solid ${r.color}22`,borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+                    <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:3}}>{r.label}</div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:800,color:r.color}}>{r.v}</div>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-        )}
-
-        {/* Active URL display */}
-        <div style={{marginTop:12,padding:"8px 12px",background:P.card3,borderRadius:8,display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,flexShrink:0}}>ACTIVE URL</span>
-          <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:apiUrl?P.sapphire:P.muted,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-            {apiUrl || "— not configured —"}
-          </span>
-          {apiUrl && <span style={{background:`${P.emerald}15`,border:`1px solid ${P.emerald}33`,borderRadius:6,padding:"1px 8px",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.emerald,flexShrink:0}}>live</span>}
-        </div>
-      </Card>
-
-      {/* Data mapping info */}
-      <Card accent={P.muted}>
-        <SectionHead title="How data is mapped" icon="🗺" color={P.muted}/>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10}}>
-          {[
-            { key:"income",          icon:"💰", label:"Income (sheet1)",          sheets:"Income Tracker, Monthly Budget, Daily Expenses, Tax Log" },
-            { key:"lendenClub",      icon:"🏛", label:"LendenClub (sheet2)",       sheets:"LC Summary, Tab Summary, LC Transactions, Loan Samples" },
-            { key:"personalLending", icon:"🤝", label:"Personal Lending (sheet3)", sheets:"Borrowers, Repayment Log" },
-            { key:"realEstate",      icon:"🏡", label:"Real Estate (sheet4)",      sheets:"Property Details, EMI Schedule, Valuation" },
-            { key:"stocks",          icon:"📈", label:"Stocks (sheet5)",           sheets:"Mutual Funds, Equity, Options, Crypto" },
-            { key:"loans",           icon:"🏦", label:"Loans (sheet6)",            sheets:"HDFC Schedule, IDFC Schedule, SBI Schedule" },
-          ].map((m,i) => (
-            <div key={i} style={{background:P.card3,borderRadius:8,padding:"10px 12px",border:`1px solid ${P.border}`}}>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:12,fontWeight:700,color:P.text,marginBottom:4}}>{m.icon} {m.label}</div>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,lineHeight:1.7}}>Looks for tabs: {m.sheets}</div>
+              <button onClick={generateWhatsApp} disabled={wpLoading}
+                style={{width:"100%",background:wpLoading?P.border:`linear-gradient(135deg,${P.ruby},${P.orange})`,border:"none",borderRadius:10,padding:"10px 0",color:"#fff",cursor:wpLoading?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,marginBottom:whatsapp?12:0}}>
+                {wpLoading?"🔄 Drafting…":"💬 Draft WhatsApp Message"}
+              </button>
+              {whatsapp && (
+                <div style={{background:P.card3,border:`1px solid ${P.ruby}33`,borderRadius:10,padding:"12px 14px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.75}}>
+                  {whatsapp}
+                  <button onClick={()=>navigator.clipboard?.writeText(whatsapp)} style={{display:"block",marginTop:8,background:"none",border:`1px solid ${P.emerald}44`,color:P.emerald,borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:10,fontFamily:"'Fira Code',monospace"}}>📋 Copy</button>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-        <div style={{marginTop:10,fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,lineHeight:1.8}}>
-          Tab name matching is fuzzy — "LC Summary", "LendenClub Summary", "Summary" all work. Column headers are also flexible.
-        </div>
-      </Card>
+          ) : (
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:P.emerald,textAlign:"center",padding:"20px 0"}}>✅ No defaulting borrowers</div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
 
-// ─── TABS ─────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — SMART CALCULATORS
+// ═══════════════════════════════════════════════════════════════════════════════
+function AICalculatorsSection({ data, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [calcTab, setCalcTab] = useState("debt");
+
+  const CALCS = [
+    {id:"debt",    label:"⏱ Debt-Free"},
+    {id:"networth",label:"💎 ₹1Cr Countdown"},
+    {id:"passive", label:"💸 Passive Income"},
+    {id:"fire",    label:"🔥 FIRE"},
+    {id:"avalanche",label:"🏔 Loan Optimizer"},
+    {id:"realestate",label:"🏡 RE Break-even"},
+    {id:"sip",     label:"📈 SIP Step-up"},
+    {id:"emergency",label:"🛡 Emergency Fund"},
+  ];
+
+  return (
+    <div className="fade">
+      {/* Calc sub-tabs */}
+      <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+        {CALCS.map(c=>(
+          <button key={c.id} onClick={()=>setCalcTab(c.id)}
+            style={{padding:"7px 14px",borderRadius:20,border:`1px solid ${calcTab===c.id?P.emerald:P.border}`,background:calcTab===c.id?`${P.emerald}18`:"transparent",color:calcTab===c.id?P.emerald:P.muted,cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:calcTab===c.id?700:400,transition:"all .15s"}}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {calcTab==="debt"      && <DebtFreeCalc data={d} emiTotal={emiTotal} salary={salary}/>}
+      {calcTab==="networth"  && <NetWorthCalc data={d} netWorth={netWorth} totalAssets={totalAssets} totalDebt={totalDebt} inHand={inHand} emiTotal={emiTotal}/>}
+      {calcTab==="passive"   && <PassiveIncomeCalc data={d}/>}
+      {calcTab==="fire"      && <FIRECalc data={d} netWorth={netWorth} totalAssets={totalAssets} salary={salary} inHand={inHand}/>}
+      {calcTab==="avalanche" && <LoanOptimizerCalc data={d} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+      {calcTab==="realestate"&& <RealEstateBreakEven data={d}/>}
+      {calcTab==="sip"       && <SIPStepUpCalc data={d} salary={salary}/>}
+      {calcTab==="emergency" && <EmergencyFundCalc data={d} emiTotal={emiTotal} salary={salary} inHand={inHand}/>}
+    </div>
+  );
+}
+
+// ── 09: Debt-Free Timeline ──
+function DebtFreeCalc({ data, emiTotal, salary }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [extra, setExtra] = useState(0);
+
+  const loans = [
+    { name:"IDFC", outstanding:n(d.loans?.idfc?.outstanding), emi:n(d.loans?.idfc?.emi), rate:n(d.loans?.idfc?.interestRate||13.5)/100/12 },
+    { name:"SBI",  outstanding:n(d.loans?.sbi?.outstanding),  emi:n(d.loans?.sbi?.emi),  rate:n(d.loans?.sbi?.interestRate||9.35)/100/12  },
+    { name:"HDFC", outstanding:n(d.loans?.hdfc?.outstanding), emi:n(d.loans?.hdfc?.emi), rate:n(d.loans?.hdfc?.interestRate||10.5)/100/12 },
+  ];
+
+  const calcMonths = (outstanding, emi, rate) => {
+    if (emi <= outstanding * rate) return 999;
+    let bal = outstanding, m = 0;
+    while (bal > 0 && m < 600) {
+      bal = bal * (1 + rate) - emi;
+      m++;
+    }
+    return m;
+  };
+
+  const calcInterestSaved = (outstanding, emi, rate, extraPmt) => {
+    let bal = outstanding, total = 0, m = 0;
+    while (bal > 0 && m < 600) { const int = bal*rate; bal = bal+int-(emi+extraPmt); total+=int; m++; }
+    let bal2 = outstanding, total2 = 0, m2 = 0;
+    while (bal2 > 0 && m2 < 600) { const int2 = bal2*rate; bal2 = bal2+int2-emi; total2+=int2; m2++; }
+    return { saved: Math.max(0, total2-total), monthsCut: Math.max(0, m2-m) };
+  };
+
+  return (
+    <Card accent={P.emerald}>
+      <SectionHead title="Debt-Free Timeline + Prepayment Simulator" icon="⏱" color={P.emerald}/>
+      <div style={{marginBottom:16}}>
+        <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:6}}>Extra monthly prepayment: ₹{extra.toLocaleString("en-IN")}</label>
+        <input type="range" min={0} max={50000} step={1000} value={extra} onChange={e=>setExtra(Number(e.target.value))}
+          style={{width:"100%",accentColor:P.emerald}}/>
+        <div style={{display:"flex",justifyContent:"space-between",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:3}}>
+          <span>₹0</span><span>₹25K</span><span>₹50K</span>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+        {loans.map(l=>{
+          const m0 = calcMonths(l.outstanding, l.emi, l.rate);
+          const mNew = calcMonths(l.outstanding, l.emi+extra/3, l.rate);
+          const {saved, monthsCut} = calcInterestSaved(l.outstanding, l.emi, l.rate, extra/3);
+          const colors = {IDFC:P.sapphire, SBI:P.orange, HDFC:P.ruby};
+          return (
+            <div key={l.name} style={{background:`${colors[l.name]}0F`,border:`1px solid ${colors[l.name]}33`,borderRadius:12,padding:14}}>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:800,color:colors[l.name],marginBottom:8}}>{l.name} Loan</div>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:2}}>
+                <div>Outstanding: <span style={{color:P.text}}>₹{Math.round(l.outstanding).toLocaleString("en-IN")}</span></div>
+                <div>Normal payoff: <span style={{color:P.gold}}>{m0>=999?"N/A":`${Math.floor(m0/12)}y ${m0%12}m`}</span></div>
+                {extra>0&&<><div>With extra: <span style={{color:P.emerald}}>{mNew>=999?"N/A":`${Math.floor(mNew/12)}y ${mNew%12}m`}</span></div>
+                <div>Months saved: <span style={{color:P.emerald,fontWeight:700}}>−{monthsCut} mo</span></div>
+                <div>Interest saved: <span style={{color:P.emerald,fontWeight:700}}>₹{Math.round(saved).toLocaleString("en-IN")}</span></div></>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {extra>0&&<div style={{marginTop:12,padding:"10px 14px",background:`${P.emerald}0A`,border:`1px solid ${P.emerald}22`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald}}>
+        💡 Paying ₹{extra.toLocaleString("en-IN")} extra/month saves significant interest. Prioritize IDFC first (highest rate at 13.5%).
+      </div>}
+    </Card>
+  );
+}
+
+// ── 10: Net Worth ₹1Cr Countdown ──
+function NetWorthCalc({ data, netWorth, totalAssets, totalDebt, inHand, emiTotal }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [growth, setGrowth] = useState(12);
+  const [savings, setSavings] = useState(Math.max(0, Math.round(n(inHand)-15000)));
+
+  const target = 10000000;
+  const now    = new Date(2026, 2, 1);
+
+  const project = () => {
+    let nw = netWorth, assets = totalAssets, debt = totalDebt;
+    const months = [];
+    for (let m = 0; m <= 120; m++) {
+      months.push({ m, nw:Math.round(nw), date:new Date(now.getFullYear(), now.getMonth()+m, 1).toLocaleDateString("en-IN",{month:"short",year:"numeric"}) });
+      assets = assets * (1 + growth/100/12) + savings;
+      const debtReduction = emiTotal * 0.4;
+      debt = Math.max(0, debt - debtReduction);
+      nw = assets - debt;
+    }
+    return months;
+  };
+
+  const months  = project();
+  const hitMonth= months.find(m=>m.nw>=target);
+  const crProgress = Math.min(100, Math.max(0, (netWorth/target)*100));
+
+  return (
+    <Card accent={P.gold}>
+      <SectionHead title="Net Worth → ₹1 Crore Countdown" icon="💎" color={P.gold}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+        <div>
+          <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:4}}>Portfolio Growth Rate: {growth}%/yr</label>
+          <input type="range" min={6} max={20} step={1} value={growth} onChange={e=>setGrowth(Number(e.target.value))} style={{width:"100%",accentColor:P.gold}}/>
+        </div>
+        <div>
+          <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:4}}>Monthly Savings: ₹{savings.toLocaleString("en-IN")}</label>
+          <input type="range" min={0} max={50000} step={1000} value={savings} onChange={e=>setSavings(Number(e.target.value))} style={{width:"100%",accentColor:P.gold}}/>
+        </div>
+      </div>
+      <div style={{background:`linear-gradient(135deg,${P.gold}14,transparent)`,border:`1px solid ${P.gold}33`,borderRadius:12,padding:"16px 20px",marginBottom:14,display:"flex",gap:24,alignItems:"center",flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginBottom:4}}>Current Net Worth</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:800,color:netWorth<0?P.ruby:P.emerald}}>{fmt(netWorth)}</div>
+        </div>
+        <div style={{flex:1}}>
+          <PBar value={Math.max(0,netWorth)} max={target} color={P.gold} height={10}/>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:4}}>{Math.max(0,crProgress).toFixed(1)}% of ₹1Cr goal</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginBottom:4}}>Estimated ₹1Cr date</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:P.gold}}>{hitMonth?hitMonth.date:"50yr+"}</div>
+          {hitMonth&&<div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>{hitMonth.m} months away</div>}
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={months.filter((_,i)=>i%3===0)} margin={{top:5,right:10,left:0,bottom:0}}>
+          <defs>
+            <linearGradient id="nwG" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={P.gold} stopOpacity={.4}/><stop offset="100%" stopColor={P.gold} stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <XAxis dataKey="date" tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false} interval={3}/>
+          <YAxis tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false} tickFormatter={v=>v>=10000000?`₹${(v/10000000).toFixed(1)}Cr`:v>=100000?`₹${(v/100000).toFixed(0)}L`:`₹${(v/1000).toFixed(0)}K`}/>
+          <Tooltip content={({active,payload,label})=>active&&payload?.length?(<div style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,padding:"8px 12px"}}><p style={{color:P.muted,fontSize:9,margin:"0 0 2px",fontFamily:"'Fira Code',monospace"}}>{label}</p><p style={{color:P.gold,fontSize:12,fontWeight:700,margin:0,fontFamily:"'Fira Code',monospace"}}>{fmt(payload[0].value)}</p></div>):null}/>
+          <Area type="monotone" dataKey="nw" stroke={P.gold} fill="url(#nwG)" strokeWidth={2} dot={false}/>
+        </AreaChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
+// ── 11: Passive Income Dashboard ──
+function PassiveIncomeCalc({ data }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [target, setTarget] = useState(500000);
+
+  const sources = [
+    { label:"Personal Lending Interest", monthly:n(d.personalLending?.monthlyInterest), color:P.teal,    icon:"🤝", pool:n(d.personalLending?.totalCapital), rate:24 },
+    { label:"LendenClub Returns",        monthly:Math.round(n(d.lendenClub?.totalPooled)*0.10/12), color:P.rose,    icon:"🏛", pool:n(d.lendenClub?.totalPooled), rate:10 },
+    { label:"Stock Dividends",           monthly:Math.round(n(d.stocks?.summary?.total?.current)*0.015/12), color:P.violet,  icon:"📈", pool:n(d.stocks?.summary?.total?.current), rate:1.5 },
+    { label:"MF Returns (XIRR)",         monthly:Math.round(n(d.stocks?.summary?.mf?.current)*0.12/12), color:P.sapphire, icon:"📦", pool:n(d.stocks?.summary?.mf?.current), rate:12 },
+  ];
+  const totalMonthly = sources.reduce((s,r)=>s+r.monthly,0);
+  const monthsToTarget = totalMonthly > 0 ? Math.ceil((target/12 - totalMonthly)/(totalMonthly*0.05)) : 999;
+
+  return (
+    <Card accent={P.teal}>
+      <SectionHead title="Passive Income Dashboard" icon="💸" color={P.teal}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:16}}>
+        {sources.map((s,i)=>(
+          <div key={i} style={{background:`${s.color}0F`,border:`1px solid ${s.color}33`,borderRadius:12,padding:"14px 16px"}}>
+            <div style={{fontSize:20,marginBottom:6}}>{s.icon}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{s.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:s.color}}>{fmt(s.monthly)}<span style={{fontSize:11,fontWeight:400}}>/mo</span></div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:4}}>Pool: {fmt(s.pool)} @ {s.rate}%/yr</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:`${P.teal}14`,border:`1px solid ${P.teal}33`,borderRadius:12,padding:"16px 20px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+        <div>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginBottom:4}}>Total Monthly Passive Income</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:32,fontWeight:800,color:P.teal}}>{fmt(totalMonthly)}<span style={{fontSize:14,color:P.muted}}>/mo</span></div>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:2}}>{fmt(totalMonthly*12)}/year</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginBottom:4}}>Target: ₹{(target/1000).toFixed(0)}K/yr</div>
+          <input type="range" min={100000} max={2000000} step={50000} value={target} onChange={e=>setTarget(Number(e.target.value))} style={{accentColor:P.teal,width:160}}/>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,color:totalMonthly*12>=target?P.emerald:P.gold,marginTop:4}}>
+            {totalMonthly*12>=target?"🎉 Target achieved!`":`${Math.round((totalMonthly*12/target)*100)}% of goal`}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ── 12: FIRE Calculator ──
+function FIRECalc({ data, netWorth, totalAssets, salary, inHand }) {
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [monthlyExpense, setMonthlyExpense] = useState(60000);
+  const [returnRate, setReturnRate] = useState(8);
+
+  const annualExpense  = monthlyExpense * 12;
+  const fireCorpus     = annualExpense * 25;   // 4% rule
+  const coastFireCorpus= fireCorpus / Math.pow(1 + returnRate/100, 30);
+  const currentAge     = 30;
+  const targetAge      = 45;
+  const yearsToFIRE   = Math.log(fireCorpus/Math.max(1,totalAssets)) / Math.log(1+returnRate/100);
+  const fireDate       = new Date(2026 + Math.max(0,Math.ceil(yearsToFIRE)), 2, 1);
+  const sipNeeded      = fireCorpus>totalAssets ? (fireCorpus-totalAssets)*((returnRate/100/12)/( Math.pow(1+returnRate/100/12,yearsToFIRE*12)-1)) : 0;
+
+  return (
+    <Card accent={P.ruby}>
+      <SectionHead title="FIRE + Coast FIRE Calculator" icon="🔥" color={P.ruby}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:4}}>Monthly Expenses: ₹{monthlyExpense.toLocaleString("en-IN")}</label>
+          <input type="range" min={20000} max={200000} step={5000} value={monthlyExpense} onChange={e=>setMonthlyExpense(Number(e.target.value))} style={{width:"100%",accentColor:P.ruby}}/>
+        </div>
+        <div>
+          <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:4}}>Return Rate: {returnRate}%/yr</label>
+          <input type="range" min={6} max={15} step={0.5} value={returnRate} onChange={e=>setReturnRate(Number(e.target.value))} style={{width:"100%",accentColor:P.ruby}}/>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:14}}>
+        {[
+          {label:"FIRE Corpus (25x rule)",    v:fmt(fireCorpus),      color:P.ruby,    sub:"4% safe withdrawal rate"},
+          {label:"Coast FIRE Corpus",          v:fmt(coastFireCorpus), color:P.orange,  sub:"Stop investing & coast to 60"},
+          {label:"Current Investments",        v:fmt(totalAssets),     color:netWorth>0?P.emerald:P.ruby, sub:`${Math.round(totalAssets/fireCorpus*100)}% of FIRE corpus`},
+          {label:"Monthly SIP Needed",         v:fmt(Math.max(0,sipNeeded)), color:P.sapphire, sub:`To FIRE by ${fireDate.getFullYear()}`},
+        ].map((r,i)=>(
+          <div key={i} style={{background:`${r.color}0F`,border:`1px solid ${r.color}33`,borderRadius:10,padding:"12px 14px"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:4}}>{r.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:r.color}}>{r.v}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:3}}>{r.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:`${P.ruby}0A`,border:`1px solid ${P.ruby}22`,borderRadius:10,padding:"12px 16px",fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.9}}>
+        <div>🎯 FIRE target: <span style={{color:P.ruby,fontWeight:700}}>{fireDate.toLocaleDateString("en-IN",{month:"long",year:"numeric"})}</span> {yearsToFIRE>0?`(${Math.ceil(yearsToFIRE)} years away)`:""}</div>
+        <div>🏄 Coast FIRE check: {totalAssets>=coastFireCorpus?<span style={{color:P.emerald,fontWeight:700}}>✅ You can stop investing & coast!</span>:<span style={{color:P.gold}}>Need ₹{fmt(Math.max(0,coastFireCorpus-totalAssets))} more to coast</span>}</div>
+      </div>
+    </Card>
+  );
+}
+
+// ── 13: Loan Optimizer (Avalanche vs Snowball) ──
+function LoanOptimizerCalc({ data, emiTotal, salary, inHand }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [extra, setExtra] = useState(5000);
+
+  const loans = [
+    { name:"IDFC", outstanding:n(d.loans?.idfc?.outstanding), minEmi:n(d.loans?.idfc?.emi), rate:n(d.loans?.idfc?.interestRate||13.5)/100/12, color:P.sapphire },
+    { name:"SBI",  outstanding:n(d.loans?.sbi?.outstanding),  minEmi:n(d.loans?.sbi?.emi),  rate:n(d.loans?.sbi?.interestRate||9.35)/100/12,  color:P.orange  },
+    { name:"HDFC", outstanding:n(d.loans?.hdfc?.outstanding), minEmi:n(d.loans?.hdfc?.emi), rate:n(d.loans?.hdfc?.interestRate||10.5)/100/12, color:P.ruby    },
+  ];
+
+  const simulate = (order) => {
+    let loansCopy = order.map(l=>({...l, bal:l.outstanding, paid:0, interest:0}));
+    let totalInterest = 0, month = 0;
+    while (loansCopy.some(l=>l.bal>0.01) && month < 600) {
+      let extraLeft = extra;
+      for (let l of loansCopy) {
+        if (l.bal <= 0) continue;
+        const int = l.bal * l.rate;
+        l.interest += int;
+        totalInterest += int;
+        l.bal = l.bal + int - l.minEmi;
+        if (l.bal < 0) l.bal = 0;
+      }
+      // Apply extra to first non-zero loan
+      const target = loansCopy.find(l=>l.bal>0);
+      if (target) { target.bal = Math.max(0, target.bal - extraLeft); }
+      month++;
+    }
+    return { months: month, totalInterest: Math.round(totalInterest) };
+  };
+
+  const avalanche = simulate([...loans].sort((a,b)=>b.rate-a.rate));
+  const snowball  = simulate([...loans].sort((a,b)=>a.outstanding-b.outstanding));
+
+  return (
+    <Card accent={P.violet}>
+      <SectionHead title="Loan Payoff Optimizer — Avalanche vs Snowball" icon="🏔" color={P.violet}/>
+      <div style={{marginBottom:16}}>
+        <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:6}}>Extra monthly payment: ₹{extra.toLocaleString("en-IN")}</label>
+        <input type="range" min={0} max={30000} step={1000} value={extra} onChange={e=>setExtra(Number(e.target.value))} style={{width:"100%",accentColor:P.violet}}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        {[
+          {label:"🏔 Avalanche Method", sub:"Highest rate first (IDFC→HDFC→SBI)", result:avalanche, color:P.emerald, detail:"Saves most interest — mathematically optimal"},
+          {label:"❄ Snowball Method",  sub:"Smallest balance first (SBI→IDFC→HDFC)", result:snowball, color:P.sapphire, detail:"Psychologically motivating — quick wins"},
+        ].map((m,i)=>(
+          <div key={i} style={{background:`${m.color}0F`,border:`1px solid ${m.color}33`,borderRadius:12,padding:"16px 18px"}}>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:800,color:m.color,marginBottom:4}}>{m.label}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:10}}>{m.sub}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,color:P.text,lineHeight:2}}>
+              <div>Debt-free in: <span style={{color:m.color,fontWeight:700}}>{Math.floor(m.result.months/12)}y {m.result.months%12}m</span></div>
+              <div>Total interest: <span style={{color:m.color,fontWeight:700}}>{fmt(m.result.totalInterest)}</span></div>
+            </div>
+            <div style={{fontFamily:"'Outfit',sans-serif",fontSize:11,color:P.muted,marginTop:8,lineHeight:1.6}}>{m.detail}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:`${P.violet}0A`,border:`1px solid ${P.violet}22`,borderRadius:10,padding:"10px 14px",fontFamily:"'Fira Code',monospace",fontSize:10,color:P.violet}}>
+        💡 Avalanche saves <span style={{fontWeight:700}}>{fmt(Math.abs(snowball.totalInterest-avalanche.totalInterest))}</span> more interest than Snowball. Recommended: use Avalanche — pay IDFC first.
+      </div>
+    </Card>
+  );
+}
+
+// ── 14: Real Estate Break-even ──
+function RealEstateBreakEven({ data }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [appreciation, setAppreciation] = useState(8);
+  const [rentalYield, setRentalYield]   = useState(3);
+
+  const totalInvested = n(d.realEstate?.totalCost);
+  const paid          = n(d.realEstate?.paid);
+  const remaining     = n(d.realEstate?.remaining);
+
+  const chartData = [];
+  for (let yr = 0; yr <= 15; yr++) {
+    const marketValue = totalInvested * Math.pow(1 + appreciation/100, yr);
+    const rentalIncome= totalInvested * (rentalYield/100) * yr;
+    chartData.push({ year:`${2024+yr}`, marketValue:Math.round(marketValue), invested:totalInvested, rentalIncome:Math.round(rentalIncome), gain:Math.round(marketValue+rentalIncome-totalInvested) });
+  }
+  const breakEven = chartData.find(r=>r.gain>=0);
+
+  return (
+    <Card accent={P.gold}>
+      <SectionHead title="Real Estate Break-even Analysis" icon="🏡" color={P.gold}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:4}}>Appreciation Rate: {appreciation}%/yr</label>
+          <input type="range" min={3} max={15} step={0.5} value={appreciation} onChange={e=>setAppreciation(Number(e.target.value))} style={{width:"100%",accentColor:P.gold}}/>
+        </div>
+        <div>
+          <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:4}}>Rental Yield: {rentalYield}%/yr</label>
+          <input type="range" min={1} max={8} step={0.5} value={rentalYield} onChange={e=>setRentalYield(Number(e.target.value))} style={{width:"100%",accentColor:P.gold}}/>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+        {[
+          {label:"Total Cost",      v:fmt(totalInvested), color:P.text},
+          {label:"2031 Value (5yr)",v:fmt(chartData[7]?.marketValue||0), color:P.gold},
+          {label:"Break-even Year", v:breakEven?breakEven.year:"Never", color:P.emerald},
+        ].map((r,i)=>(
+          <div key={i} style={{background:`${r.color}0F`,border:`1px solid ${r.color}22`,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:4}}>{r.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:r.color}}>{r.v}</div>
+          </div>
+        ))}
+      </div>
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={chartData} margin={{top:5,right:10,left:0,bottom:0}}>
+          <defs>
+            <linearGradient id="mvGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={P.gold} stopOpacity={.4}/><stop offset="100%" stopColor={P.gold} stopOpacity={0}/></linearGradient>
+          </defs>
+          <XAxis dataKey="year" tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false}/>
+          <YAxis tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false} tickFormatter={v=>fmt(v)}/>
+          <Tooltip content={({active,payload,label})=>active&&payload?.length?(<div style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,padding:"8px 12px"}}><p style={{color:P.muted,fontSize:9,margin:"0 0 2px"}}>{label}</p>{payload.map((p,i)=><p key={i} style={{color:p.color,fontSize:11,fontWeight:600,margin:"1px 0",fontFamily:"'Fira Code',monospace"}}>{p.name}: {fmt(p.value)}</p>)}</div>):null}/>
+          <Area type="monotone" dataKey="marketValue" name="Market Value" stroke={P.gold} fill="url(#mvGrad)" strokeWidth={2} dot={false}/>
+          <Line type="monotone" dataKey="invested" name="Total Invested" stroke={P.muted} strokeDasharray="4 4" strokeWidth={1.5} dot={false}/>
+        </AreaChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
+// ── 18: SIP Step-up Calculator ──
+function SIPStepUpCalc({ data, salary }) {
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const currentMF = n(data.stocks?.summary?.mf?.current);
+  const [sipAmount, setSipAmount] = useState(5000);
+  const [stepUp, setStepUp]       = useState(10);
+  const [returnRate, setReturnRate]= useState(12);
+
+  const calcCorpus = (sip, stepUpPct, rate, years) => {
+    let corpus = currentMF, monthly = sip;
+    for (let y = 0; y < years; y++) {
+      for (let m = 0; m < 12; m++) {
+        corpus = corpus * (1 + rate/100/12) + monthly;
+      }
+      monthly = monthly * (1 + stepUpPct/100);
+    }
+    return Math.round(corpus);
+  };
+
+  const flat5  = calcCorpus(sipAmount, 0, returnRate, 5);
+  const flat10 = calcCorpus(sipAmount, 0, returnRate, 10);
+  const step5  = calcCorpus(sipAmount, stepUp, returnRate, 5);
+  const step10 = calcCorpus(sipAmount, stepUp, returnRate, 10);
+
+  const chartData = [];
+  for (let y = 0; y <= 10; y++) {
+    chartData.push({ year:`Y${y}`, flat:calcCorpus(sipAmount,0,returnRate,y), stepup:calcCorpus(sipAmount,stepUp,returnRate,y) });
+  }
+  const crDateFlat  = chartData.find(r=>r.flat>=10000000);
+  const crDateStep  = chartData.find(r=>r.stepup>=10000000);
+
+  return (
+    <Card accent={P.sapphire}>
+      <SectionHead title="SIP Step-up Calculator" icon="📈" color={P.sapphire}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
+        <div>
+          <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:4}}>Monthly SIP: ₹{sipAmount.toLocaleString("en-IN")}</label>
+          <input type="range" min={1000} max={50000} step={500} value={sipAmount} onChange={e=>setSipAmount(Number(e.target.value))} style={{width:"100%",accentColor:P.sapphire}}/>
+        </div>
+        <div>
+          <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:4}}>Annual Step-up: {stepUp}%</label>
+          <input type="range" min={0} max={25} step={5} value={stepUp} onChange={e=>setStepUp(Number(e.target.value))} style={{width:"100%",accentColor:P.sapphire}}/>
+        </div>
+        <div>
+          <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:4}}>Expected Return: {returnRate}%</label>
+          <input type="range" min={8} max={18} step={1} value={returnRate} onChange={e=>setReturnRate(Number(e.target.value))} style={{width:"100%",accentColor:P.sapphire}}/>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+        {[
+          {label:"Flat SIP — 5 Yrs",    v:fmt(flat5),  color:P.muted},
+          {label:`${stepUp}% Step-up — 5 Yrs`,  v:fmt(step5),  color:P.sapphire},
+          {label:"Flat SIP — 10 Yrs",   v:fmt(flat10), color:P.muted},
+          {label:`${stepUp}% Step-up — 10 Yrs`, v:fmt(step10), color:P.emerald},
+        ].map((r,i)=>(
+          <div key={i} style={{background:`${r.color}0F`,border:`1px solid ${r.color}33`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:4}}>{r.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:800,color:r.color}}>{r.v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{marginBottom:12,padding:"10px 14px",background:`${P.sapphire}0A`,border:`1px solid ${P.sapphire}22`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:10,color:P.sapphire}}>
+        💡 Step-up grows corpus by <span style={{fontWeight:700}}>{fmt(step10-flat10)}</span> extra over 10 years. ₹1Cr: Flat in {crDateFlat?crDateFlat.year:"10yr+"} vs Step-up in {crDateStep?crDateStep.year:"sooner"}.
+      </div>
+      <ResponsiveContainer width="100%" height={180}>
+        <LineChart data={chartData}>
+          <XAxis dataKey="year" tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false}/>
+          <YAxis tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false} tickFormatter={v=>v>=10000000?`${(v/10000000).toFixed(1)}Cr`:v>=100000?`${(v/100000).toFixed(0)}L`:`${(v/1000).toFixed(0)}K`}/>
+          <Tooltip content={({active,payload,label})=>active&&payload?.length?(<div style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,padding:"8px 12px"}}><p style={{color:P.muted,fontSize:9,margin:"0 0 3px"}}>{label}</p>{payload.map((p,i)=><p key={i} style={{color:p.color,fontSize:11,fontWeight:600,margin:"1px 0",fontFamily:"'Fira Code',monospace"}}>{p.name}: {fmt(p.value)}</p>)}</div>):null}/>
+          <Legend wrapperStyle={{fontSize:10,fontFamily:"'Fira Code',monospace"}}/>
+          <Line type="monotone" dataKey="flat"   name="Flat SIP"    stroke={P.muted}    strokeWidth={2} dot={false}/>
+          <Line type="monotone" dataKey="stepup" name="Step-up SIP" stroke={P.sapphire} strokeWidth={2.5} dot={false}/>
+        </LineChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
+// ── Emergency Fund Runway ──
+function EmergencyFundCalc({ data, emiTotal, salary, inHand }) {
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [emergencyFund, setEmergencyFund] = useState(50000);
+  const monthlyFixed = emiTotal + n(data.income?.creditCardBills);
+  const monthlyTotal = monthlyFixed + 25000; // living expenses estimate
+  const runwayMonths = monthlyTotal>0 ? (emergencyFund/monthlyTotal).toFixed(1) : 0;
+  const recommended  = monthlyTotal * 6;
+  const gap          = Math.max(0, recommended - emergencyFund);
+
+  return (
+    <Card accent={P.orange}>
+      <SectionHead title="Emergency Fund Runway" icon="🛡" color={P.orange}/>
+      <div style={{marginBottom:14}}>
+        <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:6}}>Current Emergency Fund: ₹{emergencyFund.toLocaleString("en-IN")}</label>
+        <input type="range" min={0} max={500000} step={5000} value={emergencyFund} onChange={e=>setEmergencyFund(Number(e.target.value))} style={{width:"100%",accentColor:P.orange}}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+        {[
+          {label:"Monthly Burn Rate",  v:fmt(monthlyTotal), color:P.ruby,    sub:"EMIs + CC + Living"},
+          {label:"Runway",             v:`${runwayMonths} mo`, color:parseFloat(runwayMonths)>=6?P.emerald:P.ruby, sub:"Months you can survive"},
+          {label:"Recommended (6mo)",  v:fmt(recommended), color:P.orange,  sub:"Safe emergency buffer"},
+        ].map((r,i)=>(
+          <div key={i} style={{background:`${r.color}0F`,border:`1px solid ${r.color}33`,borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:4}}>{r.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:r.color}}>{r.v}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:3}}>{r.sub}</div>
+          </div>
+        ))}
+      </div>
+      {gap>0&&<div style={{background:`${P.orange}0F`,border:`1px solid ${P.orange}33`,borderRadius:10,padding:"12px 14px",fontFamily:"'Fira Code',monospace",fontSize:10,color:P.orange,lineHeight:1.9}}>
+        ⚠ You're short by <span style={{fontWeight:700}}>₹{gap.toLocaleString("en-IN")}</span> from the 6-month safety net. With current in-hand of ₹{n(inHand).toLocaleString("en-IN")}, it will take ~{Math.ceil(gap/Math.max(1,n(inHand)-monthlyTotal))} months to build it.
+      </div>}
+      {gap===0&&<div style={{background:`${P.emerald}0F`,border:`1px solid ${P.emerald}33`,borderRadius:10,padding:"12px 14px",fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald}}>✅ Emergency fund covers 6+ months. You're protected!</div>}
+    </Card>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — DEEP ANALYSIS
+// ═══════════════════════════════════════════════════════════════════════════════
+function AIAnalysisSection({ data, totalDebt, totalAssets, netWorth, emiTotal, salary, inHand }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [analysisTab, setAnalysisTab] = useState("whatif");
+
+  const TOOLS = [
+    {id:"whatif",  label:"🔮 What-If Engine"},
+    {id:"tax",     label:"🧾 Tax Planner"},
+    {id:"spend",   label:"🔍 Spend Audit"},
+    {id:"salaryup",label:"💼 Salary Impact"},
+    {id:"goals",   label:"🎯 Goal Tracker"},
+    {id:"stress",  label:"📉 Stress Test"},
+  ];
+
+  return (
+    <div className="fade">
+      <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+        {TOOLS.map(t=>(
+          <button key={t.id} onClick={()=>setAnalysisTab(t.id)}
+            style={{padding:"7px 14px",borderRadius:20,border:`1px solid ${analysisTab===t.id?P.sapphire:P.border}`,background:analysisTab===t.id?`${P.sapphire}18`:"transparent",color:analysisTab===t.id?P.sapphire:P.muted,cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:analysisTab===t.id?700:400,transition:"all .15s"}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {analysisTab==="whatif"   && <WhatIfEngine data={d} systemPrompt={`You are a financial scenario analyst. Analyze what-if scenarios for ${d.settings?.name||"Naresh"} using their real data: Salary ₹${n(d.income?.salary).toLocaleString("en-IN")}, in-hand ₹${n(d.income?.inHand).toLocaleString("en-IN")}, HDFC loan ₹${Math.round(n(d.loans?.hdfc?.outstanding)).toLocaleString("en-IN")} @10.5%, IDFC ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} @13.5%, net worth ₹${Math.round(netWorth).toLocaleString("en-IN")}, investments ₹${Math.round(totalAssets).toLocaleString("en-IN")}. Show side-by-side current vs scenario with specific numbers. Be precise and actionable.`}/>}
+      {analysisTab==="tax"      && <TaxPlanner data={d} salary={salary}/>}
+      {analysisTab==="spend"    && <SpendAudit data={d}/>}
+      {analysisTab==="salaryup" && <SalaryImpact data={d} salary={salary} emiTotal={emiTotal} inHand={inHand} netWorth={netWorth} totalAssets={totalAssets}/>}
+      {analysisTab==="goals"    && <GoalTracker data={d} netWorth={netWorth} totalAssets={totalAssets} totalDebt={totalDebt} inHand={inHand} emiTotal={emiTotal}/>}
+      {analysisTab==="stress"   && <DebtStressTest data={d} salary={salary} emiTotal={emiTotal} inHand={inHand} totalDebt={totalDebt}/>}
+    </div>
+  );
+}
+
+// ── 15: What-If Scenario Engine ──
+function WhatIfEngine({ data, systemPrompt }) {
+  const [scenario, setScenario] = useState("");
+  const [result, setResult]     = useState(null);
+  const [loading, setLoading]   = useState(false);
+
+  const SCENARIOS = [
+    "What if I prepay ₹5 lakh on HDFC loan right now?",
+    "What if I increase my SIP from ₹5K to ₹15K per month?",
+    "What if I exit my personal lending and invest in index funds?",
+    "What if I lose my job for 6 months?",
+    "What if real estate appreciates 15%/yr for next 5 years?",
+    "What if I take ₹10 lakh additional loan to invest in LendenClub?",
+  ];
+
+  const runScenario = async (sc) => {
+    const s = sc || scenario.trim();
+    if (!s || loading) return;
+    setLoading(true); setResult(null);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514", max_tokens:800,
+          system: systemPrompt,
+          messages:[{role:"user",content:`Analyze this scenario with real numbers: "${s}"\n\nProvide:\n1. CURRENT SITUATION (with actual numbers)\n2. SCENARIO OUTCOME (what changes, what doesn't)\n3. NET IMPACT (better or worse, by how much ₹)\n4. RECOMMENDATION (should they do it?)\n\nBe specific. Use ₹ amounts. Keep it under 250 words.`}]
+        })
+      });
+      const json = await res.json();
+      setResult(json.content?.map(c=>c.text||"").join("")||"");
+    } catch(e) { setResult("Error: "+e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <Card accent={P.sapphire}>
+      <SectionHead title="What-If Scenario Engine" icon="🔮" color={P.sapphire}/>
+      <div style={{display:"flex",gap:10,marginBottom:12}}>
+        <input value={scenario} onChange={e=>setScenario(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&runScenario()}
+          placeholder='Type any scenario… e.g. "What if I prepay ₹3L on IDFC loan?"'
+          style={{flex:1,background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"11px 14px",color:P.text,fontFamily:"'Outfit',sans-serif",fontSize:13,outline:"none"}}
+        />
+        <button onClick={()=>runScenario()} disabled={loading||!scenario.trim()}
+          style={{background:loading||!scenario.trim()?P.border:`linear-gradient(135deg,${P.sapphire},${P.teal})`,border:"none",borderRadius:10,padding:"11px 20px",color:"#050D1A",cursor:loading||!scenario.trim()?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>
+          {loading?"⏳ Analyzing…":"🔮 Run"}
+        </button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:14}}>
+        {SCENARIOS.map((s,i)=>(
+          <button key={i} onClick={()=>runScenario(s)} disabled={loading}
+            style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,padding:"8px 12px",color:P.muted,cursor:loading?"not-allowed":"pointer",fontFamily:"'Outfit',sans-serif",fontSize:11,textAlign:"left",transition:"all .15s",lineHeight:1.4}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=P.sapphire+"66";e.currentTarget.style.color=P.text;}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=P.border;e.currentTarget.style.color=P.muted;}}>
+            {s}
+          </button>
+        ))}
+      </div>
+      {loading&&<div style={{textAlign:"center",padding:"20px",fontFamily:"'Fira Code',monospace",fontSize:11,color:P.sapphire}}>🔮 Claude is running your scenario with real numbers…</div>}
+      {result&&(
+        <div style={{background:P.card3,border:`1px solid ${P.sapphire}33`,borderRadius:12,padding:"16px 18px",fontFamily:"'Outfit',sans-serif",fontSize:13,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap"}}>
+          {result}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── 16: Tax Planner ──
+function TaxPlanner({ data, salary }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [loading, setLoading] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+
+  const grossAnnual = n(d.income?.grossTotal||salary) * 12;
+  const optionspl   = n(d.stocks?.summary?.options?.pl);
+  const cryptoGain  = n(d.stocks?.summary?.crypto?.pl);
+  const used80c     = n(d.income?.taxDeducted)>0 ? 150000 : 0;
+  const homeInterest= n(d.loans?.hdfc?.outstanding)*0.105;
+
+  const calcOldRegime = () => {
+    let taxable = grossAnnual;
+    taxable -= 50000; // standard deduction
+    taxable -= Math.min(150000, used80c);
+    taxable -= Math.min(200000, homeInterest);
+    taxable = Math.max(0, taxable);
+    if (taxable<=250000) return 0;
+    let tax = 0;
+    if (taxable>1000000) { tax += (taxable-1000000)*0.30; taxable=1000000; }
+    if (taxable>500000)  { tax += (taxable-500000)*0.20;  taxable=500000;  }
+    if (taxable>250000)  { tax += (taxable-250000)*0.05;  }
+    return Math.round(tax * 1.04); // +4% cess
+  };
+
+  const calcNewRegime = () => {
+    let taxable = Math.max(0, grossAnnual - 75000); // std deduction new regime
+    if (taxable<=300000) return 0;
+    let tax = 0;
+    const slabs = [[300000,600000,0.05],[600000,900000,0.10],[900000,1200000,0.15],[1200000,1500000,0.20],[1500000,Infinity,0.30]];
+    for (const [lo,hi,rate] of slabs) {
+      if (taxable>lo) tax += (Math.min(taxable,hi)-lo)*rate;
+    }
+    return Math.round(tax * 1.04);
+  };
+
+  const oldTax = calcOldRegime();
+  const newTax = calcNewRegime();
+  const saving = Math.abs(oldTax-newTax);
+  const better = oldTax<newTax?"Old":"New";
+
+  const runFullAnalysis = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514", max_tokens:800,
+          messages:[{role:"user",content:`Do a complete tax analysis for ${d.settings?.name||"Naresh"} FY 2025-26:
+
+Gross annual income: ₹${grossAnnual.toLocaleString("en-IN")}
+Home loan interest paid: ₹${Math.round(homeInterest).toLocaleString("en-IN")} (Section 24(b) — max ₹2L deduction)
+80C used: ₹${used80c.toLocaleString("en-IN")} (limit ₹1.5L)
+F&O P&L: ₹${optionspl.toLocaleString("en-IN")} (speculative income)
+Crypto gains: ₹${cryptoGain.toLocaleString("en-IN")} (30% flat tax, no offsetting)
+Old regime tax: ₹${oldTax.toLocaleString("en-IN")}
+New regime tax: ₹${newTax.toLocaleString("en-IN")}
+
+Cover: (1) Which regime is better and by how much (2) Unused 80C opportunity (3) NPS 80CCD(1B) deduction available (4) F&O loss implications (5) Crypto tax obligation (6) Advance tax deadlines. Be specific with ₹ amounts.`}]
+        })
+      });
+      const json = await res.json();
+      setAnalysis(json.content?.map(c=>c.text||"").join("")||"");
+    } catch(e) { setAnalysis("Error: "+e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <Card accent={P.gold}>
+      <SectionHead title="Tax Planner — FY 2025-26" icon="🧾" color={P.gold}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+        {[
+          {label:"Old Regime Tax",       v:`₹${oldTax.toLocaleString("en-IN")}`,       color:oldTax<newTax?P.emerald:P.ruby, sub:`${((oldTax/grossAnnual)*100).toFixed(1)}% effective rate`},
+          {label:"New Regime Tax",       v:`₹${newTax.toLocaleString("en-IN")}`,       color:newTax<oldTax?P.emerald:P.ruby, sub:`${((newTax/grossAnnual)*100).toFixed(1)}% effective rate`},
+          {label:"Better Regime",        v:`${better} Regime`,                          color:P.emerald, sub:`Saves ₹${saving.toLocaleString("en-IN")}`},
+          {label:"Crypto Tax Due (30%)", v:`₹${Math.round(cryptoGain*0.3).toLocaleString("en-IN")}`, color:P.ruby, sub:"No offsetting allowed"},
+        ].map((r,i)=>(
+          <div key={i} style={{background:`${r.color}0F`,border:`1px solid ${r.color}33`,borderRadius:10,padding:"12px 14px"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:4}}>{r.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:r.color}}>{r.v}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:3}}>{r.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+        {[
+          {label:"80C Gap",     v:`₹${Math.max(0,150000-used80c).toLocaleString("en-IN")}`, sub:"Invest in ELSS/PPF", color:P.violet},
+          {label:"NPS 80CCD(1B)",v:"₹50,000",       sub:"Extra deduction available",         color:P.sapphire},
+          {label:"Home Int 24(b)",v:fmt(Math.min(200000,homeInterest)), sub:"Old regime only",   color:P.teal},
+        ].map((r,i)=>(
+          <div key={i} style={{background:`${r.color}0A`,border:`1px solid ${r.color}22`,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:3}}>{r.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:800,color:r.color}}>{r.v}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginTop:2}}>{r.sub}</div>
+          </div>
+        ))}
+      </div>
+      <button onClick={runFullAnalysis} disabled={loading}
+        style={{width:"100%",background:loading?P.border:`linear-gradient(135deg,${P.gold},${P.orange})`,border:"none",borderRadius:10,padding:"11px 0",color:"#050D1A",cursor:loading?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,marginBottom:analysis?12:0}}>
+        {loading?"🔄 Analysing…":"🧾 Full AI Tax Analysis"}
+      </button>
+      {analysis&&<div style={{background:P.card3,border:`1px solid ${P.gold}33`,borderRadius:12,padding:"14px 18px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap",maxHeight:320,overflowY:"auto"}}>{analysis}</div>}
+    </Card>
+  );
+}
+
+// ── 17: Spend Audit ──
+function SpendAudit({ data }) {
+  const d = data;
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [loading, setLoading] = useState(false);
+  const [audit, setAudit]     = useState(null);
+
+  const expenses = d.dailyExpenses || [];
+  const catTotals = expenses.reduce((acc,e)=>{ acc[e.category]=(acc[e.category]||0)+n(e.amount); return acc; },{});
+  const sortedCats = Object.entries(catTotals).sort((a,b)=>b[1]-a[1]);
+  const subscriptions = expenses.filter(e=>e.mode==="Auto-Debit");
+
+  const runAudit = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514", max_tokens:600,
+          messages:[{role:"user",content:`Analyze spending patterns for ${d.settings?.name||"Naresh"} and flag issues:
+
+Category totals this month: ${JSON.stringify(catTotals)}
+Auto-debit subscriptions: ${JSON.stringify(subscriptions.map(e=>({desc:e.desc,amount:n(e.amount)})))}
+Budget vs actual: ${JSON.stringify({budget:d.budget, actual:d.budget?.actual})}
+Income this month: ₹${n(d.income?.inHand).toLocaleString("en-IN")}
+
+Identify: (1) Top 3 overspend categories vs budget (2) Any forgotten/unnecessary subscriptions (3) Unusual spending patterns (4) 2 specific cuts that would free up most cash. Be direct and specific.`}]
+        })
+      });
+      const json = await res.json();
+      setAudit(json.content?.map(c=>c.text||"").join("")||"");
+    } catch(e) { setAudit("Error: "+e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <Card accent={P.rose}>
+      <SectionHead title="Spend Audit — Pattern Analysis" icon="🔍" color={P.rose}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        <div>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:8,letterSpacing:1,textTransform:"uppercase"}}>Category Breakdown</div>
+          {sortedCats.map(([cat,amt],i)=>(
+            <div key={i} style={{marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.text}}>{cat}</span>
+                <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:CC[i%CC.length],fontWeight:600}}>₹{amt.toLocaleString("en-IN")}</span>
+              </div>
+              <PBar value={amt} max={sortedCats[0]?.[1]||1} color={CC[i%CC.length]} height={4}/>
+            </div>
+          ))}
+        </div>
+        <div>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:8,letterSpacing:1,textTransform:"uppercase"}}>Auto-debit Subscriptions</div>
+          {subscriptions.length===0 ? (
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>No auto-debits found this month.</div>
+          ) : subscriptions.map((s,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"7px 10px",background:`${P.rose}0A`,border:`1px solid ${P.rose}22`,borderRadius:8,marginBottom:6}}>
+              <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.text}}>{s.desc}</span>
+              <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.rose,fontWeight:600}}>₹{n(s.amount).toLocaleString("en-IN")}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <button onClick={runAudit} disabled={loading}
+        style={{width:"100%",background:loading?P.border:`linear-gradient(135deg,${P.rose},${P.violet})`,border:"none",borderRadius:10,padding:"11px 0",color:"#fff",cursor:loading?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,marginBottom:audit?12:0}}>
+        {loading?"🔍 Auditing…":"🔍 Run AI Spend Audit"}
+      </button>
+      {audit&&<div style={{background:P.card3,border:`1px solid ${P.rose}33`,borderRadius:12,padding:"14px 18px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{audit}</div>}
+    </Card>
+  );
+}
+
+// ── Salary Impact Simulator ──
+function SalaryImpact({ data, salary, emiTotal, inHand, netWorth, totalAssets }) {
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [hikePct, setHikePct] = useState(15);
+
+  const newSalary  = Math.round(salary * (1 + hikePct/100));
+  const newInHand  = Math.round(newSalary * (n(inHand)/Math.max(1,salary)));
+  const extraMonthly = newInHand - n(inHand);
+  const extraAnnual  = extraMonthly * 12;
+
+  return (
+    <Card accent={P.violet}>
+      <SectionHead title="Salary Hike Impact Simulator" icon="💼" color={P.violet}/>
+      <div style={{marginBottom:16}}>
+        <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:6}}>Salary hike: {hikePct}%</label>
+        <input type="range" min={5} max={50} step={5} value={hikePct} onChange={e=>setHikePct(Number(e.target.value))} style={{width:"100%",accentColor:P.violet}}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+        {[
+          {label:"New Salary",      v:fmt(newSalary),    color:P.gold,    sub:`Was ${fmt(salary)}`},
+          {label:"New In-Hand",     v:fmt(newInHand),    color:P.emerald, sub:`+₹${extraMonthly.toLocaleString("en-IN")}/mo`},
+          {label:"Extra/Year",      v:fmt(extraAnnual),  color:P.sapphire,sub:"Post-tax estimate"},
+          {label:"EMI % New Salary",v:`${newSalary>0?((emiTotal/newSalary)*100).toFixed(1):0}%`, color:emiTotal/newSalary<0.4?P.emerald:P.gold, sub:`Was ${salary>0?((emiTotal/salary)*100).toFixed(1):0}%`},
+        ].map((r,i)=>(
+          <div key={i} style={{background:`${r.color}0F`,border:`1px solid ${r.color}33`,borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:4}}>{r.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:r.color}}>{r.v}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:3}}>{r.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:`${P.violet}0A`,border:`1px solid ${P.violet}22`,borderRadius:10,padding:"12px 16px",fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:2}}>
+        <div>With ₹{extraMonthly.toLocaleString("en-IN")}/mo extra: put <span style={{color:P.emerald}}>₹{Math.round(extraMonthly*0.5).toLocaleString("en-IN")}</span> toward IDFC prepayment + <span style={{color:P.sapphire}}>₹{Math.round(extraMonthly*0.3).toLocaleString("en-IN")}</span> in SIP + <span style={{color:P.gold}}>₹{Math.round(extraMonthly*0.2).toLocaleString("en-IN")}</span> emergency fund</div>
+        <div>Net worth acceleration: <span style={{color:P.violet,fontWeight:700}}>+₹{fmt(extraAnnual*3)}</span> over 3 years vs current trajectory</div>
+      </div>
+    </Card>
+  );
+}
+
+// ── Goal Tracker ──
+function GoalTracker({ data, netWorth, totalAssets, totalDebt, inHand, emiTotal }) {
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [loading, setLoading] = useState(false);
+  const [check, setCheck]     = useState(null);
+
+  const goals = [
+    { name:"Debt-free from IDFC",  target:0,          current:n(data.loans?.idfc?.outstanding), unit:"outstanding", color:P.ruby, icon:"🏦", lower:true },
+    { name:"Debt-free from SBI",   target:0,          current:n(data.loans?.sbi?.outstanding),  unit:"outstanding", color:P.orange, icon:"🏦", lower:true },
+    { name:"₹1 Crore Net Worth",   target:10000000,   current:Math.max(0,netWorth),            unit:"net worth",   color:P.gold, icon:"💎" },
+    { name:"₹5L LendenClub Pool",  target:500000,     current:n(data.lendenClub?.totalPooled), unit:"pool",        color:P.rose, icon:"🏛" },
+    { name:"₹10L Investments",     target:1000000,    current:totalAssets,                     unit:"investments", color:P.sapphire, icon:"📊" },
+    { name:"6mo Emergency Fund",   target:emiTotal*6, current:50000,                           unit:"saved",       color:P.teal, icon:"🛡" },
+  ];
+
+  const runCheck = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514", max_tokens:500,
+          messages:[{role:"user",content:`Review goal progress for ${data.settings?.name||"Naresh"} and give an honest assessment:
+
+Goals: ${JSON.stringify(goals.map(g=>({name:g.name, progress:`${Math.min(100,g.lower?(g.current>0?(1-g.current/Math.max(1,g.target+g.current))*100:100):(g.target>0?(g.current/g.target)*100:100)).toFixed(0)}%`, current:g.current, target:g.target})))}
+Monthly savings capacity: ₹${Math.max(0,n(inHand)-15000).toLocaleString("en-IN")}
+Net worth: ₹${Math.round(netWorth).toLocaleString("en-IN")}
+
+For each goal: on-track or off-track? What's the specific action to accelerate it? Keep it to 2-3 lines per goal.`}]
+        })
+      });
+      const json = await res.json();
+      setCheck(json.content?.map(c=>c.text||"").join("")||"");
+    } catch(e) { setCheck("Error: "+e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <Card accent={P.gold}>
+      <SectionHead title="Goal Tracker — Monthly Check-in" icon="🎯" color={P.gold}/>
+      <div style={{display:"grid",gap:10,marginBottom:14}}>
+        {goals.map((g,i)=>{
+          const prog = g.lower ? (g.current>0?(1-g.current/(g.target+g.current+1))*100:100) : (g.target>0?(g.current/g.target)*100:100);
+          const pct  = Math.min(100,Math.max(0,prog));
+          return (
+            <div key={i} style={{background:P.card3,borderRadius:10,padding:"12px 14px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,alignItems:"center"}}>
+                <span style={{fontFamily:"'Syne',sans-serif",fontSize:12,fontWeight:600,color:P.text}}>{g.icon} {g.name}</span>
+                <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:g.color}}>{pct.toFixed(0)}%</span>
+              </div>
+              <PBar value={pct} max={100} color={g.color} height={6}/>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:4}}>
+                {g.lower?`Remaining: ₹${Math.round(g.current).toLocaleString("en-IN")}`:`₹${Math.round(g.current).toLocaleString("en-IN")} of ₹${g.target>=10000000?fmt(g.target):g.target.toLocaleString("en-IN")}`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={runCheck} disabled={loading}
+        style={{width:"100%",background:loading?P.border:`linear-gradient(135deg,${P.gold},${P.orange})`,border:"none",borderRadius:10,padding:"11px 0",color:"#050D1A",cursor:loading?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,marginBottom:check?12:0}}>
+        {loading?"🔄 Checking…":"🎯 AI Goal Review"}
+      </button>
+      {check&&<div style={{background:P.card3,border:`1px solid ${P.gold}33`,borderRadius:12,padding:"14px 18px",fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.text,lineHeight:1.8,whiteSpace:"pre-wrap",maxHeight:300,overflowY:"auto"}}>{check}</div>}
+    </Card>
+  );
+}
+
+// ── Debt Stress Test ──
+function DebtStressTest({ data, salary, emiTotal, inHand, totalDebt }) {
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [dropPct, setDropPct] = useState(20);
+
+  const newSalary    = Math.round(salary * (1-dropPct/100));
+  const newInHand    = Math.round(n(inHand) * (1-dropPct/100));
+  const canPayEmis   = newInHand >= emiTotal;
+  const shortfall    = Math.max(0, emiTotal - newInHand);
+  const runwayMonths = shortfall>0 ? Math.floor(100000/shortfall) : 99; // assume ₹1L savings
+
+  const scenarios = [
+    {drop:10, label:"Minor setback", color:P.gold},
+    {drop:20, label:"Job loss", color:P.orange},
+    {drop:50, label:"Major crisis", color:P.ruby},
+  ];
+
+  return (
+    <Card accent={P.ruby}>
+      <SectionHead title="Debt Stress Test — Salary Drop Scenario" icon="📉" color={P.ruby}/>
+      <div style={{marginBottom:16}}>
+        <label style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,display:"block",marginBottom:6}}>Salary drop: {dropPct}%</label>
+        <input type="range" min={5} max={100} step={5} value={dropPct} onChange={e=>setDropPct(Number(e.target.value))} style={{width:"100%",accentColor:P.ruby}}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+        {[
+          {label:"New Monthly Salary", v:fmt(newSalary), color:P.ruby},
+          {label:"New In-Hand",        v:fmt(newInHand), color:newInHand>=emiTotal?P.gold:P.ruby},
+          {label:"Total EMIs",         v:fmt(emiTotal),  color:P.orange},
+        ].map((r,i)=>(
+          <div key={i} style={{background:`${r.color}0F`,border:`1px solid ${r.color}33`,borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:4}}>{r.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:r.color}}>{r.v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:canPayEmis?`${P.emerald}0A`:`${P.ruby}0A`,border:`1px solid ${canPayEmis?P.emerald:P.ruby}33`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,color:canPayEmis?P.emerald:P.ruby,marginBottom:6}}>
+          {canPayEmis?"✅ You can still pay all EMIs":"🚨 EMI Shortfall Alert"}
+        </div>
+        <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.9}}>
+          {canPayEmis
+            ? `Buffer after EMIs: ₹${(newInHand-emiTotal).toLocaleString("en-IN")}/mo — tighten discretionary spend`
+            : `Monthly shortfall: ₹${shortfall.toLocaleString("en-IN")} | Savings runway: ~${runwayMonths} months before default risk`}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {scenarios.map((s,i)=>{
+          const sh = Math.round(n(inHand)*(1-s.drop/100));
+          return (
+            <div key={i} style={{background:`${s.color}0A`,border:`1px solid ${s.color}22`,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:3}}>{s.drop}% drop — {s.label}</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:s.color}}>{sh>=emiTotal?"✅ Safe":"⚠ Risk"}</div>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:2}}>In-hand: {fmt(sh)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+
 const TABS = [
   { id:"overview",    label:"Overview",         icon:"🏠" },
   { id:"income",      label:"Income & Budget",  icon:"💰" },
@@ -3029,10 +2800,7 @@ const TABS = [
   { id:"lending",     label:"Personal Lending", icon:"🤝" },
   { id:"lenden",      label:"LendenClub",       icon:"🏛" },
   { id:"realestate",  label:"Real Estate",      icon:"🏡" },
-  { id:"milestones",  label:"Milestones",       icon:"🎯" },
-  { id:"ai",          label:"AI Adviser",       icon:"🤖" },
-  { id:"aibuilder",   label:"AI Builder",       icon:"⚡" },
-  { id:"codefixer",   label:"Code Fixer",       icon:"🔧" },
+  { id:"aihub",       label:"🪙 Arth — Advisor", icon:"🧠" },
   { id:"urlsettings", label:"⚙ API Settings",   icon:"🔗" },
 ];
 
@@ -3348,11 +3116,8 @@ export default function App() {
       {/* ── CONTENT ── */}
       <div style={{padding:"20px 24px",maxWidth:1560,margin:"0 auto"}}>
 
-        {/* ═══ AI ADVISER ═══ */}
-        {tab==="ai" && <AIAdviser data={data}/>}
-
-        {/* ═══ CODE FIXER ═══ */}
-        {tab==="codefixer" && <AICodeFixer syncLog={syncLog}/>}
+        {/* ═══ AI HUB — LIVE ADVISOR ═══ */}
+        {tab==="aihub" && <AIHub data={data}/>}
 
         {/* ═══ API SETTINGS ═══ */}
         {tab==="urlsettings" && (
@@ -3363,14 +3128,8 @@ export default function App() {
           />
         )}
 
-        {/* ═══ MILESTONES ═══ */}
-        {tab==="milestones" && <Milestones data={data}/>}
-
         {/* ═══ SALARY TRACKER ═══ */}
         {tab==="salary" && <SalaryTracker data={data}/>}
-
-        {/* ═══ AI BUILDER ═══ */}
-        {tab==="aibuilder" && <AIBuilder data={data}/>}
 
         {/* ═══ OVERVIEW ═══ */}
         {tab==="overview" && (
