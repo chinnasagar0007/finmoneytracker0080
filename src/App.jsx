@@ -1354,7 +1354,7 @@ function SyncBadge({ status, lastSync }) {
 // ─── GEMINI HELPER ────────────────────────────────────────────────────────────
 async function geminiChat({ key, system="", messages=[], maxTokens=1000 }) {
   if (!key) throw new Error("Gemini API key not set. Please enter your key above.");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
   const body = {
     ...(system ? { system_instruction:{ parts:[{ text:system }] } } : {}),
     contents: messages.map(m => ({
