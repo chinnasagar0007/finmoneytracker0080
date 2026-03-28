@@ -3076,170 +3076,387 @@ function DebtStressTest({ data, salary, emiTotal, inHand, totalDebt }) {
 
 // ─── LENDEN CLUB TAB ──────────────────────────────────────────────────────────
 function LendenClubTab({ data }) {
-  const lc  = data.lendenClub || {};
-  const n   = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
-  const abs = v => `₹${Math.round(Math.abs(n(v))).toLocaleString("en-IN")}`;
+  const d = data;
+  const [monthlyMonthNameFilter, setMonthlyMonthNameFilter] = useState("ALL_MONTHS");
+  const [monthlyYearFilter, setMonthlyYearFilter] = useState("ALL_YEARS");
+  const [loanMonthNameFilter, setLoanMonthNameFilter] = useState("ALL_MONTHS");
+  const [loanYearFilter, setLoanYearFilter] = useState("ALL_YEARS");
+  const [loanQuery, setLoanQuery] = useState("");
+  const [repayFilter, setRepayFilter] = useState("");
 
-  const totalPooled   = n(lc.totalPooled);
-  const tabSummary    = lc.tabSummary    || [];
-  const monthSummary  = lc.monthSummary  || [];
-  const transactions  = lc.transactions  || [];
-  const loanSamples   = lc.loanSamples   || [];
+  const enrichLoan = (loan) => {
+    const rawStatus = String(loan.status || "").trim().toUpperCase();
+    const rawPrincipalRecv = n(loan.principalRecv);
+    const rawInterestRecv = n(loan.interestRecv);
+    const rawTotalRecv = n(loan.totalRecv);
+    const principalLooksLikeTotal = rawTotalRecv > 0 && Math.abs(rawPrincipalRecv - rawTotalRecv) < 0.5 && rawInterestRecv > 0;
+    const principalOverCounts = rawTotalRecv > 0 && rawPrincipalRecv + rawInterestRecv > rawTotalRecv + 0.5;
+    const normalizedPrincipalRecv = (principalLooksLikeTotal || principalOverCounts)
+      ? Math.max(0, rawTotalRecv - rawInterestRecv)
+      : (rawPrincipalRecv || (rawTotalRecv > 0 ? Math.max(0, rawTotalRecv - rawInterestRecv) : 0));
+    const disbursedOn = parseDateValue(loan.disbDate);
+    const closedOn = parseDateValue(loan.closure);
+    const repayStartOn = parseDateValue(loan.repayStart);
+    const dueOn = parseDateValue(loan.expectedClose) || (disbursedOn && loan.tenure ? addMonths(disbursedOn, loan.tenure) : null);
+    const principalFullyRecovered = n(loan.amount) > 0 && normalizedPrincipalRecv >= (n(loan.amount) - 0.5);
+    const isClosed = /closed|completed|repaid|settled/i.test(rawStatus) || Boolean(closedOn) || principalFullyRecovered;
+    const isExplicitPending = /pending|processing|live|ongoing/i.test(rawStatus);
+    const derivedStatus = isClosed ? "CLOSED" : isExplicitPending ? "PENDING" : "ACTIVE";
+    let repaymentStatus = "On Track";
+    if (derivedStatus === "CLOSED") { repaymentStatus = "Closed"; }
+    else if (n(loan.npa) > 0 || /npa|default|written off/i.test(rawStatus)) { repaymentStatus = "NPA"; }
+    else if (n(loan.dpd) > 0 || /overdue|delayed|late/i.test(rawStatus)) { repaymentStatus = "OVERDUE"; }
+    else if (repayStartOn instanceof Date && !Number.isNaN(repayStartOn.getTime())) {
+      const today = new Date(); today.setHours(0,0,0,0); repayStartOn.setHours(0,0,0,0);
+      const diffDays = Math.round((repayStartOn.getTime()-today.getTime())/(24*60*60*1000));
+      if (diffDays===0) repaymentStatus="DUE TODAY";
+      else if (diffDays>0&&diffDays<=7) repaymentStatus="DUE SOON";
+    }
+    const closedMonths = isClosed&&disbursedOn&&closedOn ? diffMonthsBetweenDates(disbursedOn,closedOn) : 0;
+    const monthlyRateToClose = isClosed&&loan.amount>0&&closedMonths>0 ? +(((rawInterestRecv/loan.amount)/closedMonths)*100).toFixed(2) : 0;
+    const outstandingAmount = Math.max(0, n(loan.amount)-normalizedPrincipalRecv);
+    return { ...loan, principalRecv:normalizedPrincipalRecv, interestRecv:rawInterestRecv, totalRecv:rawTotalRecv, status:derivedStatus, rawStatus, dueDate:dueOn?fmtDate(dueOn):"-", monthsToClose:closedMonths, monthlyRateToClose, outstandingAmount, rs:repaymentStatus };
+  };
 
-  const totalDisbursed  = tabSummary.reduce((s,t)=>s+n(t.disbursed),0);
-  const totalInterest   = tabSummary.reduce((s,t)=>s+n(t.interest),0);
-  const totalPrincipal  = tabSummary.reduce((s,t)=>s+n(t.principal),0);
-  const totalNPA        = tabSummary.reduce((s,t)=>s+n(t.npa),0);
-  const totalLoans      = tabSummary.reduce((s,t)=>s+n(t.loans),0);
-  const netROI          = totalDisbursed>0 ? Math.round((totalInterest/totalDisbursed)*100) : 0;
-
-  const chartData = monthSummary.map(m=>({
-    month: m.month,
-    Pool:  Math.round(n(m.closingPool)),
-    Added: Math.round(n(m.netInvested)),
-  }));
+  const allLoans = (d.lendenClub.loanSamples||[]).map(enrichLoan);
+  const monthlyLoanRows = (d.lendenClub.monthlyLoanRows||[]).map(enrichLoan);
+  const parseTabParts = (tab) => { const raw=String(tab||"").trim(); const match=raw.match(/^([A-Za-z]{3})[-/ ](\d{2,4})$/); if(!match) return {month:raw,year:""}; const year=String(match[2]).length===2?`20${match[2]}`:String(match[2]); return {month:match[1],year}; };
+  const monthOrder = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const getDateParts = (value) => { const raw=String(value||"").trim(); let parsed=null; const nm=raw.match(/^(\d{1,2})[-\/ ](\d{1,2})[-\/ ](\d{2,4})$/); if(nm){const day=Number(nm[1]),month=Number(nm[2])-1;let year=Number(nm[3]);if(year<100)year+=2000;parsed=new Date(year,month,day);}else{parsed=parseDateValue(raw);} if(!(parsed instanceof Date)||Number.isNaN(parsed.getTime())) return null; return {month:monthOrder[parsed.getMonth()],year:String(parsed.getFullYear())}; };
+  const allTabLabels = Array.from(new Set([...d.lendenClub.tabSummary.map(t=>String(t.tab||"").trim()).filter(Boolean),...monthlyLoanRows.map(l=>String(l.tab||"").trim()).filter(Boolean),...allLoans.map(l=>String(l.tab||"").trim()).filter(Boolean)])).sort((a,b)=>lendenTabKey(a)-lendenTabKey(b));
+  const yearOptions = ["ALL_YEARS",...Array.from(new Set(allTabLabels.map(tab=>parseTabParts(tab).year).filter(Boolean))).sort()];
+  const monthOptions = ["ALL_MONTHS",...monthOrder.filter(month=>allTabLabels.some(tab=>parseTabParts(tab).month===month))];
+  const selectedMonthlyTabs = allTabLabels.filter(tab=>{const p=parseTabParts(tab);return(monthlyYearFilter==="ALL_YEARS"||p.year===monthlyYearFilter)&&(monthlyMonthNameFilter==="ALL_MONTHS"||p.month===monthlyMonthNameFilter);});
+  const hasMonthlyTabFilter = monthlyYearFilter!=="ALL_YEARS"||monthlyMonthNameFilter!=="ALL_MONTHS";
+  const selectedLoanTabs = allTabLabels.filter(tab=>{const p=parseTabParts(tab);return(loanYearFilter==="ALL_YEARS"||p.year===loanYearFilter)&&(loanMonthNameFilter==="ALL_MONTHS"||p.month===loanMonthNameFilter);});
+  const hasLoanTabFilter = loanYearFilter!=="ALL_YEARS"||loanMonthNameFilter!=="ALL_MONTHS";
+  const activeLoans=allLoans.filter(l=>l.status==="ACTIVE");
+  const closedLoans=allLoans.filter(l=>l.status==="CLOSED");
+  const pendingLoans=allLoans.filter(l=>l.status==="PENDING");
+  const overdueLoans=allLoans.filter(l=>l.rs==="OVERDUE");
+  const dueTodayLoans=allLoans.filter(l=>l.rs==="DUE TODAY");
+  const dueSoonLoans=allLoans.filter(l=>l.rs==="DUE SOON");
+  const npaLoans=allLoans.filter(l=>l.rs==="NPA");
+  const totalInterestEarned=allLoans.reduce((s,l)=>s+l.interestRecv,0);
+  const totalDisbursedFromLoans=allLoans.reduce((s,l)=>s+n(l.amount),0);
+  const totalReceivedFromLoans=allLoans.reduce((s,l)=>s+n(l.totalRecv),0);
+  const totalFees=allLoans.reduce((s,l)=>s+n(l.fee),0);
+  const totalPL=allLoans.reduce((s,l)=>s+n(l.pl),0);
+  const outstandingFromLoans=activeLoans.reduce((s,l)=>s+n(l.outstandingAmount),0);
+  const totalDisbursed=d.lendenClub.tabSummary.reduce((s,t)=>s+t.disbursed,0);
+  const totalReceived=d.lendenClub.tabSummary.reduce((s,t)=>s+t.received,0);
+  const totalOutstanding=d.lendenClub.tabSummary.reduce((s,t)=>s+t.outstanding,0);
+  const totalInterestFromTab=d.lendenClub.tabSummary.reduce((s,t)=>s+t.interest,0);
+  const displayTotalDisbursed=totalDisbursedFromLoans||totalDisbursed;
+  const displayTotalReceived=totalReceivedFromLoans||totalReceived;
+  const displayTotalOutstanding=outstandingFromLoans||totalOutstanding;
+  const currentCapitalDeployed=allLoans.length>0?outstandingFromLoans:totalOutstanding;
+  const displayTotalInterest=totalInterestEarned||totalInterestFromTab;
+  const externalCapitalAdded=d.lendenClub.transactions?.length?d.lendenClub.transactions.reduce((s,t)=>s+n(t.invested),0):n(d.lendenClub.totalPooled);
+  const capitalAfterEarnings=externalCapitalAdded+displayTotalInterest;
+  const idleCash=capitalAfterEarnings-currentCapitalDeployed;
+  const avgClosedDuration=closedLoans.length?(closedLoans.reduce((s,l)=>s+(l.monthsToClose||l.tenure||0),0)/closedLoans.length).toFixed(1):0;
+  const avgClosedMonthlyRate=closedLoans.length?(closedLoans.reduce((s,l)=>s+l.interestRecv,0)/Math.max(closedLoans.reduce((s,l)=>s+(n(l.amount)*Math.max(1,n(l.monthsToClose))),0),1)*100).toFixed(2):"0.00";
+  const summaryTotalLoans=num(d.lendenClub.reportedTotalLoans)||d.lendenClub.tabSummary.reduce((s,t)=>s+t.loans,0)||allLoans.length;
+  const summaryClosedLoans=num(d.lendenClub.reportedClosedLoans)||closedLoans.length;
+  const summaryOverdueLoans=num(d.lendenClub.reportedOverdueLoans)||overdueLoans.length;
+  const summaryPendingLoans=num(d.lendenClub.reportedPendingLoans)||pendingLoans.length;
+  const summaryActiveLoans=num(d.lendenClub.reportedActiveLoans)||Math.max(0,activeLoans.length||(summaryTotalLoans-summaryClosedLoans-summaryPendingLoans-summaryOverdueLoans));
+  const grossRate=totalDisbursedFromLoans>0?((totalInterestEarned/totalDisbursedFromLoans)*100):0;
+  const feesDrag=totalDisbursedFromLoans>0?((totalFees/totalDisbursedFromLoans)*100):0;
+  const closedDisbursed=closedLoans.reduce((s,l)=>s+n(l.amount),0);
+  const closedInterest=closedLoans.reduce((s,l)=>s+n(l.interestRecv),0);
+  const closedRate=closedDisbursed>0?((closedInterest/closedDisbursed)*100):0;
+  const roi=d.lendenClub.totalPooled>0?((displayTotalInterest/d.lendenClub.totalPooled)*(12/3)*100).toFixed(0):0;
+  const avgScore=allLoans.length?Math.round(allLoans.reduce((s,l)=>s+n(l.score),0)/allLoans.length):0;
+  const matchesLoanTabFilter=(loan)=>!hasLoanTabFilter||selectedLoanTabs.includes(String(loan.tab||"").trim());
+  const matchesClosureFilter=(loan)=>{if(!hasLoanTabFilter)return true;const parts=getDateParts(loan.closure);if(!parts)return false;return(loanYearFilter==="ALL_YEARS"||parts.year===loanYearFilter)&&(loanMonthNameFilter==="ALL_MONTHS"||parts.month===loanMonthNameFilter);};
+  const tableLoanSource=(()=>{if(repayFilter==="Closed")return closedLoans.filter(matchesClosureFilter);if(!hasLoanTabFilter)return allLoans;const tabRows=monthlyLoanRows.filter(matchesLoanTabFilter);if(tabRows.length===0)return allLoans.filter(matchesLoanTabFilter);return tabRows;})();
+  const filteredLoans=tableLoanSource.filter(l=>{if(repayFilter&&l.rs!==repayFilter)return false;const query=loanQuery.trim().toLowerCase();if(!query)return true;return[l.tab,l.id,l.status,l.rs,l.rawStatus,l.disbDate,l.closure,l.repayStart].some(v=>String(v||"").toLowerCase().includes(query));});
+  const visibleMonthlySummary=(hasMonthlyTabFilter?d.lendenClub.tabSummary.filter(t=>selectedMonthlyTabs.includes(String(t.tab||"").trim())):d.lendenClub.tabSummary).sort((a,b)=>lendenTabKey(a.tab)-lendenTabKey(b.tab));
+  const visibleMonthlyRows=visibleMonthlySummary.map(t=>{const tabKey=String(t.tab||"").trim();const monthLoans=monthlyLoanRows.filter(l=>String(l.tab||"").trim()===tabKey);const dedupedMonthLoans=allLoans.filter(l=>String(l.tab||"").trim()===tabKey);const totalLoansCount=t.loans||dedupedMonthLoans.length;const rawMonthStatus=loan=>String(loan.rawStatus||"").trim().toUpperCase();const closed=monthLoans.filter(l=>rawMonthStatus(l)==="CLOSED");const pending=monthLoans.filter(l=>/PENDING|PROCESSING|LIVE|ONGOING/.test(rawMonthStatus(l)));const overdue=monthLoans.filter(l=>/OVERDUE|DELAYED|LATE/.test(rawMonthStatus(l)));const npa=monthLoans.filter(l=>/NPA|DEFAULT|WRITTEN OFF/.test(rawMonthStatus(l)));const dueToday=monthLoans.filter(l=>l.rs==="DUE TODAY");const dueSoon=monthLoans.filter(l=>l.rs==="DUE SOON");const activeCount=Math.max(0,totalLoansCount-closed.length-pending.length-overdue.length-npa.length);const monthDisbursed=t.disbursed||dedupedMonthLoans.reduce((s,l)=>s+n(l.amount),0);const loanInterest=dedupedMonthLoans.reduce((s,l)=>s+n(l.interestRecv),0);const loanPrincipal=dedupedMonthLoans.reduce((s,l)=>s+n(l.principalRecv),0);const loanFees=dedupedMonthLoans.reduce((s,l)=>s+n(l.fee),0);const monthInterest=dedupedMonthLoans.length>0?loanInterest:(t.interest||0);const monthPrincipal=dedupedMonthLoans.length>0?loanPrincipal:(t.principal||0);const monthFees=dedupedMonthLoans.length>0?loanFees:(t.fee||0);const monthOutstanding=t.outstanding||dedupedMonthLoans.reduce((s,l)=>s+n(l.outstandingAmount),0);const monthNetRate=monthDisbursed>0?((monthInterest/monthDisbursed)*100):0;return{...t,loans:totalLoansCount,active:activeCount,closed:closed.length,pending:pending.length,overdue:overdue.length,npa:npa.length,dueToday:dueToday.length,dueSoon:dueSoon.length,monthDisbursed,monthInterest,monthFees,monthPrincipal,monthOutstanding,monthNetRate};});
+  const monthlyBreakdown=visibleMonthlyRows.map(t=>({month:t.tab,disbursed:t.monthDisbursed,interest:t.monthInterest,outstanding:t.monthOutstanding,loans:t.loans,roi:t.monthDisbursed>0?((t.monthInterest/t.monthDisbursed)*100*12).toFixed(0):0}));
+  const visibleMonthlyTotals=visibleMonthlyRows.reduce((acc,row)=>({loans:acc.loans+n(row.loans),active:acc.active+n(row.active),closed:acc.closed+n(row.closed),pending:acc.pending+n(row.pending),overdue:acc.overdue+n(row.overdue),npa:acc.npa+n(row.npa),disbursed:acc.disbursed+n(row.monthDisbursed),principal:acc.principal+n(row.monthPrincipal),interest:acc.interest+n(row.monthInterest),fee:acc.fee+n(row.monthFees),outstanding:acc.outstanding+n(row.monthOutstanding),received:acc.received+n(row.received)}),{loans:0,active:0,closed:0,pending:0,overdue:0,npa:0,disbursed:0,principal:0,interest:0,fee:0,outstanding:0,received:0});
+  const displayedTotalCounts={loans:visibleMonthlyTotals.loans,active:visibleMonthlyTotals.active,closed:visibleMonthlyTotals.closed,pending:visibleMonthlyTotals.pending,overdue:visibleMonthlyTotals.overdue,npa:visibleMonthlyTotals.npa};
+  const REPAYMENT_OPTIONS=["","On Track","DUE TODAY","DUE SOON","OVERDUE","NPA","Closed"];
+  const selStyle={background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10};
 
   return (
     <div className="fade">
-      {/* KPI Row */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:16}}>
+      {/* Banner */}
+      <div style={{background:`linear-gradient(135deg,${P.rose}18,${P.violet}0A)`,border:`1px solid ${P.rose}33`,borderRadius:16,padding:"16px 22px",marginBottom:16,display:"flex",alignItems:"center",gap:16}}>
+        <div style={{fontSize:40}}>🏛</div>
+        <div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:P.rose}}>LendenClub P2P Portfolio</div>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:2}}>NBFC-P2P lending · {summaryTotalLoans} total loans · ≈{roi}% annualised ROI</div>
+        </div>
+        <div style={{marginLeft:"auto",textAlign:"right"}}>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>Total Pooled</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:800,color:P.rose}}>{fmt(d.lendenClub.totalPooled)}</div>
+        </div>
+      </div>
+
+      {/* KPI grid */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}}>
+        <GlassKPI label="Capital Available"              value={fmtF(capitalAfterEarnings)}   sub="Capital added + interest received"                                  color={P.teal}     icon="💹"/>
+        <GlassKPI label="Current Capital Deployed"       value={fmtF(currentCapitalDeployed)} sub="Sum of active principal outstanding"                                color={P.gold}     icon="🏦"/>
+        <GlassKPI label="Portfolio Annualised ROI"       value={`${roi}%`}                    sub="Interest received annualised on pooled capital"                    color={P.emerald}  icon="📈"/>
+        <GlassKPI label="Closed Loan Avg Monthly Yield"  value={`${avgClosedMonthlyRate}%`}   sub={`Across ${summaryClosedLoans} closed loans · ${avgClosedDuration} mo avg`} color={P.sapphire} icon="⏱"/>
+        <GlassKPI label="Active / Closed / Pending"      value={`${summaryActiveLoans} / ${summaryClosedLoans} / ${summaryPendingLoans}`} sub={`Overdue ${summaryOverdueLoans} · Recovery ${pct(displayTotalReceived,displayTotalDisbursed)}%`} color={P.violet} icon="🔄"/>
+        <GlassKPI label="Interest Rate"                  value={`${Math.round(grossRate)}%`}  sub="Overall interest received on disbursed capital"                    color={P.rose}     icon="🧮"/>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}}>
         {[
-          {label:"Total Pool",       v:abs(totalPooled),    color:P.rose,     icon:"🏛"},
-          {label:"Total Disbursed",  v:abs(totalDisbursed), color:P.sapphire, icon:"💸"},
-          {label:"Interest Earned",  v:abs(totalInterest),  color:P.emerald,  icon:"💰"},
-          {label:"Principal Back",   v:abs(totalPrincipal), color:P.teal,     icon:"🔄"},
-          {label:"Total Loans",      v:`${Math.round(totalLoans)}`,           color:P.violet,   icon:"📋"},
-          {label:"NPA Amount",       v:abs(totalNPA),       color:totalNPA>0?P.ruby:P.emerald, icon:totalNPA>0?"⚠":"✅"},
-        ].map((k,i)=>(
-          <div key={i} style={{background:`${k.color}0A`,border:`1px solid ${k.color}33`,borderRadius:14,padding:"14px 16px",transition:"transform .2s,box-shadow .2s"}}
-            onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 20px ${k.color}33`;}}
-            onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
-            <div style={{fontSize:20,marginBottom:6}}>{k.icon}</div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:k.color}}>{k.v}</div>
-            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:3}}>{k.label}</div>
+          {label:"On Track",  value:allLoans.filter(l=>l.rs==="On Track").length, color:P.emerald},
+          {label:"Due Today", value:dueTodayLoans.length,  color:P.gold},
+          {label:"Due Soon",  value:dueSoonLoans.length,   color:P.sapphire},
+          {label:"Overdue",   value:overdueLoans.length,   color:P.ruby},
+          {label:"NPA",       value:npaLoans.length,       color:P.rose},
+          {label:"Avg Score", value:avgScore||0,            color:P.violet},
+        ].map(item=>(
+          <div key={item.label} style={{background:`${item.color}0A`,border:`1px solid ${item.color}22`,borderRadius:12,padding:"10px 12px"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{item.label}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:item.color}}>{item.value}</div>
           </div>
         ))}
       </div>
 
+      {/* Charts */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        {/* Pool Growth Chart */}
-        <Card accent={P.rose}>
-          <SectionHead title="Pool Growth" icon="📈" color={P.rose}/>
+        <Card accent={P.teal}>
+          <SectionHead title="Monthly Interest Breakdown" icon="📊" color={P.teal}/>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData} margin={{top:5,right:10,left:-10,bottom:0}}>
+            <BarChart data={monthlyBreakdown} barGap={3} barSize={20}>
+              <XAxis dataKey="month" tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false}/>
+              <YAxis tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false} tickFormatter={v=>`₹${Math.round(v)}`}/>
+              <Tooltip content={<CTip/>}/>
+              <Legend wrapperStyle={{fontSize:10,fontFamily:"'Fira Code',monospace"}}/>
+              <Bar dataKey="interest"  name="Interest Earned" fill={P.teal}           radius={[4,4,0,0]}/>
+              <Bar dataKey="disbursed" name="Disbursed"       fill={`${P.sapphire}66`} radius={[4,4,0,0]}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+        <Card accent={P.rose}>
+          <SectionHead title="Pool Growth Over Time" icon="📈" color={P.rose}/>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={d.lendenClub.transactions}>
               <defs>
-                <linearGradient id="poolGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor={P.rose} stopOpacity={0.35}/>
-                  <stop offset="95%" stopColor={P.rose} stopOpacity={0}/>
+                <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={P.rose} stopOpacity={.4}/>
+                  <stop offset="100%" stopColor={P.rose} stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <XAxis dataKey="month" tick={{fill:P.muted,fontSize:8}} tickLine={false}/>
-              <YAxis tick={{fill:P.muted,fontSize:8}} tickLine={false} axisLine={false} tickFormatter={v=>v>=100000?`₹${Math.round(v/100000)}L`:`₹${Math.round(v/1000)}K`}/>
-              <Tooltip contentStyle={{background:P.card2,border:`1px solid ${P.border}`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:10}} formatter={v=>`₹${Math.round(v).toLocaleString("en-IN")}`}/>
-              <Area type="monotone" dataKey="Pool" stroke={P.rose} fill="url(#poolGrad)" strokeWidth={2} dot={{fill:P.rose,r:3}} name="Pool"/>
+              <XAxis dataKey="date" tick={{fill:P.muted,fontSize:8}} axisLine={false} tickLine={false}/>
+              <YAxis tick={{fill:P.muted,fontSize:9}} axisLine={false} tickLine={false} tickFormatter={v=>v>=100000?`₹${Math.round(v/100000)}L`:`₹${Math.round(v/1000)}K`}/>
+              <Tooltip content={<CTip/>}/>
+              <Area type="monotone" dataKey="pool" name="Pool ₹" stroke={P.rose} fill="url(#pg)" strokeWidth={2.5}/>
             </AreaChart>
           </ResponsiveContainer>
         </Card>
-
-        {/* Tab Summary */}
-        <Card accent={P.sapphire}>
-          <SectionHead title="Tab-wise Performance" icon="📊" color={P.sapphire}/>
-          <div style={{overflowX:"auto"}}>
-            <table className="row-hover" style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead>
-                <tr style={{borderBottom:`1px solid ${P.border}`}}>
-                  {["Tab","Disbursed","Received","Interest","Outstanding","NPA","Loans"].map((h,i)=>(
-                    <th key={i} style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,padding:"6px 8px",textAlign:i===0?"left":"right",textTransform:"uppercase",letterSpacing:.5,whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {tabSummary.map((t,i)=>(
-                  <tr key={i} style={{borderBottom:`1px solid ${P.border}18`}}>
-                    <td style={{fontFamily:"'Syne',sans-serif",fontSize:11,fontWeight:700,color:P.rose,padding:"7px 8px"}}>{t.tab}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.gold,padding:"7px 8px",textAlign:"right"}}>{abs(t.disbursed)}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.teal,padding:"7px 8px",textAlign:"right"}}>{abs(t.received)}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.emerald,padding:"7px 8px",textAlign:"right"}}>{abs(t.interest)}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.sapphire,padding:"7px 8px",textAlign:"right"}}>{abs(t.outstanding)}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:t.npa>0?P.ruby:P.emerald,padding:"7px 8px",textAlign:"right"}}>{t.npa>0?abs(t.npa):"✅"}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.violet,padding:"7px 8px",textAlign:"right"}}>{Math.round(n(t.loans))}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{borderTop:`2px solid ${P.border}`,background:P.card2}}>
-                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,fontWeight:700,color:P.gold,padding:"8px"}}>TOTAL</td>
-                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,fontWeight:700,color:P.gold,padding:"8px",textAlign:"right"}}>{abs(totalDisbursed)}</td>
-                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.teal,padding:"8px",textAlign:"right"}}>{abs(tabSummary.reduce((s,t)=>s+n(t.received),0))}</td>
-                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,fontWeight:700,color:P.emerald,padding:"8px",textAlign:"right"}}>{abs(totalInterest)}</td>
-                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.sapphire,padding:"8px",textAlign:"right"}}>{abs(totalPooled)}</td>
-                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:totalNPA>0?P.ruby:P.emerald,padding:"8px",textAlign:"right"}}>{totalNPA>0?abs(totalNPA):"✅"}</td>
-                  <td style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.violet,padding:"8px",textAlign:"right"}}>{Math.round(totalLoans)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </Card>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        {/* Transactions */}
-        <Card accent={P.teal}>
-          <SectionHead title="Investment Transactions" icon="💸" color={P.teal}/>
-          <div style={{maxHeight:260,overflowY:"auto"}}>
-            <table className="row-hover" style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead>
-                <tr style={{borderBottom:`1px solid ${P.border}`}}>
-                  {["Date","Amount","Pool","Remark"].map((h,i)=>(
-                    <th key={i} style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,padding:"6px 8px",textAlign:i===0||i===3?"left":"right",textTransform:"uppercase",letterSpacing:.5,whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((t,i)=>(
-                  <tr key={i} style={{borderBottom:`1px solid ${P.border}18`}}>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,padding:"7px 8px",whiteSpace:"nowrap"}}>{t.date}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:t.invested<0?P.ruby:P.emerald,padding:"7px 8px",textAlign:"right"}}>{t.invested<0?`-${abs(t.invested)}`:abs(t.invested)}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.teal,padding:"7px 8px",textAlign:"right"}}>{abs(t.pool)}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.text,padding:"7px 8px",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.remark}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Interest & Fee Analysis */}
+      <Card accent={P.sapphire} style={{marginBottom:14}}>
+        <SectionHead title="Interest & Fee Analysis" icon="🧾" color={P.sapphire}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
+          {[
+            {label:"Disbursed",        value:fmtF(displayTotalDisbursed),  color:P.sapphire},
+            {label:"Received",         value:fmtF(displayTotalReceived),   color:P.emerald},
+            {label:"Interest Received",value:fmtF(displayTotalInterest),   color:P.teal},
+            {label:"Fees",             value:fmtF(totalFees),              color:P.ruby},
+            {label:"Net P&L",          value:fmtF(totalPL),                color:totalPL>=0?P.emerald:P.ruby},
+          ].map(item=>(
+            <div key={item.label} style={{background:P.card3,border:`1px solid ${item.color}22`,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{item.label}</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,color:item.color}}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:10,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+          {[
+            {label:"Recovery %",          value:`${pct(displayTotalReceived,displayTotalDisbursed)}%`, color:P.emerald},
+            {label:"Fee Drag",            value:`${Math.round(feesDrag)}%`,   color:P.sapphire},
+            {label:"Closed Loan ROI",     value:`${Math.round(closedRate)}%`, color:P.gold},
+            {label:"Avg Closed Duration", value:`${avgClosedDuration} mo`,    color:P.violet},
+          ].map(item=>(
+            <div key={item.label} style={{background:`${item.color}0A`,border:`1px solid ${item.color}22`,borderRadius:12,padding:"10px 12px",textAlign:"center"}}>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{item.label}</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:item.color}}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+        {/* Capital Reconciliation */}
+        <div style={{marginTop:12,background:P.card3,border:`1px solid ${P.border}`,borderRadius:12,padding:"12px 14px"}}>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>Capital Reconciliation</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
+            {[
+              {label:"Capital Added",     value:fmtF(externalCapitalAdded),    color:P.gold},
+              {label:"Capital Available", value:fmtF(capitalAfterEarnings),    color:P.teal},
+              {label:"Fees Deducted",     value:fmtF(totalFees),               color:P.ruby},
+              {label:"Current Deployed",  value:fmtF(currentCapitalDeployed),  color:P.sapphire},
+              {label:"Idle Cash",         value:fmtF(idleCash),                color:idleCash>=0?P.emerald:P.ruby},
+            ].map(item=>(
+              <div key={item.label} style={{background:`${item.color}0A`,border:`1px solid ${item.color}22`,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginBottom:3}}>{item.label}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:item.color}}>{item.value}</div>
+              </div>
+            ))}
           </div>
-        </Card>
+          <div style={{marginTop:10,fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.8}}>
+            Formula: <span style={{color:P.gold}}>Capital Added</span> + <span style={{color:P.teal}}>Interest Earned</span> = <span style={{color:P.text}}>Capital Available</span> {fmtF(capitalAfterEarnings)}.
+            Remaining after current deployment = <span style={{color:idleCash>=0?P.emerald:P.ruby}}>{fmtF(idleCash)}</span>.
+          </div>
+        </div>
+      </Card>
 
-        {/* Loan Samples */}
-        <Card accent={P.violet}>
-          <SectionHead title="Loan Samples" icon="📋" color={P.violet}/>
-          <div style={{maxHeight:260,overflowY:"auto"}}>
-            <table className="row-hover" style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead>
-                <tr style={{borderBottom:`1px solid ${P.border}`}}>
-                  {["Tab","Amount","Rate","Tenure","Score","Status","P&L"].map((h,i)=>(
-                    <th key={i} style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,padding:"6px 8px",textAlign:i===0?"left":"right",textTransform:"uppercase",letterSpacing:.5,whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loanSamples.map((l,i)=>(
-                  <tr key={i} style={{borderBottom:`1px solid ${P.border}18`}}>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.violet,padding:"7px 8px",whiteSpace:"nowrap"}}>{l.tab}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.gold,padding:"7px 8px",textAlign:"right"}}>{abs(l.amount)}</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.teal,padding:"7px 8px",textAlign:"right"}}>{n(l.rate)}%</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,padding:"7px 8px",textAlign:"right"}}>{l.tenure}m</td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.sapphire,padding:"7px 8px",textAlign:"right"}}>{l.score}</td>
-                    <td style={{padding:"7px 8px",textAlign:"right"}}>
-                      <span style={{background:`${l.status==="CLOSED"?P.emerald:P.gold}18`,border:`1px solid ${l.status==="CLOSED"?P.emerald:P.gold}33`,borderRadius:20,padding:"2px 7px",fontFamily:"'Fira Code',monospace",fontSize:8,fontWeight:700,color:l.status==="CLOSED"?P.emerald:P.gold}}>{l.status}</span>
-                    </td>
-                    <td style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:n(l.pl)>0?P.emerald:P.muted,padding:"7px 8px",textAlign:"right"}}>{n(l.pl)>0?abs(l.pl):"—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Monthly ROI table */}
+      <Card accent={P.emerald} style={{marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <SectionHead title="Monthly Interest & ROI Analysis" icon="💰" color={P.emerald}/>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Year</span>
+            <select value={monthlyYearFilter} onChange={e=>setMonthlyYearFilter(e.target.value)} style={selStyle}>
+              {yearOptions.map(y=><option key={y} value={y}>{y==="ALL_YEARS"?"All Years":y}</option>)}
+            </select>
+            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Month</span>
+            <select value={monthlyMonthNameFilter} onChange={e=>setMonthlyMonthNameFilter(e.target.value)} style={selStyle}>
+              {monthOptions.map(m=><option key={m} value={m}>{m==="ALL_MONTHS"?"All Months":m}</option>)}
+            </select>
           </div>
-        </Card>
-      </div>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table className="row-hover">
+            <thead><tr><TH>Month</TH><TH>Loans</TH><TH>Active</TH><TH>Closed</TH><TH>Pending</TH><TH>Overdue</TH><TH>NPA</TH><TH>Disbursed</TH><TH>Principal</TH><TH>Interest</TH><TH>Fee</TH><TH>Outstanding</TH><TH>Recovery%</TH><TH>Monthly ROI</TH></tr></thead>
+            <tbody>
+              {visibleMonthlyRows.map((t,i)=>(
+                <tr key={i}>
+                  <TD bold color={P.gold}>{t.tab}</TD>
+                  <TD color={P.text}>{t.loans}</TD><TD color={P.emerald}>{t.active}</TD><TD color={P.sapphire}>{t.closed}</TD>
+                  <TD color={P.gold}>{t.pending}</TD><TD color={P.ruby}>{t.overdue}</TD><TD color={P.rose}>{t.npa}</TD>
+                  <TD color={P.sapphire}>{fmtF(t.monthDisbursed)}</TD><TD color={P.text}>{fmtF(t.monthPrincipal)}</TD>
+                  <TD bold color={P.teal}>{fmtF(t.monthInterest)}</TD><TD color={P.muted}>{fmtF(t.monthFees)}</TD>
+                  <TD color={P.ruby}>{fmtF(t.monthOutstanding)}</TD>
+                  <TD color={parseFloat(pct(t.received,t.disbursed))>50?P.emerald:P.gold}>{pct(t.received,t.disbursed)}%</TD>
+                  <TD bold color={P.emerald}>{Math.round(t.monthNetRate)}%</TD>
+                </tr>
+              ))}
+              <tr style={{background:P.card2}}>
+                <TD bold color={P.gold}>TOTAL</TD>
+                <TD bold>{displayedTotalCounts.loans}</TD><TD bold color={P.emerald}>{displayedTotalCounts.active}</TD>
+                <TD bold color={P.sapphire}>{displayedTotalCounts.closed}</TD><TD bold color={P.gold}>{displayedTotalCounts.pending}</TD>
+                <TD bold color={P.ruby}>{displayedTotalCounts.overdue}</TD><TD bold color={P.rose}>{displayedTotalCounts.npa}</TD>
+                <TD bold color={P.sapphire}>{fmtF(visibleMonthlyTotals.disbursed)}</TD>
+                <TD bold color={P.text}>{fmtF(visibleMonthlyTotals.principal)}</TD>
+                <TD bold color={P.teal}>{fmtF(visibleMonthlyTotals.interest)}</TD>
+                <TD bold color={P.muted}>{fmtF(visibleMonthlyTotals.fee)}</TD>
+                <TD bold color={P.ruby}>{fmtF(visibleMonthlyTotals.outstanding)}</TD>
+                <TD bold color={P.emerald}>{pct(visibleMonthlyTotals.received,visibleMonthlyTotals.disbursed)}%</TD>
+                <TD bold color={P.emerald}>{visibleMonthlyTotals.disbursed>0?Math.round((visibleMonthlyTotals.interest/visibleMonthlyTotals.disbursed)*100):0}%</TD>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+          {[
+            {label:"Visible Months",        v:String(visibleMonthlyRows.length),              color:P.teal},
+            {label:"Visible Closed Loans",  v:String(visibleMonthlyTotals.closed),            color:P.emerald},
+            {label:"Visible Outstanding",   v:fmtF(visibleMonthlyTotals.outstanding),         color:P.rose},
+            {label:"Visible Recovery",      v:`${pct(visibleMonthlyTotals.received,visibleMonthlyTotals.disbursed)}%`, color:P.violet},
+          ].map((s,i)=>(
+            <div key={i} style={{background:`${s.color}0A`,border:`1px solid ${s.color}22`,borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:4}}>{s.label}</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:800,color:s.color}}>{s.v}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Individual Loan Accounts */}
+      <Card accent={P.rose} style={{marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <SectionHead title="Individual Loan Accounts" icon="📋" color={P.rose}/>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <input value={loanQuery} onChange={e=>setLoanQuery(e.target.value)} placeholder="Search loan id / month / status"
+              style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:10,padding:"7px 10px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:10,minWidth:220}}/>
+            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Status</span>
+            <select value={repayFilter} onChange={e=>setRepayFilter(e.target.value)} style={selStyle}>
+              {REPAYMENT_OPTIONS.map(m=><option key={m||"ALL"} value={m}>{m||"All Statuses"}</option>)}
+            </select>
+            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Year</span>
+            <select value={loanYearFilter} onChange={e=>setLoanYearFilter(e.target.value)} style={selStyle}>
+              {yearOptions.map(y=><option key={y} value={y}>{y==="ALL_YEARS"?"All Years":y}</option>)}
+            </select>
+            <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>Month</span>
+            <select value={loanMonthNameFilter} onChange={e=>setLoanMonthNameFilter(e.target.value)} style={selStyle}>
+              {monthOptions.map(m=><option key={m} value={m}>{m==="ALL_MONTHS"?"All Months":m}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table className="row-hover">
+            <thead><tr><TH>Tab</TH><TH left>Loan ID</TH><TH>Rate%</TH><TH>Tenure</TH><TH>Score</TH><TH>Disbursed</TH><TH>Repay Start</TH><TH>Due</TH><TH>Amount</TH><TH>Status</TH><TH>Repayment</TH><TH>DPD</TH><TH>NPA</TH><TH>Principal Recv</TH><TH>Interest Earned</TH><TH>Avg/Mo</TH><TH>Fee</TH><TH>Total Recv</TH><TH>P&L</TH><TH>Months</TH><TH>Closure</TH></tr></thead>
+            <tbody>
+              {filteredLoans.map((l,i)=>(
+                <tr key={i}>
+                  <TD color={P.gold}>{l.tab}</TD><TD left color={P.muted}>{l.id}</TD>
+                  <TD color={P.sapphire}>{l.rate}%</TD><TD>{l.tenure} mo</TD>
+                  <TD color={l.score>=720?P.emerald:P.gold}>{l.score}</TD>
+                  <TD color={P.muted}>{l.disbDate}</TD><TD color={P.text}>{l.repayStart||"-"}</TD>
+                  <TD color={l.rs==="OVERDUE"?P.ruby:P.muted}>{l.dueDate}</TD>
+                  <TD>{fmtF(l.amount)}</TD>
+                  <TD><Pill color={l.status==="CLOSED"?P.muted:l.status==="OVERDUE"?P.ruby:l.status==="PENDING"?P.gold:P.emerald}>{l.status}</Pill></TD>
+                  <TD><Pill color={l.rs==="NPA"?P.rose:l.rs==="OVERDUE"?P.ruby:l.rs==="DUE TODAY"?P.gold:l.rs==="DUE SOON"?P.sapphire:l.rs==="Closed"?P.muted:P.emerald}>{l.rs}</Pill></TD>
+                  <TD color={n(l.dpd)>0?P.ruby:P.muted}>{n(l.dpd)||0}</TD>
+                  <TD color={n(l.npa)>0?P.rose:P.muted}>{n(l.npa)||0}</TD>
+                  <TD color={P.text}>{fmtF(l.principalRecv)}</TD>
+                  <TD bold color={P.teal}>{fmtF(l.interestRecv)}</TD>
+                  <TD color={l.status==="CLOSED"?P.sapphire:P.muted}>{l.status==="CLOSED"?`${l.monthlyRateToClose}%`:"—"}</TD>
+                  <TD color={P.muted}>{fmtF(l.fee)}</TD>
+                  <TD color={P.gold}>{fmtF(l.totalRecv)}</TD>
+                  <TD color={l.pl>0?P.emerald:P.muted}>{l.pl>0?"+":""}{fmtF(l.pl)}</TD>
+                  <TD color={P.text}>{l.monthsToClose||"—"}</TD>
+                  <TD color={P.muted}>{l.closure}</TD>
+                </tr>
+              ))}
+              <tr style={{background:P.card2}}>
+                <TD bold colSpan={13} left color={P.gold}>SUBTOTAL ({filteredLoans.length} loans)</TD>
+                <TD bold color={P.text}>{fmtF(filteredLoans.reduce((s,l)=>s+l.principalRecv,0))}</TD>
+                <TD bold color={P.teal}>{fmtF(filteredLoans.reduce((s,l)=>s+l.interestRecv,0))}</TD>
+                <TD bold color={P.sapphire}>{filteredLoans.filter(l=>l.status==="CLOSED").length?`${(filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s+l.interestRecv,0)/Math.max(filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s+(n(l.amount)*Math.max(1,n(l.monthsToClose))),0),1)*100).toFixed(1)}%`:"—"}</TD>
+                <TD bold color={P.muted}>{fmtF(filteredLoans.reduce((s,l)=>s+l.fee,0))}</TD>
+                <TD bold color={P.gold}>{fmtF(filteredLoans.reduce((s,l)=>s+l.totalRecv,0))}</TD>
+                <TD bold color={P.emerald}>{fmtF(filteredLoans.reduce((s,l)=>s+l.pl,0))}</TD>
+                <TD bold color={P.text}>{filteredLoans.filter(l=>l.status==="CLOSED").length?filteredLoans.filter(l=>l.status==="CLOSED").reduce((s,l)=>s+n(l.monthsToClose),0):"—"}</TD>
+                <TD/>
+              </tr>
+            </tbody>
+          </table>
+          <div style={{marginTop:8,fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>
+            Showing {filteredLoans.length} loan rows · Score ≥720 = <span style={{color:P.emerald}}>good credit</span> · Repayment: <span style={{color:P.gold}}>{dueTodayLoans.length}</span> due today / <span style={{color:P.sapphire}}>{dueSoonLoans.length}</span> due soon / <span style={{color:P.ruby}}>{overdueLoans.length}</span> overdue / <span style={{color:P.rose}}>{npaLoans.length}</span> NPA
+          </div>
+        </div>
+      </Card>
+
+      {/* Transaction Log */}
+      <Card accent={P.violet}>
+        <SectionHead title="Investment Transaction Log" icon="📒" color={P.violet}/>
+        <div style={{overflowX:"auto"}}>
+          <table className="row-hover">
+            <thead><tr><TH>Date</TH><TH>Invested / Withdrawn</TH><TH>Closing Pool</TH><TH left>Remark</TH></tr></thead>
+            <tbody>
+              {d.lendenClub.transactions.map((t,i)=>(
+                <tr key={i}>
+                  <TD color={P.muted}>{t.date}</TD>
+                  <TD bold color={t.invested>0?P.emerald:P.ruby}>{t.invested>0?"+":""}{fmtF(t.invested)}</TD>
+                  <TD color={P.gold}>{fmtF(t.pool)}</TD>
+                  <TD left color={P.text}>{t.remark}</TD>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
