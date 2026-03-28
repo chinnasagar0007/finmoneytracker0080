@@ -1413,46 +1413,96 @@ function AIHub({ data }) {
   const inHand     = n(d.income?.inHand);
 
   const SECTIONS = [
-    { id:"chat",       label:"💬 Live Advisor",     color:P.violet  },
-    { id:"alerts",     label:"🚨 Smart Alerts",     color:P.ruby    },
-    { id:"calculators",label:"🧮 Calculators",      color:P.emerald },
-    { id:"analysis",   label:"🔬 Deep Analysis",    color:P.sapphire},
+    { id:"chat",       label:"💬 Live Advisor",     sub:"Chat with Arth",        color:P.violet  },
+    { id:"alerts",     label:"🚨 Smart Alerts",     sub:"Health score & alerts", color:P.ruby    },
+    { id:"calculators",label:"🧮 Calculators",      sub:"Debt, FIRE & SIP",      color:P.emerald },
+    { id:"analysis",   label:"🔬 Deep Analysis",    sub:"Goals, Tax & What-If",  color:P.sapphire},
   ];
 
   // ── System prompt — full financial context ──
   const buildSystemPrompt = () => {
-    const kishanRao = d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"));
-    const pendingInt = n(d.personalLending?.pendingInterest);
+    const kishanRao   = d.personalLending?.borrowers?.find(b=>b.name?.toLowerCase().includes("kishan"));
+    const pendingInt  = n(d.personalLending?.pendingInterest);
+    const tutoring    = n(d.income?.tutoring || d.income?.devopsTutoring);
+    const lendingInt  = n(d.income?.lendingInterest || d.personalLending?.monthlyInterest);
+    const grossIncome = salary + tutoring + lendingInt;
+    const savingsRate = grossIncome>0 ? ((inHand/grossIncome)*100).toFixed(1) : 0;
+
+    // Salary history — last 6 months
+    const hist = (d.salaryHistory || []).slice(-6);
+    const histText = hist.length>0
+      ? hist.map(h=>`  ${h.month}: gross ₹${n(h.grossTotal||h.totalIncome).toLocaleString("en-IN")}, in-hand ₹${n(h.inHand||h.savings).toLocaleString("en-IN")}`).join("\n")
+      : "  No history available";
+
+    // Investment breakdown
+    const equityCurr  = n(d.stocks?.summary?.equity?.current);
+    const equityPL    = n(d.stocks?.summary?.equity?.pl);
+    const mfCurr      = n(d.stocks?.summary?.mf?.current);
+    const mfPL        = n(d.stocks?.summary?.mf?.pl);
+    const optionsPL   = n(d.stocks?.summary?.options?.pl);
+    const cryptoPL    = n(d.stocks?.summary?.crypto?.pl);
+
+    // Real estate
+    const rePaid      = n(d.realEstate?.paid);
+    const reTotal     = n(d.realEstate?.totalCost || d.realEstate?.totalAmount);
+    const rePct       = reTotal>0 ? ((rePaid/reTotal)*100).toFixed(1) : 0;
+
+    // Goals with progress
+    const idfcOut   = n(d.loans?.idfc?.outstanding);
+    const sbiOut    = n(d.loans?.sbi?.outstanding);
+    const lcPool    = n(d.lendenClub?.totalPooled);
+    const monthlyCap= Math.max(0, inHand - 15000);
+    const g1Pct     = idfcOut>0 ? Math.max(0,(1-(idfcOut/(idfcOut+n(d.loans?.idfc?.emi)*n(d.loans?.idfc?.paid||18))))*100).toFixed(0) : 100;
+    const g2Pct     = sbiOut>0  ? Math.max(0,(1-(sbiOut/(sbiOut+n(d.loans?.sbi?.emi)*n(d.loans?.sbi?.paid||0))))*100).toFixed(0)  : 100;
+    const g3Pct     = Math.min(100,(totalAssets/1000000)*100).toFixed(0);
+    const g4Pct     = Math.min(100,(lcPool/500000)*100).toFixed(0);
+    const g5Pct     = Math.min(100,Math.max(0,(netWorth/10000000)*100)).toFixed(0);
+
     return `You are Arth — a sharp, empathetic personal financial advisor for ${d.settings?.name || "Naresh"}, a ${d.income?.age || 30}-year-old software professional in ${d.settings?.city || "Hyderabad"}, India.
 
 You have COMPLETE, LIVE access to their finances as of ${d.income?.month || "Mar-26"}:
 
-INCOME:
-- Gross salary: ₹${salary.toLocaleString("en-IN")}/mo | In-hand: ₹${inHand.toLocaleString("en-IN")}/mo
-- EMI burden: ₹${emiTotal.toLocaleString("en-IN")}/mo = ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary
+INCOME SOURCES (Gross: ₹${grossIncome.toLocaleString("en-IN")}/mo):
+- Primary salary: ₹${salary.toLocaleString("en-IN")}/mo
+- DevOps tutoring: ₹${tutoring.toLocaleString("en-IN")}/mo
+- Personal lending interest: ₹${lendingInt.toLocaleString("en-IN")}/mo
+- In-hand after deductions: ₹${inHand.toLocaleString("en-IN")}/mo
+- Savings rate: ${savingsRate}% of gross income
 - Credit card bills: ₹${n(d.income?.creditCardBills).toLocaleString("en-IN")}/mo
-- LendenClub returns: ₹${n(d.income?.lendenClub||140).toLocaleString("en-IN")}/mo
+
+SALARY HISTORY (last 6 months):
+${histText}
 
 LOANS (Total debt: ₹${Math.round(totalDebt).toLocaleString("en-IN")}):
 - HDFC Home Loan: ₹${Math.round(n(d.loans?.hdfc?.outstanding)).toLocaleString("en-IN")} @ ${d.loans?.hdfc?.interestRate||10.5}% | EMI ₹${n(d.loans?.hdfc?.emi).toLocaleString("en-IN")} | ${(d.loans?.hdfc?.total||72)-(d.loans?.hdfc?.paid||4)} EMIs left
-- IDFC Personal: ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} @ ${d.loans?.idfc?.interestRate||13.5}% | EMI ₹${n(d.loans?.idfc?.emi).toLocaleString("en-IN")} | ${(d.loans?.idfc?.total||60)-(d.loans?.idfc?.paid||18)} EMIs left
-- SBI Loan: ₹${Math.round(n(d.loans?.sbi?.outstanding)).toLocaleString("en-IN")} @ ${d.loans?.sbi?.interestRate||9.35}% | EMI ₹${n(d.loans?.sbi?.emi).toLocaleString("en-IN")} | ${(d.loans?.sbi?.total||25)-(d.loans?.sbi?.paid||0)} EMIs left
+- IDFC Personal Loan: ₹${Math.round(idfcOut).toLocaleString("en-IN")} @ ${d.loans?.idfc?.interestRate||13.5}% | EMI ₹${n(d.loans?.idfc?.emi).toLocaleString("en-IN")} | ${(d.loans?.idfc?.total||60)-(d.loans?.idfc?.paid||18)} EMIs left  ← HIGHEST RATE, PRIORITY PAYOFF
+- SBI Loan: ₹${Math.round(sbiOut).toLocaleString("en-IN")} @ ${d.loans?.sbi?.interestRate||9.35}% | EMI ₹${n(d.loans?.sbi?.emi).toLocaleString("en-IN")} | ${(d.loans?.sbi?.total||25)-(d.loans?.sbi?.paid||0)} EMIs left
+- EMI burden: ₹${emiTotal.toLocaleString("en-IN")}/mo = ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary ${emiTotal/salary>0.5?"⚠ HIGH — above 50% danger zone":"✅ manageable"}
 
-INVESTMENTS (Total: ₹${Math.round(totalAssets).toLocaleString("en-IN")}):
-- Stocks & MF: ₹${n(d.stocks?.summary?.total?.current).toLocaleString("en-IN")} | P&L ₹${n(d.stocks?.summary?.total?.pl).toLocaleString("en-IN")}
-- Personal lending: ₹${n(d.personalLending?.totalCapital).toLocaleString("en-IN")} @ 24%/yr | Monthly interest ₹${n(d.personalLending?.monthlyInterest).toLocaleString("en-IN")}
-- LendenClub P2P: ₹${n(d.lendenClub?.totalPooled).toLocaleString("en-IN")} | ~10% net ROI
-- Real estate (land): ₹${n(d.realEstate?.paid).toLocaleString("en-IN")} paid | Balance ₹${n(d.realEstate?.remaining).toLocaleString("en-IN")}
+INVESTMENT PORTFOLIO (Total assets: ₹${Math.round(totalAssets).toLocaleString("en-IN")}):
+- Equity stocks: ₹${equityCurr.toLocaleString("en-IN")} | P&L ₹${equityPL.toLocaleString("en-IN")}
+- Mutual funds: ₹${mfCurr.toLocaleString("en-IN")} | P&L ₹${mfPL.toLocaleString("en-IN")}
+- F&O trading: P&L ₹${optionsPL.toLocaleString("en-IN")} (speculative — taxed as business income)
+- Crypto: P&L ₹${cryptoPL.toLocaleString("en-IN")} (30% flat tax, no offsetting)
+- Personal lending capital: ₹${n(d.personalLending?.totalCapital).toLocaleString("en-IN")} @ 24%/yr | Monthly interest ₹${lendingInt.toLocaleString("en-IN")}
+- LendenClub P2P: ₹${lcPool.toLocaleString("en-IN")} | ~10% net ROI | NPA: ₹${(d.lendenClub?.tabSummary||[]).reduce((s,t)=>s+n(t.npa),0).toLocaleString("en-IN")}
+- Real estate (land): ₹${rePaid.toLocaleString("en-IN")} paid of ₹${reTotal.toLocaleString("en-IN")} total (${rePct}% complete) | Balance ₹${n(d.realEstate?.remaining).toLocaleString("en-IN")}
 
-NET WORTH: ₹${Math.round(netWorth).toLocaleString("en-IN")} (${netWorth<0?"negative due to home loan":"positive"})
+NET WORTH: ₹${Math.round(netWorth).toLocaleString("en-IN")} (${netWorth<0?"in deficit — home loan dominates":"positive and growing"})
+
+FINANCIAL GOALS & PROGRESS:
+1. Clear IDFC loan (13.5% rate) — ${g1Pct}% paid off | Outstanding ₹${Math.round(idfcOut).toLocaleString("en-IN")}
+2. Clear SBI loan — ${g2Pct}% paid off | Outstanding ₹${Math.round(sbiOut).toLocaleString("en-IN")}
+3. ₹10L total investments — ${g3Pct}% reached | Current ₹${Math.round(totalAssets).toLocaleString("en-IN")}
+4. ₹5L LendenClub pool — ${g4Pct}% reached | Current ₹${Math.round(lcPool).toLocaleString("en-IN")}
+5. ₹1 Crore net worth — ${g5Pct}% reached | Current ₹${Math.round(netWorth).toLocaleString("en-IN")}
+- Monthly savings capacity for goals: ₹${monthlyCap.toLocaleString("en-IN")}/mo
 
 ALERTS:
-${pendingInt>0?`- ⚠ KishanRao has ₹${pendingInt.toLocaleString("en-IN")} overdue interest`:"- ✅ No borrower defaults"}
-- EMI burden is ${emiTotal/salary>0.5?"⚠ HIGH":"✅ manageable"} at ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary
+${pendingInt>0?`- ⚠ CRITICAL: KishanRao has ₹${pendingInt.toLocaleString("en-IN")} overdue interest (capital at risk)`:"- ✅ No borrower defaults"}
+- EMI burden: ${emiTotal/salary>0.5?"⚠ HIGH at":"✅"} ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary
 
-GOALS: ₹1 Crore net worth (currently ${netWorth<0?"negative":"₹"+Math.round(netWorth).toLocaleString("en-IN")})
-
-YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ numbers. Give actionable advice. Reference their actual data. Use Indian financial context (80C, 24(b), LTCG, etc). Be honest about risks. Keep responses focused and under 300 words unless asked to elaborate.`;
+YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ numbers. Give actionable advice referencing actual data above. Use Indian financial context (80C, 24(b), LTCG, NPS, ELSS). Be honest about risks. Reference goals by name when relevant. Keep responses under 350 words unless asked to elaborate.`;
   };
 
   return (
@@ -1479,14 +1529,15 @@ YOUR STYLE: Speak like a trusted CA-cum-wealth manager. Be specific with ₹ num
       )}
 
       {/* ── Section Nav ── */}
-      <div style={{display:"flex",gap:8,marginBottom:20,background:P.card2,borderRadius:14,padding:6,border:`1px solid ${P.border}`}}>
+      <div style={{display:"flex",gap:8,marginBottom:20,background:P.card2,borderRadius:16,padding:8,border:`1px solid ${P.border}`}}>
         {SECTIONS.map(s=>(
           <button key={s.id} onClick={()=>setActiveSection(s.id)}
-            style={{flex:1,padding:"10px 8px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:600,transition:"all .2s",
-              background:activeSection===s.id?`linear-gradient(135deg,${s.color}33,${s.color}18)`:"transparent",
-              color:activeSection===s.id?s.color:P.muted,
-              boxShadow:activeSection===s.id?`0 0 0 1px ${s.color}44`:"none"}}>
-            {s.label}
+            style={{flex:1,padding:"12px 10px",borderRadius:12,border:`1px solid ${activeSection===s.id?s.color+"55":"transparent"}`,cursor:"pointer",transition:"all .2s",textAlign:"center",
+              background:activeSection===s.id?`linear-gradient(135deg,${s.color}28,${s.color}10)`:"transparent",
+              boxShadow:activeSection===s.id?`0 0 12px ${s.color}33`:"none"}}>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,color:activeSection===s.id?s.color:P.muted,marginBottom:3}}>{s.label}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:activeSection===s.id?s.color+"aa":P.muted+"88"}}>{s.sub}</div>
+            {activeSection===s.id&&<div style={{width:24,height:2,background:s.color,borderRadius:2,margin:"6px auto 0"}}/>}
           </button>
         ))}
       </div>
@@ -1535,14 +1586,14 @@ Ask me anything — I know your complete financial picture!`;
   }, []);
 
   const QUICK_CHIPS = [
-    "What's my biggest financial risk right now?",
-    "Should I prepay IDFC or invest the extra cash?",
-    "Am I on track to reach ₹1 Crore?",
-    "How can I increase my monthly savings?",
+    "What's my fastest path to clearing IDFC loan?",
+    "How much monthly SIP gets me to ₹1 Crore in 7 years?",
+    "Am I on track for FIRE by age 45?",
+    "Should I prepay loans or increase SIP this month?",
+    "How can I grow my tutoring income faster?",
+    "What tax deductions am I missing this FY?",
     "Is it safe to invest more in LendenClub this month?",
-    "What tax deductions am I missing?",
-    "If salary drops 20%, can I still pay EMIs?",
-    "Draft a WhatsApp follow-up message for KishanRao",
+    "What's my savings rate vs recommended 20%?",
   ];
 
   const sendMessage = async (text) => {
@@ -1633,16 +1684,21 @@ Ask me anything — I know your complete financial picture!`;
         <Card accent={P.gold} style={{padding:16}}>
           <SectionHead title="Your Snapshot" icon="📊" color={P.gold}/>
           {[
-            {label:"Net Worth",    v:fmt(netWorth),  color:netWorth>0?P.emerald:P.ruby},
-            {label:"Total Debt",   v:fmt(totalDebt), color:P.ruby},
-            {label:"Investments",  v:fmt(totalAssets),color:P.sapphire},
-            {label:"In-Hand/mo",   v:fmt(inHand),    color:P.gold},
-            {label:"EMI/mo",       v:fmt(emiTotal),  color:P.orange},
-            {label:"EMI % Salary", v:`${salary>0?((emiTotal/salary)*100).toFixed(1):0}%`, color:emiTotal/salary>0.5?P.ruby:P.emerald},
+            {label:"Net Worth",    v:fmt(netWorth),   color:netWorth>0?P.emerald:P.ruby,  bar:Math.min(100,Math.max(0,(netWorth/10000000)*100))},
+            {label:"Total Debt",   v:fmt(totalDebt),  color:P.ruby,                        bar:Math.min(100,(totalDebt/5000000)*100)},
+            {label:"Investments",  v:fmt(totalAssets),color:P.sapphire,                    bar:Math.min(100,(totalAssets/1000000)*100)},
+            {label:"In-Hand/mo",   v:fmt(inHand),     color:P.gold,                        bar:Math.min(100,(inHand/100000)*100)},
+            {label:"EMI/mo",       v:fmt(emiTotal),   color:P.orange,                      bar:Math.min(100,(emiTotal/salary||0)*100)},
+            {label:"EMI % Salary", v:`${salary>0?((emiTotal/salary)*100).toFixed(1):0}%`,  color:emiTotal/salary>0.5?P.ruby:P.emerald, bar:Math.min(100,(emiTotal/salary||0)*100)},
           ].map((r,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${P.border}22`}}>
-              <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted}}>{r.label}</span>
-              <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:r.color}}>{r.v}</span>
+            <div key={i} style={{padding:"8px 0",borderBottom:`1px solid ${P.border}22`}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>{r.label}</span>
+                <span style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:800,color:r.color}}>{r.v}</span>
+              </div>
+              <div style={{height:3,background:P.border,borderRadius:2}}>
+                <div style={{height:3,width:`${r.bar}%`,background:r.color,borderRadius:2,transition:"width .4s"}}/>
+              </div>
             </div>
           ))}
         </Card>
@@ -1665,7 +1721,9 @@ Ask me anything — I know your complete financial picture!`;
         {/* Brief me button */}
         <button onClick={()=>sendMessage("Give me a detailed morning financial brief — 5 key points about my finances today, what needs attention, and one priority action I should take.")}
           disabled={loading}
-          style={{background:`linear-gradient(135deg,${P.gold},${P.orange})`,border:"none",borderRadius:12,padding:"14px 0",color:"#050D1A",cursor:loading?"not-allowed":"pointer",fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:800,transition:"all .2s",boxShadow:`0 0 20px ${P.gold}44`}}>
+          style={{background:`linear-gradient(135deg,${P.gold},${P.orange})`,border:"none",borderRadius:12,padding:"16px 0",color:"#050D1A",cursor:loading?"not-allowed":"pointer",fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:800,transition:"all .2s",
+            boxShadow:loading?`0 0 10px ${P.gold}22`:`0 0 24px ${P.gold}66, 0 0 48px ${P.gold}22`,
+            animation:loading?"none":"pulse-glow 2s ease-in-out infinite"}}>
           ☀️ Brief Me Today
         </button>
       </div>
@@ -1729,19 +1787,34 @@ function AIAlertsSection({ data, groqKey, totalDebt, totalAssets, netWorth, emiT
   const generateReport = async () => {
     setReportLoading(true);
     try {
-      const reply = await groqChat({ key:groqKey, messages:[{role:"user",content:`Generate a concise month-end financial review for ${d.settings?.name||"Naresh"} (${d.income?.month||"Mar-26"}).
+      const hist6 = (d.salaryHistory||[]).slice(-6);
+      const tutoringInc = n(d.income?.tutoring||d.income?.devopsTutoring);
+      const lendingInc  = n(d.personalLending?.monthlyInterest||d.income?.lendingInterest);
+      const reply = await groqChat({ key:groqKey, messages:[{role:"user",content:`Generate a detailed month-end financial review for ${d.settings?.name||"Naresh"} (${d.income?.month||"Mar-26"}).
 
-Data:
-- Salary: ₹${n(d.income?.salary).toLocaleString("en-IN")} | In-hand: ₹${n(d.income?.inHand).toLocaleString("en-IN")}
-- EMI total: ₹${emiTotal.toLocaleString("en-IN")} (${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary)
+INCOME THIS MONTH:
+- Primary salary: ₹${n(d.income?.salary).toLocaleString("en-IN")} | DevOps tutoring: ₹${tutoringInc.toLocaleString("en-IN")} | Lending interest: ₹${lendingInc.toLocaleString("en-IN")}
+- In-hand after deductions: ₹${n(d.income?.inHand).toLocaleString("en-IN")}
+- Savings rate: ${salary>0?((n(d.income?.inHand)/salary)*100).toFixed(1):0}%
+
+SALARY HISTORY TREND (last 6 months):
+${hist6.map(h=>`  ${h.month}: gross ₹${n(h.grossTotal||h.totalIncome).toLocaleString("en-IN")}, in-hand ₹${n(h.inHand||h.savings).toLocaleString("en-IN")}`).join("\n")||"  No history"}
+
+BALANCE SHEET:
 - Net worth: ₹${Math.round(netWorth).toLocaleString("en-IN")}
 - Total investments: ₹${Math.round(totalAssets).toLocaleString("en-IN")} | Total debt: ₹${Math.round(totalDebt).toLocaleString("en-IN")}
+- EMI burden: ₹${emiTotal.toLocaleString("en-IN")} = ${salary>0?((emiTotal/salary)*100).toFixed(1):0}% of salary
 - LendenClub pool: ₹${n(d.lendenClub?.totalPooled).toLocaleString("en-IN")} | Lending interest received: ₹${n(d.personalLending?.receivedTillNow).toLocaleString("en-IN")}
-- KishanRao pending: ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")}
-- Budget spent: ₹${totalActual.toLocaleString("en-IN")} vs budget ₹${totalBudget.toLocaleString("en-IN")}
+- KishanRao overdue: ₹${n(d.personalLending?.pendingInterest).toLocaleString("en-IN")}
+- Budget spent: ₹${totalActual.toLocaleString("en-IN")} vs budget ₹${totalBudget.toLocaleString("en-IN")} (${totalActual>totalBudget?"OVER":"within"} budget)
 - Health score: ${healthScore}/100
 
-Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) investment progress (4) debt status (5) one key recommendation for next month. Be specific with numbers.`}] });
+GOALS STATUS:
+- IDFC loan: ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} remaining @ 13.5% (priority payoff)
+- ₹1Cr net worth: ${Math.min(100,Math.max(0,(netWorth/10000000)*100)).toFixed(1)}% reached
+- ₹10L investments: ${Math.min(100,(totalAssets/1000000)*100).toFixed(1)}% reached
+
+Format: 6 bullet points — (1) income vs spend with savings rate comment (2) income trend from history (3) net worth & investment change (4) debt status & goal progress (5) one risk to watch (6) ONE specific priority action for next month tied to a named goal. Use ₹ numbers throughout.`}] });
       setReport(reply);
     } catch(e) { setReport("Error generating report: "+e.message); }
     setReportLoading(false);
@@ -1761,44 +1834,70 @@ Format: 5 bullet points covering (1) income vs spend (2) net worth change (3) in
     <div className="fade" style={{display:"grid",gap:14}}>
 
       {/* Health Score */}
-      <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:16,background:`linear-gradient(135deg,${healthColor}14,transparent)`,border:`1px solid ${healthColor}33`,borderRadius:16,padding:"20px 24px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <DonutRing pct={healthScore} color={healthColor} size={130} stroke={12} label={`${healthScore}`} sub="/ 100"/>
-        </div>
-        <div>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:800,color:healthColor,marginBottom:8}}>Financial Health: {healthLabel}</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            {[
-              {label:"Savings Rate",  score:scores.savings,     max:"≥20% of salary"},
-              {label:"EMI Control",   score:scores.emiBurden,   max:"≤40% of salary"},
-              {label:"Investment %",  score:scores.investment,  max:"Build wealth"},
-              {label:"Debt Coverage", score:scores.debtControl, max:"Assets > Debt"},
-            ].map((s,i)=>(
-              <div key={i} style={{background:P.card3,borderRadius:10,padding:"10px 12px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                  <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>{s.label}</span>
-                  <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:s.score>=70?P.emerald:s.score>=40?P.gold:P.ruby}}>{s.score}/100</span>
-                </div>
-                <PBar value={s.score} max={100} color={s.score>=70?P.emerald:s.score>=40?P.gold:P.ruby} height={5}/>
-                <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginTop:4}}>{s.max}</div>
-              </div>
-            ))}
+      <div style={{background:`linear-gradient(135deg,${healthColor}14,transparent)`,border:`1px solid ${healthColor}44`,borderRadius:16,padding:"24px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:24,alignItems:"center",marginBottom:16}}>
+          <DonutRing pct={healthScore} color={healthColor} size={160} stroke={14} label={`${healthScore}`} sub="/ 100"/>
+          <div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:24,fontWeight:800,color:healthColor,marginBottom:6}}>Financial Health: {healthLabel}</div>
+            <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:1.8}}>
+              {scores.emiBurden<50 ? "⚠ EMI burden is the main drag — reducing it adds the most points" :
+               scores.savings<50  ? "⚠ Low savings rate — increasing in-hand savings boosts this score" :
+               scores.investment<50? "📈 Grow investments to push score above 70" :
+               "✅ Portfolio is balanced — keep growing investments"}
+            </div>
           </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {[
+            {label:"Savings Rate",  score:scores.savings,     hint:"≥20% of salary",  icon:scores.savings>=70?"✅":scores.savings>=40?"⚠":"🔴"},
+            {label:"EMI Control",   score:scores.emiBurden,   hint:"≤40% of salary",  icon:scores.emiBurden>=70?"✅":scores.emiBurden>=40?"⚠":"🔴"},
+            {label:"Investment %",  score:scores.investment,  hint:"Build wealth",     icon:scores.investment>=70?"✅":scores.investment>=40?"⚠":"🔴"},
+            {label:"Debt Coverage", score:scores.debtControl, hint:"Assets > Debt",   icon:scores.debtControl>=70?"✅":scores.debtControl>=40?"⚠":"🔴"},
+          ].map((s,i)=>{
+            const sc = s.score>=70?P.emerald:s.score>=40?P.gold:P.ruby;
+            return (
+              <div key={i} style={{background:P.card3,border:`1px solid ${sc}22`,borderRadius:12,padding:"12px 14px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.text}}>{s.icon} {s.label}</span>
+                  <span style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:sc}}>{s.score}</span>
+                </div>
+                <PBar value={s.score} max={100} color={sc} height={6}/>
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:P.muted,marginTop:5}}>{s.hint}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Alert Cards */}
       <div style={{display:"grid",gap:10}}>
         <SectionHead title="Proactive Alerts — Auto-detected" icon="🚨" color={P.ruby}/>
-        {alerts.map((a,i)=>(
-          <div key={i} style={{background:`${a.color}0A`,border:`1px solid ${a.color}33`,borderRadius:12,padding:"14px 18px",display:"flex",gap:14,alignItems:"flex-start"}}>
-            <span style={{fontSize:22,flexShrink:0}}>{a.icon}</span>
-            <div style={{flex:1}}>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:a.color,marginBottom:4}}>{a.title}</div>
-              <div style={{fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.muted,lineHeight:1.7}}>{a.msg}</div>
+        {alerts.map((a,i)=>{
+          const badgeLabel = a.level==="critical"?"CRITICAL":a.level==="warning"?"WARNING":a.level==="info"?"INFO":"ALL CLEAR";
+          const actionQ    = a.level==="critical"?"What should I do about the KishanRao default risk?":
+                             a.level==="warning" ?"How do I reduce my EMI burden quickly?":null;
+          return (
+            <div key={i} style={{background:`${a.color}0A`,border:`1px solid ${a.color}44`,borderRadius:14,padding:"16px 18px",
+              borderLeft:a.level==="critical"?`4px solid ${a.color}`:`1px solid ${a.color}44`}}>
+              <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+                <span style={{fontSize:28,flexShrink:0}}>{a.icon}</span>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,color:a.color}}>{a.title}</div>
+                    <span style={{background:`${a.color}22`,border:`1px solid ${a.color}44`,borderRadius:20,padding:"2px 8px",fontFamily:"'Fira Code',monospace",fontSize:8,fontWeight:700,color:a.color,letterSpacing:.5}}>{badgeLabel}</span>
+                  </div>
+                  <div style={{fontFamily:"'Outfit',sans-serif",fontSize:12,color:P.muted,lineHeight:1.8}}>{a.msg}</div>
+                </div>
+              </div>
+              {actionQ&&(
+                <button onClick={()=>{ document.querySelector("[data-section='chat']")?.click?.(); }}
+                  style={{marginTop:10,marginLeft:42,background:`${a.color}18`,border:`1px solid ${a.color}44`,borderRadius:8,padding:"5px 14px",color:a.color,fontFamily:"'Fira Code',monospace",fontSize:9,fontWeight:700,cursor:"pointer"}}>
+                  → Ask Arth: Fix This
+                </button>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
@@ -1863,24 +1962,29 @@ function AICalculatorsSection({ data, groqKey, totalDebt, totalAssets, netWorth,
   const [calcTab, setCalcTab] = useState("debt");
 
   const CALCS = [
-    {id:"debt",    label:"⏱ Debt-Free"},
-    {id:"networth",label:"💎 ₹1Cr Countdown"},
-    {id:"passive", label:"💸 Passive Income"},
-    {id:"fire",    label:"🔥 FIRE"},
-    {id:"avalanche",label:"🏔 Loan Optimizer"},
-    {id:"realestate",label:"🏡 RE Break-even"},
-    {id:"sip",     label:"📈 SIP Step-up"},
-    {id:"emergency",label:"🛡 Emergency Fund"},
+    {id:"debt",     label:"Debt-Free",      icon:"⏱"},
+    {id:"networth", label:"₹1Cr Countdown", icon:"💎"},
+    {id:"passive",  label:"Passive Income", icon:"💸"},
+    {id:"fire",     label:"FIRE",           icon:"🔥"},
+    {id:"avalanche",label:"Loan Optimizer", icon:"🏔"},
+    {id:"realestate",label:"RE Break-even", icon:"🏡"},
+    {id:"sip",      label:"SIP Step-up",    icon:"📈"},
+    {id:"emergency",label:"Emergency Fund", icon:"🛡"},
   ];
 
   return (
     <div className="fade">
       {/* Calc sub-tabs */}
-      <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
         {CALCS.map(c=>(
           <button key={c.id} onClick={()=>setCalcTab(c.id)}
-            style={{padding:"7px 14px",borderRadius:20,border:`1px solid ${calcTab===c.id?P.emerald:P.border}`,background:calcTab===c.id?`${P.emerald}18`:"transparent",color:calcTab===c.id?P.emerald:P.muted,cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:calcTab===c.id?700:400,transition:"all .15s"}}>
-            {c.label}
+            style={{padding:"9px 16px",borderRadius:22,border:`1px solid ${calcTab===c.id?P.emerald+"88":P.border}`,
+              background:calcTab===c.id?`linear-gradient(135deg,${P.emerald}33,${P.emerald}18)`:"transparent",
+              color:calcTab===c.id?P.emerald:P.muted,cursor:"pointer",fontFamily:"'Fira Code',monospace",
+              fontSize:10,fontWeight:calcTab===c.id?700:400,transition:"all .15s",
+              boxShadow:calcTab===c.id?`0 0 10px ${P.emerald}33`:"none",
+              display:"flex",alignItems:"center",gap:5}}>
+            <span>{c.icon}</span><span>{c.label}</span>
           </button>
         ))}
       </div>
@@ -1944,11 +2048,17 @@ function DebtFreeCalc({ data, emiTotal, salary }) {
           const mNew = calcMonths(l.outstanding, l.emi+extra/3, l.rate);
           const {saved, monthsCut} = calcInterestSaved(l.outstanding, l.emi, l.rate, extra/3);
           const colors = {IDFC:P.sapphire, SBI:P.orange, HDFC:P.ruby};
+          const origAmt = l.outstanding + (l.emi * (l.name==="HDFC"?n(d.loans?.hdfc?.paid||4):l.name==="IDFC"?n(d.loans?.idfc?.paid||18):n(d.loans?.sbi?.paid||0)));
+          const paidPct  = origAmt>0 ? Math.min(100,((origAmt-l.outstanding)/origAmt)*100) : 0;
           return (
-            <div key={l.name} style={{background:`${colors[l.name]}0F`,border:`1px solid ${colors[l.name]}33`,borderRadius:12,padding:14}}>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:800,color:colors[l.name],marginBottom:8}}>{l.name} Loan</div>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:2}}>
-                <div>Outstanding: <span style={{color:P.text}}>₹{Math.round(l.outstanding).toLocaleString("en-IN")}</span></div>
+            <div key={l.name} style={{background:`${colors[l.name]}0F`,border:`1px solid ${colors[l.name]}44`,borderRadius:14,padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:800,color:colors[l.name]}}>{l.name} Loan</div>
+                <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:colors[l.name]}}>{paidPct.toFixed(0)}% paid</span>
+              </div>
+              <PBar value={paidPct} max={100} color={colors[l.name]} height={6}/>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,lineHeight:2,marginTop:10}}>
+                <div>Outstanding: <span style={{color:P.text,fontWeight:600}}>₹{Math.round(l.outstanding).toLocaleString("en-IN")}</span></div>
                 <div>Normal payoff: <span style={{color:P.gold}}>{m0>=999?"N/A":`${Math.floor(m0/12)}y ${m0%12}m`}</span></div>
                 {extra>0&&<><div>With extra: <span style={{color:P.emerald}}>{mNew>=999?"N/A":`${Math.floor(mNew/12)}y ${mNew%12}m`}</span></div>
                 <div>Months saved: <span style={{color:P.emerald,fontWeight:700}}>−{monthsCut} mo</span></div>
@@ -2384,24 +2494,30 @@ function AIAnalysisSection({ data, groqKey, totalDebt, totalAssets, netWorth, em
   const [analysisTab, setAnalysisTab] = useState("whatif");
 
   const TOOLS = [
-    {id:"whatif",  label:"🔮 What-If Engine"},
-    {id:"tax",     label:"🧾 Tax Planner"},
-    {id:"spend",   label:"🔍 Spend Audit"},
-    {id:"salaryup",label:"💼 Salary Impact"},
-    {id:"goals",   label:"🎯 Goal Tracker"},
-    {id:"stress",  label:"📉 Stress Test"},
+    {id:"milestones",label:"🏁 Milestones"},
+    {id:"whatif",    label:"🔮 What-If"},
+    {id:"tax",       label:"🧾 Tax Planner"},
+    {id:"spend",     label:"🔍 Spend Audit"},
+    {id:"salaryup",  label:"💼 Salary Impact"},
+    {id:"goals",     label:"🎯 Goal Tracker"},
+    {id:"stress",    label:"📉 Stress Test"},
   ];
 
   return (
     <div className="fade">
-      <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
         {TOOLS.map(t=>(
           <button key={t.id} onClick={()=>setAnalysisTab(t.id)}
-            style={{padding:"7px 14px",borderRadius:20,border:`1px solid ${analysisTab===t.id?P.sapphire:P.border}`,background:analysisTab===t.id?`${P.sapphire}18`:"transparent",color:analysisTab===t.id?P.sapphire:P.muted,cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:analysisTab===t.id?700:400,transition:"all .15s"}}>
+            style={{padding:"9px 16px",borderRadius:22,border:`1px solid ${analysisTab===t.id?P.sapphire+"88":P.border}`,
+              background:analysisTab===t.id?`linear-gradient(135deg,${P.sapphire}33,${P.sapphire}18)`:"transparent",
+              color:analysisTab===t.id?P.sapphire:P.muted,cursor:"pointer",fontFamily:"'Fira Code',monospace",
+              fontSize:10,fontWeight:analysisTab===t.id?700:400,transition:"all .15s",
+              boxShadow:analysisTab===t.id?`0 0 10px ${P.sapphire}33`:"none"}}>
             {t.label}
           </button>
         ))}
       </div>
+      {analysisTab==="milestones"&& <MilestoneTracker data={d} groqKey={groqKey} netWorth={netWorth} totalAssets={totalAssets} totalDebt={totalDebt} inHand={inHand} emiTotal={emiTotal} salary={salary}/>}
       {analysisTab==="whatif"   && <WhatIfEngine data={d} groqKey={groqKey} systemPrompt={`You are a financial scenario analyst. Analyze what-if scenarios for ${d.settings?.name||"Naresh"} using their real data: Salary ₹${n(d.income?.salary).toLocaleString("en-IN")}, in-hand ₹${n(d.income?.inHand).toLocaleString("en-IN")}, HDFC loan ₹${Math.round(n(d.loans?.hdfc?.outstanding)).toLocaleString("en-IN")} @10.5%, IDFC ₹${Math.round(n(d.loans?.idfc?.outstanding)).toLocaleString("en-IN")} @13.5%, net worth ₹${Math.round(netWorth).toLocaleString("en-IN")}, investments ₹${Math.round(totalAssets).toLocaleString("en-IN")}. Show side-by-side current vs scenario with specific numbers. Be precise and actionable.`}/>}
       {analysisTab==="tax"      && <TaxPlanner data={d} groqKey={groqKey} salary={salary}/>}
       {analysisTab==="spend"    && <SpendAudit data={d} groqKey={groqKey}/>}
@@ -2409,6 +2525,143 @@ function AIAnalysisSection({ data, groqKey, totalDebt, totalAssets, netWorth, em
       {analysisTab==="goals"    && <GoalTracker data={d} groqKey={groqKey} netWorth={netWorth} totalAssets={totalAssets} totalDebt={totalDebt} inHand={inHand} emiTotal={emiTotal}/>}
       {analysisTab==="stress"   && <DebtStressTest data={d} salary={salary} emiTotal={emiTotal} inHand={inHand} totalDebt={totalDebt}/>}
     </div>
+  );
+}
+
+// ── MILESTONE TRACKER ──
+function MilestoneTracker({ data, groqKey, netWorth, totalAssets, totalDebt, inHand, emiTotal, salary }) {
+  const n = v => typeof v==="number"?v:parseFloat(String(v||0).replace(/[₹,\s]/g,""))||0;
+  const [loading, setLoading] = useState(false);
+  const [roadmap, setRoadmap] = useState(null);
+  const d = data;
+
+  const monthlyCap = Math.max(1, n(inHand) - 15000);
+  const now = new Date(2026, 2, 1);
+  const projDate = (months) => months <= 0 ? "Done ✅" : months > 600 ? "50yr+" :
+    new Date(now.getFullYear(), now.getMonth() + months, 1).toLocaleDateString("en-IN", {month:"short", year:"numeric"});
+
+  const idfcOut = n(d.loans?.idfc?.outstanding);
+  const sbiOut  = n(d.loans?.sbi?.outstanding);
+  const lcPool  = n(d.lendenClub?.totalPooled);
+
+  const milestones = [
+    {
+      id:1, icon:"🏦", label:"Clear IDFC Loan", sub:"Highest interest — 13.5%",
+      color:P.ruby,
+      current: idfcOut > 0 ? Math.max(0, 1 - idfcOut / (idfcOut + n(d.loans?.idfc?.emi) * Math.max(1, n(d.loans?.idfc?.paid||18)))) * 100 : 100,
+      gap: idfcOut,
+      monthsLeft: idfcOut > 0 ? Math.ceil(idfcOut / n(d.loans?.idfc?.emi||1)) : 0,
+      priority: 1,
+    },
+    {
+      id:2, icon:"🏦", label:"Clear SBI Loan", sub:"9.35% — second priority",
+      color:P.orange,
+      current: sbiOut > 0 ? Math.max(0, 1 - sbiOut / (sbiOut + n(d.loans?.sbi?.emi) * Math.max(1, n(d.loans?.sbi?.paid||1)))) * 100 : 100,
+      gap: sbiOut,
+      monthsLeft: sbiOut > 0 ? Math.ceil(sbiOut / n(d.loans?.sbi?.emi||1)) : 0,
+      priority: 2,
+    },
+    {
+      id:3, icon:"📊", label:"₹10L Total Investments", sub:"Equity + MF + P2P",
+      color:P.sapphire,
+      current: Math.min(100, (totalAssets / 1000000) * 100),
+      gap: Math.max(0, 1000000 - totalAssets),
+      monthsLeft: Math.max(0, 1000000 - totalAssets) > 0 ? Math.ceil(Math.max(0, 1000000 - totalAssets) / monthlyCap) : 0,
+      priority: 3,
+    },
+    {
+      id:4, icon:"🏛", label:"₹5L LendenClub Pool", sub:"~10% annual returns",
+      color:P.rose,
+      current: Math.min(100, (lcPool / 500000) * 100),
+      gap: Math.max(0, 500000 - lcPool),
+      monthsLeft: Math.max(0, 500000 - lcPool) > 0 ? Math.ceil(Math.max(0, 500000 - lcPool) / (monthlyCap * 0.3)) : 0,
+      priority: 4,
+    },
+    {
+      id:5, icon:"💎", label:"₹1 Crore Net Worth", sub:"The big milestone",
+      color:P.gold,
+      current: Math.min(100, Math.max(0, (netWorth / 10000000) * 100)),
+      gap: Math.max(0, 10000000 - netWorth),
+      monthsLeft: Math.max(0, 10000000 - netWorth) > 0 ? Math.ceil(Math.max(0, 10000000 - netWorth) / monthlyCap) : 0,
+      priority: 5,
+    },
+  ];
+
+  const runRoadmap = async () => {
+    setLoading(true); setRoadmap(null);
+    try {
+      const reply = await groqChat({ key:groqKey, messages:[{role:"user", content:`Create a prioritized financial roadmap for ${d.settings?.name||"Naresh"} to achieve all 5 milestones:
+
+Current status:
+1. IDFC Loan: ₹${Math.round(idfcOut).toLocaleString("en-IN")} outstanding @ 13.5% — ${milestones[0].monthsLeft} months to clear at current EMI
+2. SBI Loan: ₹${Math.round(sbiOut).toLocaleString("en-IN")} outstanding @ 9.35% — ${milestones[1].monthsLeft} months to clear
+3. ₹10L Investments: ${milestones[2].current.toFixed(0)}% reached — gap ₹${Math.round(milestones[2].gap).toLocaleString("en-IN")}
+4. ₹5L LendenClub: ${milestones[3].current.toFixed(0)}% reached — gap ₹${Math.round(milestones[3].gap).toLocaleString("en-IN")}
+5. ₹1Cr Net Worth: ${milestones[4].current.toFixed(0)}% reached — gap ₹${Math.round(milestones[4].gap).toLocaleString("en-IN")}
+
+Monthly savings capacity: ₹${monthlyCap.toLocaleString("en-IN")}
+Monthly salary: ₹${salary.toLocaleString("en-IN")} | In-hand: ₹${n(inHand).toLocaleString("en-IN")}
+
+Provide: (1) Recommended order to tackle milestones and why (2) Specific monthly allocation across goals (3) Quick win that improves multiple milestones at once (4) Realistic timeline for hitting all 5. Be specific with ₹ numbers and dates.`}] });
+      setRoadmap(reply);
+    } catch(e) { setRoadmap("Error: "+e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <Card accent={P.gold}>
+      <SectionHead title="Milestone Tracker — Your Financial Journey" icon="🏁" color={P.gold}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14,marginBottom:16}}>
+        {milestones.map(m=>{
+          const pct = Math.min(100, Math.max(0, m.current));
+          const done = pct >= 100;
+          return (
+            <div key={m.id} style={{background:`${m.color}0A`,border:`1px solid ${m.color}${done?"66":"33"}`,borderRadius:14,padding:"16px 14px",textAlign:"center",position:"relative"}}>
+              {done && <div style={{position:"absolute",top:8,right:10,background:`${P.emerald}22`,border:`1px solid ${P.emerald}44`,borderRadius:20,padding:"2px 7px",fontFamily:"'Fira Code',monospace",fontSize:8,fontWeight:700,color:P.emerald}}>DONE ✅</div>}
+              {!done && <div style={{position:"absolute",top:8,right:10,background:`${m.color}18`,border:`1px solid ${m.color}33`,borderRadius:20,padding:"2px 7px",fontFamily:"'Fira Code',monospace",fontSize:8,fontWeight:700,color:m.color}}>#{m.priority}</div>}
+              <div style={{display:"flex",justifyContent:"center",marginBottom:10}}>
+                <DonutRing pct={pct} color={done?P.emerald:m.color} size={90} stroke={8} label={done?"✓":`${pct.toFixed(0)}%`} sub={done?"":"done"}/>
+              </div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:done?P.emerald:m.color,marginBottom:3}}>{m.icon} {m.label}</div>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginBottom:8}}>{m.sub}</div>
+              {!done && (
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,lineHeight:1.9}}>
+                  <div>Gap: <span style={{color:P.text,fontWeight:600}}>₹{Math.round(m.gap).toLocaleString("en-IN")}</span></div>
+                  <div>Est: <span style={{color:m.monthsLeft<=36?P.emerald:P.ruby,fontWeight:600}}>{projDate(m.monthsLeft)}</span></div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Timeline connector */}
+      <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:16,overflowX:"auto",padding:"8px 0"}}>
+        {milestones.map((m,i)=>{
+          const pct = Math.min(100,Math.max(0,m.current));
+          const done = pct>=100;
+          return (
+            <React.Fragment key={m.id}>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:80}}>
+                <div style={{width:32,height:32,borderRadius:"50%",background:done?P.emerald:pct>0?m.color:P.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,border:`2px solid ${done?P.emerald:m.color}`,boxShadow:done?`0 0 10px ${P.emerald}55`:pct>0?`0 0 8px ${m.color}44`:"none"}}>{done?"✓":m.icon}</div>
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:8,color:done?P.emerald:P.muted,marginTop:4,textAlign:"center",maxWidth:70}}>{m.label}</div>
+              </div>
+              {i<milestones.length-1 && <div style={{flex:1,height:2,background:`linear-gradient(90deg,${milestones[i].current>=100?P.emerald:milestones[i].color}44,${P.border})`,minWidth:20}}/>}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      <button onClick={runRoadmap} disabled={loading}
+        style={{width:"100%",background:loading?P.border:`linear-gradient(135deg,${P.gold},${P.violet})`,border:"none",borderRadius:12,padding:"13px 0",color:"#050D1A",cursor:loading?"not-allowed":"pointer",fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:800,marginBottom:roadmap?14:0,
+          boxShadow:loading?"none":`0 0 20px ${P.gold}44`}}>
+        {loading?"🔄 Arth is building your roadmap…":"🗺 Arth: Build My Priority Roadmap"}
+      </button>
+      {roadmap&&(
+        <div style={{background:P.card3,border:`1px solid ${P.gold}33`,borderRadius:12,padding:"16px 18px",fontFamily:"'Outfit',sans-serif",fontSize:13,color:P.text,lineHeight:1.85,maxHeight:400,overflowY:"auto"}}
+          dangerouslySetInnerHTML={{__html:renderMD(roadmap)}}/>
+      )}
+    </Card>
   );
 }
 
@@ -2682,13 +2935,14 @@ function GoalTracker({ data, groqKey, netWorth, totalAssets, totalDebt, inHand, 
   const [loading, setLoading] = useState(false);
   const [check, setCheck]     = useState(null);
 
+  const monthlyCap = Math.max(1, n(inHand) - 15000);
   const goals = [
-    { name:"Debt-free from IDFC",  target:0,          current:n(data.loans?.idfc?.outstanding), unit:"outstanding", color:P.ruby, icon:"🏦", lower:true },
-    { name:"Debt-free from SBI",   target:0,          current:n(data.loans?.sbi?.outstanding),  unit:"outstanding", color:P.orange, icon:"🏦", lower:true },
-    { name:"₹1 Crore Net Worth",   target:10000000,   current:Math.max(0,netWorth),            unit:"net worth",   color:P.gold, icon:"💎" },
-    { name:"₹5L LendenClub Pool",  target:500000,     current:n(data.lendenClub?.totalPooled), unit:"pool",        color:P.rose, icon:"🏛" },
-    { name:"₹10L Investments",     target:1000000,    current:totalAssets,                     unit:"investments", color:P.sapphire, icon:"📊" },
-    { name:"6mo Emergency Fund",   target:emiTotal*6, current:50000,                           unit:"saved",       color:P.teal, icon:"🛡" },
+    { name:"Clear IDFC Loan",      target:n(data.loans?.idfc?.outstanding), current:n(data.loans?.idfc?.outstanding), unit:"outstanding", color:P.ruby,     icon:"🏦", lower:true,  monthlyPay:n(data.loans?.idfc?.emi) },
+    { name:"Clear SBI Loan",       target:n(data.loans?.sbi?.outstanding),  current:n(data.loans?.sbi?.outstanding),  unit:"outstanding", color:P.orange,   icon:"🏦", lower:true,  monthlyPay:n(data.loans?.sbi?.emi)  },
+    { name:"₹1 Crore Net Worth",   target:10000000,  current:Math.max(0,netWorth),            unit:"net worth",   color:P.gold,     icon:"💎", lower:false, monthlyPay:0 },
+    { name:"₹5L LendenClub Pool",  target:500000,    current:n(data.lendenClub?.totalPooled), unit:"pool",        color:P.rose,     icon:"🏛", lower:false, monthlyPay:0 },
+    { name:"₹10L Investments",     target:1000000,   current:totalAssets,                     unit:"investments", color:P.sapphire, icon:"📊", lower:false, monthlyPay:0 },
+    { name:"6mo Emergency Fund",   target:emiTotal*6,current:50000,                           unit:"saved",       color:P.teal,     icon:"🛡", lower:false, monthlyPay:0 },
   ];
 
   const runCheck = async () => {
@@ -2711,17 +2965,37 @@ For each goal: on-track or off-track? What's the specific action to accelerate i
       <SectionHead title="Goal Tracker — Monthly Check-in" icon="🎯" color={P.gold}/>
       <div style={{display:"grid",gap:10,marginBottom:14}}>
         {goals.map((g,i)=>{
-          const prog = g.lower ? (g.current>0?(1-g.current/(g.target+g.current+1))*100:100) : (g.target>0?(g.current/g.target)*100:100);
+          const prog = g.lower
+            ? (g.current>0?(1-g.current/(g.target+g.current+1))*100:100)
+            : (g.target>0?(g.current/g.target)*100:100);
           const pct  = Math.min(100,Math.max(0,prog));
+          const gap  = g.lower ? g.current : Math.max(0, g.target - g.current);
+          const monthlyNeeded = g.lower ? g.monthlyPay : (monthlyCap > 0 ? monthlyCap : 1);
+          const monthsLeft = gap > 0 ? Math.ceil(gap / monthlyNeeded) : 0;
+          const projDate = monthsLeft > 0 ? new Date(2026, 2 + monthsLeft, 1).toLocaleDateString("en-IN",{month:"short",year:"numeric"}) : "Done ✅";
+          const onTrack = monthsLeft <= 36;
+          const badgeColor = pct>=100?P.emerald:onTrack?P.gold:P.ruby;
+          const badgeLabel = pct>=100?"DONE":onTrack?"ON TRACK":"BEHIND";
           return (
-            <div key={i} style={{background:P.card3,borderRadius:10,padding:"12px 14px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,alignItems:"center"}}>
-                <span style={{fontFamily:"'Syne',sans-serif",fontSize:12,fontWeight:600,color:P.text}}>{g.icon} {g.name}</span>
-                <span style={{fontFamily:"'Fira Code',monospace",fontSize:10,fontWeight:700,color:g.color}}>{pct.toFixed(0)}%</span>
+            <div key={i} style={{background:P.card3,border:`1px solid ${badgeColor}22`,borderRadius:12,padding:"14px 16px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:P.text}}>{g.icon} {g.name}</span>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <span style={{background:`${badgeColor}22`,border:`1px solid ${badgeColor}44`,borderRadius:20,padding:"2px 8px",fontFamily:"'Fira Code',monospace",fontSize:8,fontWeight:700,color:badgeColor}}>{badgeLabel}</span>
+                  <span style={{fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,color:g.color}}>{pct.toFixed(0)}%</span>
+                </div>
               </div>
-              <PBar value={pct} max={100} color={g.color} height={6}/>
-              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,marginTop:4}}>
-                {g.lower?`Remaining: ₹${Math.round(g.current).toLocaleString("en-IN")}`:`₹${Math.round(g.current).toLocaleString("en-IN")} of ₹${g.target>=10000000?fmt(g.target):g.target.toLocaleString("en-IN")}`}
+              <PBar value={pct} max={100} color={g.color} height={7}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:8}}>
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>
+                  Remaining<div style={{color:P.text,fontWeight:600,fontSize:10}}>₹{Math.round(gap).toLocaleString("en-IN")}</div>
+                </div>
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>
+                  Need/mo<div style={{color:g.color,fontWeight:600,fontSize:10}}>₹{Math.round(monthlyNeeded).toLocaleString("en-IN")}</div>
+                </div>
+                <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>
+                  Est. date<div style={{color:onTrack?P.emerald:P.ruby,fontWeight:600,fontSize:10}}>{projDate}</div>
+                </div>
               </div>
             </div>
           );
@@ -2992,6 +3266,7 @@ export default function App() {
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Outfit:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap');
         @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
         @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.25} }
+        @keyframes pulse-glow { 0%,100%{box-shadow:0 0 24px #F5A62366,0 0 48px #F5A62322} 50%{box-shadow:0 0 36px #F5A623aa,0 0 72px #F5A62344} }
         @keyframes marquee{ from{transform:translateX(0)} to{transform:translateX(-50%)} }
         * { box-sizing:border-box }
         ::-webkit-scrollbar{width:4px;height:4px}
