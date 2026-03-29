@@ -370,9 +370,12 @@ ${loanLines}
 
 INVESTMENTS (Total assets: Rs ${I(d.totalAssets)}):
 ${invLines}
-- Personal lending: Rs ${I(d.plTotalCapital)} @ 24%/yr
 - LendenClub P2P: Rs ${I(d.lcPooled)} | ~10% ROI | NPA: Rs ${I(d.lcNPA)}
 - Real estate: Rs ${I(d.rePaid)} paid of Rs ${I(d.reTotalCost)} (${d.rePct}%)
+
+PERSONAL LENDING (Total: Rs ${I(d.plTotalCapital)} @ 24%/yr):
+${plLines}
+  Monthly interest income: Rs ${I(d.plMonthlyInterest)}${d.plPendingInt > 0 ? `\n  !! TOTAL OVERDUE: Rs ${I(d.plPendingInt)}` : ""}
 
 NET WORTH: Rs ${I(d.netWorth)} (${d.netWorth < 0 ? "deficit" : "positive"})
 
