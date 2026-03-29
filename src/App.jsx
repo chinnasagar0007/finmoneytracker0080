@@ -3469,6 +3469,170 @@ function LendenClubTab({ data }) {
   );
 }
 
+// ─── API SETTINGS ─────────────────────────────────────────────────────────────
+function APISettings({ apiUrl, setApiUrl, onSyncNow }) {
+  const [local,   setLocal]   = useState(apiUrl);
+  const [saved,   setSaved]   = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [result,  setResult]  = useState(null);
+
+  const handleTest = async () => {
+    if (!local.trim()) return;
+    setTesting(true); setResult(null);
+    try {
+      const data = unwrapCentralPayload(await fetchScript("central", local.trim()));
+      if (data?.error) {
+        setResult({ ok:false, msg:"Script error: " + data.error, data:null });
+      } else {
+        const keys     = Object.keys(data);
+        const expected = ["income","lendenClub","personalLending","realEstate","stocks","loans"];
+        const found    = expected.filter(k => keys.includes(k));
+        const missing  = expected.filter(k => !keys.includes(k));
+        const sheetCounts = keys.map(k => `${k}: ${Object.keys(data[k]||{}).length} sheets`).join(" · ");
+        if (found.length === 6) {
+          setResult({ ok:true,  msg:`✅ All 6 spreadsheets found! ${sheetCounts}`, data });
+        } else {
+          setResult({ ok:false, msg:`⚠ Got ${found.length}/6 keys. Missing: ${missing.join(", ")}. Found keys: ${keys.join(", ")}`, data });
+        }
+      }
+    } catch(err) {
+      const issue = explainSyncIssue(err, "central");
+      setResult({ ok:false, msg:"❌ " + issue.message, data:null });
+    }
+    setTesting(false);
+  };
+
+  const handleSave = () => {
+    setApiUrl(local.trim());
+    saveApiUrl(local.trim());
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+    setTimeout(() => onSyncNow(), 400);
+  };
+
+  const handleClear = () => { setLocal(""); setResult(null); };
+
+  return (
+    <div className="fade">
+      {/* Header */}
+      <div style={{background:`linear-gradient(135deg,${P.sapphire}14,${P.teal}0A)`,border:`1px solid ${P.sapphire}33`,borderRadius:16,padding:"20px 24px",marginBottom:16,display:"flex",alignItems:"center",gap:16}}>
+        <div style={{width:56,height:56,borderRadius:14,background:`linear-gradient(135deg,${P.sapphire},${P.teal})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0,boxShadow:`0 0 24px ${P.sapphire}44`}}>🔗</div>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:800,color:P.text}}>Central API Settings</div>
+          <div style={{fontFamily:"'Fira Code',monospace",fontSize:10,color:P.muted,marginTop:4,lineHeight:1.8}}>
+            One single Apps Script URL reads all 6 spreadsheets and returns unified data. Paste your deployed URL below.
+          </div>
+        </div>
+      </div>
+
+      {/* Architecture diagram */}
+      <Card accent={P.gold} style={{marginBottom:16}}>
+        <SectionHead title="Architecture" icon="🏗" color={P.gold}/>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"center",padding:"12px 0"}}>
+          {["📊 Sheet 1 (Income)","📊 Sheet 2 (LendenClub)","📊 Sheet 3 (Personal Lending)","📊 Sheet 4 (Real Estate)","📊 Sheet 5 (Stocks)","📊 Sheet 6 (Loans)"].map((s,i)=>(
+            <div key={i} style={{background:P.card3,border:`1px solid ${P.border}`,borderRadius:8,padding:"5px 10px",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted}}>{s}</div>
+          ))}
+          <div style={{width:"100%",textAlign:"center",fontFamily:"'Fira Code',monospace",fontSize:18,color:P.gold,margin:"4px 0"}}>↓</div>
+          <div style={{background:`linear-gradient(135deg,${P.gold}22,${P.orange}11)`,border:`1px solid ${P.gold}44`,borderRadius:10,padding:"8px 20px",fontFamily:"'Fira Code',monospace",fontSize:11,color:P.gold,fontWeight:700}}>
+            ⚡ Central Apps Script API (single /exec URL)
+          </div>
+          <div style={{width:"100%",textAlign:"center",fontFamily:"'Fira Code',monospace",fontSize:18,color:P.sapphire,margin:"4px 0"}}>↓</div>
+          <div style={{background:`linear-gradient(135deg,${P.sapphire}22,${P.teal}11)`,border:`1px solid ${P.sapphire}44`,borderRadius:10,padding:"8px 20px",fontFamily:"'Fira Code',monospace",fontSize:11,color:P.sapphire,fontWeight:700}}>
+            📱 This Dashboard (JSONP fetch, auto-maps all sheets)
+          </div>
+        </div>
+      </Card>
+
+      {/* Step-by-step */}
+      <Card accent={P.teal} style={{marginBottom:16}}>
+        <SectionHead title="How to deploy your Central Script" icon="📋" color={P.teal}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
+          {[
+            { step:"1", color:P.emerald,  text:"Open script.google.com → create a new project" },
+            { step:"2", color:P.sapphire, text:"Paste the Central API script code" },
+            { step:"3", color:P.gold,     text:"Click Deploy → New Deployment → Web App" },
+            { step:"4", color:P.teal,     text:"Execute as: Me · Who has access: Anyone (no Google account required)" },
+            { step:"5", color:P.orange,   text:"Copy the /exec URL and paste it in the field below" },
+            { step:"6", color:P.ruby,     text:"Click Test → if all 6 sheets show, click Save & Sync" },
+          ].map((s,i)=>(
+            <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <div style={{width:26,height:26,borderRadius:"50%",background:`${s.color}22`,border:`1px solid ${s.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,color:s.color,flexShrink:0}}>{s.step}</div>
+              <div style={{fontFamily:"'Outfit',sans-serif",fontSize:11,color:P.muted,lineHeight:1.7,paddingTop:4}}>{s.text}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:12,padding:"8px 12px",background:`#FF5C7A0A`,border:`1px solid #FF5C7A22`,borderRadius:8,fontFamily:"'Fira Code',monospace",fontSize:10,color:"#FF5C7Acc"}}>
+          ⚠ "Anyone with Google account" will NOT work — causes CORS/login redirect. Must be <strong style={{color:"#FF5C7A"}}>Anyone</strong>.
+        </div>
+      </Card>
+
+      {/* URL input */}
+      <Card accent={result?.ok===true ? P.emerald : result?.ok===false ? P.ruby : P.sapphire} style={{marginBottom:16}}>
+        <SectionHead title="Your Central API URL" icon="📡" color={P.sapphire}/>
+        <div style={{display:"flex",gap:10,marginBottom:result?10:0}}>
+          <input
+            value={local}
+            onChange={e => { setLocal(e.target.value); setResult(null); }}
+            placeholder="https://script.google.com/macros/s/.../exec"
+            style={{flex:1,background:P.card3,border:`1px solid ${result?.ok===true?P.emerald:result?.ok===false?P.ruby:P.border}`,borderRadius:10,padding:"11px 14px",color:P.text,fontFamily:"'Fira Code',monospace",fontSize:11,outline:"none"}}
+          />
+          <button onClick={handleTest} disabled={testing||!local.trim()} style={{background:testing?P.border:`${P.sapphire}22`,border:`1px solid ${testing?P.border:P.sapphire}55`,borderRadius:10,padding:"11px 20px",color:testing?P.muted:P.sapphire,cursor:testing||!local.trim()?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>
+            {testing ? "⏳ Testing..." : "🔬 Test"}
+          </button>
+          <button onClick={handleSave} disabled={!local.trim()} style={{background:saved?`${P.emerald}22`:`linear-gradient(135deg,${P.sapphire},${P.teal})`,border:saved?`1px solid ${P.emerald}44`:"none",borderRadius:10,padding:"11px 22px",color:saved?P.emerald:"#050D1A",cursor:!local.trim()?"not-allowed":"pointer",fontFamily:"'Fira Code',monospace",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>
+            {saved ? "✅ Saved!" : "💾 Save & Sync"}
+          </button>
+          {local && <button onClick={handleClear} style={{background:"transparent",border:`1px solid ${P.border}`,borderRadius:10,padding:"11px 14px",color:P.muted,cursor:"pointer",fontFamily:"'Fira Code',monospace",fontSize:11}}>✕</button>}
+        </div>
+        {result && (
+          <div style={{padding:"10px 14px",borderRadius:8,background:result.ok?`${P.emerald}0A`:`${P.ruby}0A`,border:`1px solid ${result.ok?P.emerald:P.ruby}33`,fontFamily:"'Fira Code',monospace",fontSize:10,color:result.ok?P.emerald:P.orange,lineHeight:1.8}}>
+            {result.msg}
+            {result.data && (
+              <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap"}}>
+                {Object.keys(result.data).map(k => (
+                  <div key={k} style={{background:`${P.emerald}15`,border:`1px solid ${P.emerald}33`,borderRadius:6,padding:"2px 10px",fontSize:9,color:P.emerald}}>
+                    {k}: {Object.keys(result.data[k]||{}).length} sheets · {Object.values(result.data[k]||{}).reduce((s,rows)=>s+(Array.isArray(rows)?rows.length:0),0)} rows
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <div style={{marginTop:12,padding:"8px 12px",background:P.card3,borderRadius:8,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,flexShrink:0}}>ACTIVE URL</span>
+          <span style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:apiUrl?P.sapphire:P.muted,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {apiUrl || "— not configured —"}
+          </span>
+          {apiUrl && <span style={{background:`${P.emerald}15`,border:`1px solid ${P.emerald}33`,borderRadius:6,padding:"1px 8px",fontFamily:"'Fira Code',monospace",fontSize:9,color:P.emerald,flexShrink:0}}>live</span>}
+        </div>
+      </Card>
+
+      {/* Data mapping info */}
+      <Card accent={P.muted}>
+        <SectionHead title="How data is mapped" icon="🗺" color={P.muted}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10}}>
+          {[
+            { key:"income",          icon:"💰", label:"Income (sheet1)",          sheets:"Income Tracker, Monthly Budget, Daily Expenses, Tax Log" },
+            { key:"lendenClub",      icon:"🏛", label:"LendenClub (sheet2)",       sheets:"LC Summary, Tab Summary, LC Transactions, Loan Samples" },
+            { key:"personalLending", icon:"🤝", label:"Personal Lending (sheet3)", sheets:"Borrowers, Repayment Log" },
+            { key:"realEstate",      icon:"🏡", label:"Real Estate (sheet4)",      sheets:"Property Details, EMI Schedule, Valuation" },
+            { key:"stocks",          icon:"📈", label:"Stocks (sheet5)",           sheets:"Mutual Funds, Equity, Options, Crypto" },
+            { key:"loans",           icon:"🏦", label:"Loans (sheet6)",            sheets:"HDFC Schedule, IDFC Schedule, SBI Schedule" },
+          ].map((m,i) => (
+            <div key={i} style={{background:P.card3,borderRadius:8,padding:"10px 12px",border:`1px solid ${P.border}`}}>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:12,fontWeight:700,color:P.text,marginBottom:4}}>{m.icon} {m.label}</div>
+              <div style={{fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,lineHeight:1.7}}>Looks for tabs: {m.sheets}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:10,fontFamily:"'Fira Code',monospace",fontSize:9,color:P.muted,lineHeight:1.8}}>
+          Tab name matching is fuzzy — "LC Summary", "LendenClub Summary", "Summary" all work. Column headers are also flexible.
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // ─── SALARY TRACKER ───────────────────────────────────────────────────────────
 function SalaryTracker({ data }) {
   const d   = data;
