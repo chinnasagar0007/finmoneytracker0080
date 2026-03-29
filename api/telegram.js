@@ -419,12 +419,13 @@ async function callGroq(d, userMessage) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(200).json({ ok: true, message: "Arth bot active" });
 
+  let chatId = null;
   try {
     const update = req.body;
     const msg = update?.message || update?.edited_message;
     if (!msg?.text) return res.status(200).json({ ok: true });
 
-    const chatId = String(msg.chat.id);
+    chatId = String(msg.chat.id);
     const text = msg.text.trim().split("@")[0];
 
     if (CHAT_ID && chatId !== CHAT_ID) return res.status(200).json({ ok: true });
@@ -461,6 +462,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error("Webhook error:", err);
+    if (chatId) {
+      try { await sendTelegram(chatId, "Something went wrong. Please try again in a moment."); } catch (_) {}
+    }
     return res.status(200).json({ ok: true });
   }
 }
