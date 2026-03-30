@@ -7,10 +7,11 @@ const GROQ_API_KEY   = process.env.GROQ_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CHAT_ID        = process.env.TELEGRAM_CHAT_ID;
 const DASHBOARD_URL  = process.env.DASHBOARD_URL;
-const GROQ_MODEL     = "llama-3.3-70b-versatile";
-const MAX_TOKENS     = 2048;
-const CACHE_TTL_TEMPLATE = 15 * 60 * 1000;
-const CACHE_TTL_CHAT     = 5 * 60 * 1000;
+const GROQ_MODEL      = "llama-3.3-70b-versatile";
+const GROQ_MODEL_FAST = "llama-3.1-8b-instant";
+const MAX_TOKENS      = 2048;
+const CACHE_TTL_TEMPLATE = 30 * 60 * 1000;
+const CACHE_TTL_CHAT     = 15 * 60 * 1000;
 
 let dataCache = { data: null, ts: 0 };
 let conversationMemory = [];
@@ -621,11 +622,18 @@ Or just ask anything:
 
 // ── AI System Prompt ─────────────────────────────────────────────────────────
 
-function dumpRaw(label, obj) {
+const SKIP_BORROWER = new Set(["name", "amount", "monthly", "overdue"]);
+const SKIP_LOAN = new Set(["name", "emi", "outstanding", "rate", "totalEmis", "paidEmis", "emisLeft"]);
+const SKIP_INV = new Set(["name", "current", "pl", "items"]);
+
+function dumpRaw(label, obj, skipKeys) {
   if (!obj || typeof obj !== "object") return "";
-  const entries = Object.entries(obj).filter(([, v]) => v !== null && v !== undefined && v !== "");
+  const skip = skipKeys || new Set();
+  const entries = Object.entries(obj).filter(([k, v]) =>
+    v !== null && v !== undefined && v !== "" && v !== "-" && !skip.has(k)
+  );
   if (entries.length === 0) return "";
-  return `\n[${label} - ALL FIELDS]: ${entries.map(([k, v]) => `${k}=${v}`).join(" | ")}`;
+  return `\n[${label} EXTRA]: ${entries.map(([k, v]) => `${k}=${v}`).join(" | ")}`;
 }
 
 function buildSystemPrompt(d) {
@@ -634,17 +642,17 @@ function buildSystemPrompt(d) {
   const histText = (d.salaryHistory || []).map(h => `  ${h.month}: gross Rs ${I(h.gross)}, in-hand Rs ${I(h.inHand)}`).join("\n") || "  No history";
 
   const loanLines = (d.loans || []).map(l => {
-    const extra = dumpRaw(l.name, l);
+    const extra = dumpRaw(l.name, l, SKIP_LOAN);
     return `- ${l.name}: Rs ${I(l.outstanding)} @ ${l.rate}% | EMI Rs ${I(l.emi)} | ${l.emisLeft} EMIs left${l.name === "IDFC" ? " <-- PRIORITY" : ""}${extra}`;
   }).join("\n");
 
   const invLines = (d.investments || []).map(i => {
-    const extra = dumpRaw(i.name, i);
+    const extra = dumpRaw(i.name, i, SKIP_INV);
     return `- ${i.name}: Rs ${I(i.current)} | P&L Rs ${I(i.pl)}${extra}`;
   }).join("\n") || "  No data";
 
   const plLines = (d.borrowers || []).map(b => {
-    const extra = dumpRaw(b.name, b);
+    const extra = dumpRaw(b.name, b, SKIP_BORROWER);
     return `- ${b.name}: Rs ${I(b.amount)} @ Rs ${I(b.monthly)}/mo${b.overdue > 0 ? ` (OVERDUE Rs ${I(b.overdue)})` : ""}${extra}`;
   }).join("\n") || "  None";
 
@@ -700,13 +708,21 @@ Monthly savings capacity: Rs ${I(d.monthlyCap)} (in-hand minus Rs 15,000 baselin
 STYLE: Speak like a trusted CA-cum-wealth-manager. Use exact Rs numbers from above. Indian financial context (80C, 24b, LTCG, NPS, ELSS). Be specific and actionable. Under 350 words unless asked to elaborate.`;
 }
 
+// ── Query Classification ─────────────────────────────────────────────────────
+const ANALYSIS_PATTERNS = /\b(should|better|recommend|advice|advise|plan|strategy|compare|what.?if|how can|how do|optimize|improve|prepay|invest|save|suggest|worth it|good idea|make sense|risk|pros|cons|benefit|scenario|impact|projection)\b/i;
+
+function classifyQuery(text) {
+  if (ANALYSIS_PATTERNS.test(text)) return "analysis";
+  return "data";
+}
+
 // ── AI Callers ───────────────────────────────────────────────────────────────
 
-async function callGroqInternal(messages, signal) {
+async function callGroqInternal(messages, signal, model) {
   const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-    body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: MAX_TOKENS }),
+    body: JSON.stringify({ model: model || GROQ_MODEL, messages, max_tokens: MAX_TOKENS }),
     signal,
   });
   const json = await resp.json();
@@ -746,7 +762,11 @@ function updateMemory(userMsg, reply) {
   }
 }
 
-async function callAI(d, userMessage) {
+async function callAI(d, userMessage, forceModel) {
+  const queryType = forceModel || classifyQuery(userMessage);
+  const model = queryType === "analysis" ? GROQ_MODEL : GROQ_MODEL_FAST;
+  const timeoutMs = model === GROQ_MODEL_FAST ? 8000 : 8000;
+
   const systemPrompt = buildSystemPrompt(d);
   const messages = [
     { role: "system", content: systemPrompt },
@@ -754,21 +774,19 @@ async function callAI(d, userMessage) {
     { role: "user", content: userMessage },
   ];
 
-  // Try Groq with 12s timeout
   if (GROQ_API_KEY) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000);
-      const reply = await callGroqInternal(messages, controller.signal);
-      clearTimeout(timeout);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const reply = await callGroqInternal(messages, controller.signal, model);
+      clearTimeout(timer);
       updateMemory(userMessage, reply);
       return reply;
     } catch (err) {
-      console.log("Groq failed, trying fallback:", err.message);
+      console.log(`Groq (${model}) failed, trying fallback:`, err.message);
     }
   }
 
-  // Fallback to Gemini
   if (GEMINI_API_KEY) {
     try {
       const reply = await callGeminiInternal(systemPrompt, [...conversationMemory, { role: "user", content: userMessage }]);
@@ -800,7 +818,13 @@ function getCommandResponse(cmd, d) {
 
 // ── Webhook Handler ──────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).json({ ok: true, message: "Arth bot v2.0 active" });
+  if (req.method !== "POST") {
+    if (req.query?.cron === "1") {
+      try { await getFinancialData(true); } catch (_) {}
+      return res.status(200).json({ ok: true, warm: true, ts: Date.now() });
+    }
+    return res.status(200).json({ ok: true, message: "Arth bot v2.1 active" });
+  }
 
   let chatId = null;
   try {
@@ -888,7 +912,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
       const d = await getFinancialData(false);
-      const reply = await callAI(d, `WHAT-IF ANALYSIS REQUEST: ${scenario}\n\nAnalyze this scenario using my current financial data. Show before vs after impact on relevant metrics (EMI burden, savings rate, net worth, goal timelines). Be specific with Rs numbers and give your recommendation.`);
+      const reply = await callAI(d, `WHAT-IF ANALYSIS REQUEST: ${scenario}\n\nAnalyze this scenario using my current financial data. Show before vs after impact on relevant metrics (EMI burden, savings rate, net worth, goal timelines). Be specific with Rs numbers and give your recommendation.`, "analysis");
       await sendTelegram(chatId, reply);
       return res.status(200).json({ ok: true });
     }
