@@ -653,8 +653,13 @@ function buildSystemPrompt(d) {
   }).join("\n") || "  No data";
 
   const plLines = (d.borrowers || []).map(b => {
-    const extra = dumpRaw(b.name, b, SKIP_BORROWER);
-    return `- ${b.name}: Rs ${I(b.amount)} @ Rs ${I(b.monthly)}/mo${b.overdue > 0 ? ` (OVERDUE Rs ${I(b.overdue)})` : ""}${extra}`;
+    const skip = new Set([...SKIP_BORROWER, "#", "Borrower Name", "Amount Lent (₹)", "Amount Lent", "Monthly Interest (₹)", "Monthly Int", "Pending Interest (₹)", "Pending Int", "Payment Status", "Loan Status", "Status"]);
+    const extras = Object.entries(b)
+      .filter(([k, v]) => v !== null && v !== undefined && v !== "" && v !== "-" && !skip.has(k))
+      .map(([k, v]) => `  ${k}: ${v}`);
+    let line = `- ${b.name}: Rs ${I(b.amount)} @ Rs ${I(b.monthly)}/mo${b.overdue > 0 ? ` (OVERDUE Rs ${I(b.overdue)})` : ""}`;
+    if (extras.length > 0) line += "\n" + extras.join("\n");
+    return line;
   }).join("\n") || "  None";
 
   const eb = d.emiBurdenPct || 0;
