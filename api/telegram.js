@@ -1,7 +1,6 @@
 // ── Vercel Serverless Telegram Bot for Arth Finance Advisor (v2.0) ───────────
 // 10 template commands, AI chat with Gemini fallback, inline keyboards,
 // smart caching, progress bars, month-over-month comparison.
-//test
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const GROQ_API_KEY   = process.env.GROQ_API_KEY;
@@ -92,24 +91,28 @@ async function getFinancialData(forTemplate = true) {
   const ttl = forTemplate ? CACHE_TTL_TEMPLATE : CACHE_TTL_CHAT;
   if (dataCache.data && Date.now() - dataCache.ts < ttl) return dataCache.data;
 
-  // Strategy 1: Try ?mode=bot (pre-calculated data from Apps Script)
+  // Strategy 1: Try ?mode=bot (universal raw data + KPIs from Apps Script v3)
   try {
     const botUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + "mode=bot";
     const botResp = await fetch(botUrl, { redirect: "follow" });
     const botData = await botResp.json();
-    if (botData && botData._source === "bot" && botData.salary > 0) {
+    if (botData && botData._source === "bot_v3" && botData.raw && botData.kpis) {
       dataCache = { data: botData, ts: Date.now() };
       return botData;
     }
   } catch (_) { /* fallback below */ }
 
-  // Strategy 2: Parse raw data locally with V() flexible field lookup
-  const resp = await fetch(DASHBOARD_URL, { redirect: "follow" });
-  let raw = await resp.json();
-  if (raw?.data) raw = raw.data;
-  const summary = buildBotSummary(raw);
-  dataCache = { data: summary, ts: Date.now() };
-  return summary;
+  // Strategy 2: Fallback to old dashboard endpoint
+  try {
+    const resp = await fetch(DASHBOARD_URL, { redirect: "follow" });
+    let raw = await resp.json();
+    if (raw?.data) raw = raw.data;
+    const summary = buildBotSummary(raw);
+    dataCache = { data: { kpis: summary, raw: null, _source: "fallback" }, ts: Date.now() };
+    return dataCache.data;
+  } catch (_) {}
+
+  return { kpis: {}, raw: null, _source: "error" };
 }
 
 // ── buildBotSummary (mirrors React dashboard calculations) ───────────────────
@@ -318,150 +321,132 @@ function buildBotSummary(p) {
   };
 }
 
+// ── Template helper: dump raw rows from a section ────────────────────────────
+function rawRows(d, section, tabHints) {
+  const sec = d.raw?.[section] || {};
+  for (const hint of (tabHints || [])) {
+    for (const key of Object.keys(sec)) {
+      if (key.toLowerCase().includes(hint.toLowerCase()) && Array.isArray(sec[key])) return sec[key];
+    }
+  }
+  for (const key of Object.keys(sec)) {
+    if (Array.isArray(sec[key]) && sec[key].length > 0) return sec[key];
+  }
+  return [];
+}
+
+function rowToLine(row) {
+  return Object.entries(row)
+    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(" | ");
+}
+
 // ── Template Responses (100% consistent, no AI) ─────────────────────────────
 
 function templateSummary(d) {
-  const invLines = (d.investments || []).map(i => `  ${i.name}: ${fmt(i.current)} (P&L ${fmt(i.pl)})`).join("\n") || "  No stock data";
-  const loanLines = (d.loans || []).map(l => `  ${l.name}: ${fmt(l.outstanding)} @ ${l.rate}% | EMI ${fmt(l.emi)}/mo | ${l.emisLeft} left`).join("\n");
-  const plLines = (d.borrowers || []).map(b => `  ${b.name}: ${fmt(b.amount)} @ ${fmt(b.monthly)}/mo${b.overdue > 0 ? ` (OVERDUE ${fmt(b.overdue)})` : ""}`).join("\n") || "  None";
-
-  return `ARTH FINANCIAL SNAPSHOT (${d.month || "Current"})
+  const k = d.kpis || {};
+  return `ARTH FINANCIAL SNAPSHOT (${k.month || "Current"})
 
 INCOME
-  Salary: ${fmt(d.salary)}/mo
-  Tutoring: ${fmt(d.tutoring)}/mo
-  Lending Interest: ${fmt(d.lendingInterest)}/mo
-  Gross Income: ${fmt(d.grossIncome)}
-  CC Bills: ${fmt(d.creditCardBills)}
-  Loan EMIs: ${fmt(d.loanEMI)}
-  In-Hand: ${fmt(d.inHand)}
+  Salary: ${fmt(k.salary)}/mo
+  Gross Income: ${fmt(k.grossIncome)}
+  Loan EMIs: ${fmt(k.loanEMI)}
+  In-Hand: ${fmt(k.inHand)}
 
-INVESTMENTS (${fmt(d.totalStocksCurrent)})
-${invLines}
+INVESTMENTS: ${fmt(k.totalStocks)}
+LENDENCLUB: ${fmt(k.lcPooled)}
+PERSONAL LENDING: ${fmt(k.plCapital)} (Rs ${I(k.plMonthly)}/mo interest)${k.plPending > 0 ? ` | OVERDUE: ${fmt(k.plPending)}` : ""}
+REAL ESTATE: ${fmt(k.rePaid)} of ${fmt(k.reCost || 0)}
 
-LOANS (Debt: ${fmt(d.totalDebt)})
-${loanLines}
-  EMI Burden: ${d.emiBurdenPct}%${d.emiBurdenPct > 50 ? " -- HIGH" : ""}
+TOTAL DEBT: ${fmt(k.totalDebt)}
+EMI Burden: ${k.emiBurdenPct}%${k.emiBurdenPct > 50 ? " -- HIGH" : ""}
+Savings Rate: ${k.savingsRatePct}%
 
-LENDENCLUB P2P
-  Pooled: ${fmt(d.lcPooled)} | Interest: ${fmt(d.lcInterest)}
-  Active: ${d.lcActiveLoans} loans | NPA: ${fmt(d.lcNPA)}
-
-PERSONAL LENDING (${fmt(d.plTotalCapital)})
-${plLines}
-  Monthly: ${fmt(d.plMonthlyInterest)}${d.plPendingInt > 0 ? ` | OVERDUE: ${fmt(d.plPendingInt)}` : ""}
-
-REAL ESTATE
-  ${d.reName || "Property"}: ${fmt(d.rePaid)} of ${fmt(d.reTotalCost)} (${d.rePct}%)
-
-NET WORTH: ${fmt(d.netWorth)}
-  Assets: ${fmt(d.totalAssets)} | Debt: ${fmt(d.totalDebt)}
-  Savings Rate: ${d.savingsRatePct}%`;
+NET WORTH: ${fmt(k.netWorth)}
+  Assets: ${fmt(k.totalInvestments)} | Debt: ${fmt(k.totalDebt)}`;
 }
 
 function templateNetWorth(d) {
-  const invLines = (d.investments || []).map(i => `  ${i.name}: ${fmt(i.current)}`).join("\n") || "  None";
-  return `NET WORTH BREAKDOWN (${d.month || "Current"})
+  const k = d.kpis || {};
+  return `NET WORTH BREAKDOWN (${k.month || "Current"})
 
 ASSETS
-${invLines}
-  Stocks Subtotal: ${fmt(d.totalStocksCurrent)}
-  LendenClub P2P: ${fmt(d.lcPooled)}
-  Personal Lending: ${fmt(d.plTotalCapital)}
-  Real Estate: ${fmt(d.rePaid)}
+  Stocks/MF: ${fmt(k.totalStocks)}
+  LendenClub: ${fmt(k.lcPooled)}
+  Personal Lending: ${fmt(k.plCapital)}
+  Real Estate: ${fmt(k.rePaid)}
   ---------------
-  TOTAL: ${fmt(d.totalAssets)}
+  TOTAL: ${fmt(k.totalInvestments)}
 
 LIABILITIES
-${(d.loans || []).map(l => `  ${l.name}: ${fmt(l.outstanding)}`).join("\n")}
-  ---------------
-  TOTAL: ${fmt(d.totalDebt)}
+  Total Debt: ${fmt(k.totalDebt)}
 
-NET WORTH: ${fmt(d.netWorth)}
-${d.netWorth < 0 ? "(Deficit - debt exceeds assets)" : "(Positive)"}
-
-PAYOFF PRIORITY (highest rate first)
-${(d.loans || []).sort((a, b) => b.rate - a.rate).map((l, i) => `  ${i + 1}. ${l.name} @ ${l.rate}% - ${fmt(l.outstanding)}`).join("\n")}`;
+NET WORTH: ${fmt(k.netWorth)}
+${k.netWorth < 0 ? "(Deficit)" : "(Positive)"}`;
 }
 
 function templateGoals(d) {
-  const g = d.goals || {};
-  const idfcOut = d.loans?.find(l => l.name === "IDFC")?.outstanding || 0;
-  const sbiOut = d.loans?.find(l => l.name === "SBI")?.outstanding || 0;
-  const idfcLoan = d.loans?.find(l => l.name === "IDFC");
-  const sbiLoan = d.loans?.find(l => l.name === "SBI");
-  const idfcProgress = idfcLoan ? pct(idfcLoan.paidEmis, idfcLoan.totalEmis) : (idfcOut === 0 ? 100 : 0);
-  const sbiProgress = sbiLoan ? pct(sbiLoan.paidEmis, sbiLoan.totalEmis) : (sbiOut === 0 ? 100 : 0);
+  const k = d.kpis || {};
+  const invPct = Math.min(100, Math.round((k.totalInvestments / 1000000) * 100));
+  const lcPct = Math.min(100, Math.round((k.lcPooled / 500000) * 100));
+  const nwPct = Math.min(100, Math.max(0, Math.round((k.netWorth / 10000000) * 100)));
 
-  return `FINANCIAL GOALS (${d.month || "Current"})
+  return `FINANCIAL GOALS (${k.month || "Current"})
 
-1. Clear IDFC Loan (13.5%)
-   ${fmt(idfcOut)} remaining
-   ${bar(idfcProgress)}
+1. Rs 10L Investments
+   Current: ${fmt(k.totalInvestments)}
+   ${bar(invPct)}
 
-2. Clear SBI Loan (9.35%)
-   ${fmt(sbiOut)} remaining
-   ${bar(sbiProgress)}
+2. Rs 5L LendenClub Pool
+   Current: ${fmt(k.lcPooled)}
+   ${bar(lcPct)}
 
-3. Rs 10L Investments
-   Current: ${fmt(d.totalAssets)}
-   ${bar(g.invPct || 0)}
+3. Rs 1 Crore Net Worth
+   Current: ${fmt(k.netWorth)}
+   ${bar(nwPct)}
 
-4. Rs 5L LendenClub Pool
-   Current: ${fmt(d.lcPooled)}
-   ${bar(g.lcPct || 0)}
-
-5. Rs 1 Crore Net Worth
-   Current: ${fmt(d.netWorth)}
-   ${bar(g.nwPct || 0)}
-
-Savings capacity: ${fmt(d.monthlyCap)}/mo`;
+Savings capacity: ${fmt(k.monthlyCap)}/mo`;
 }
 
 function templateAlerts(d) {
+  const k = d.kpis || {};
   const alerts = [];
-  if (d.emiBurdenPct > 50) alerts.push(`EMI Burden CRITICAL at ${d.emiBurdenPct}% (should be <50%)`);
-  if (d.savingsRatePct < 20) alerts.push(`Savings Rate LOW at ${d.savingsRatePct}% (target: >20%)`);
-  if (d.plPendingInt > 0) alerts.push(`OVERDUE: ${fmt(d.plPendingInt)} pending from borrowers`);
-  if (d.lcNPA > 0) alerts.push(`LendenClub NPA: ${fmt(d.lcNPA)} at risk`);
-  for (const l of (d.loans || [])) {
-    if (l.rate > 12) alerts.push(`${l.name} loan at ${l.rate}% - prioritise payoff`);
-  }
+  if (k.emiBurdenPct > 50) alerts.push(`EMI Burden CRITICAL at ${k.emiBurdenPct}% (should be <50%)`);
+  if (k.savingsRatePct < 20) alerts.push(`Savings Rate LOW at ${k.savingsRatePct}% (target: >20%)`);
+  if (k.plPending > 0) alerts.push(`OVERDUE: ${fmt(k.plPending)} pending from borrowers`);
   if (alerts.length === 0) alerts.push("All parameters on track. No alerts.");
-  return `ARTH ALERTS (${d.month || "Current"})\n\n${alerts.map((a, i) => `${i + 1}. !! ${a}`).join("\n")}`;
+  return `ARTH ALERTS (${k.month || "Current"})\n\n${alerts.map((a, i) => `${i + 1}. !! ${a}`).join("\n")}`;
 }
 
 function templateCompare(d) {
-  const p = d.prevMonthData;
-  if (!p || !p.month) return "No previous month data available for comparison.";
+  const incRows = rawRows(d, "income", ["Income Tracker", "Income"]);
+  const valid = incRows.filter(r => N(r["Salary"] || r["salary"] || 0) > 0);
+  if (valid.length < 2) return "Need at least 2 months of data for comparison.";
+  const cur = valid[valid.length - 1];
+  const prev = valid[valid.length - 2];
+  const f = (row, ...keys) => { for (const k of keys) { const v = row[k]; if (v !== undefined && v !== "") return N(v); } return 0; };
+  const cSal = f(cur, "Salary"); const pSal = f(prev, "Salary");
+  const cInH = f(cur, "In Hand", "In-Hand"); const pInH = f(prev, "In Hand", "In-Hand");
+  const cGross = f(cur, "Gross Total", "Gross Income") || cSal; const pGross = f(prev, "Gross Total", "Gross Income") || pSal;
+
   return `MONTH COMPARISON
-${p.month} --> ${d.month}
+${prev["Month"] || "Prev"} --> ${cur["Month"] || "Current"}
 
-Salary:       ${fmt(p.salary)} --> ${fmt(d.salary)}${arrow(d.salary, p.salary)}
-Gross Income: ${fmt(p.grossIncome)} --> ${fmt(d.grossIncome)}${arrow(d.grossIncome, p.grossIncome)}
-Tutoring:     ${fmt(p.tutoring)} --> ${fmt(d.tutoring)}${arrow(d.tutoring, p.tutoring)}
-Lending Int:  ${fmt(p.lendingInterest)} --> ${fmt(d.lendingInterest)}${arrow(d.lendingInterest, p.lendingInterest)}
-CC Bills:     ${fmt(p.creditCardBills)} --> ${fmt(d.creditCardBills)}${arrow(d.creditCardBills, p.creditCardBills)}
-Loan EMIs:    ${fmt(p.loanEMI)} --> ${fmt(d.loanEMI)}${arrow(d.loanEMI, p.loanEMI)}
-In-Hand:      ${fmt(p.inHand)} --> ${fmt(d.inHand)}${arrow(d.inHand, p.inHand)}
-
-EMI Burden: ${d.emiBurdenPct}% | Savings Rate: ${d.savingsRatePct}%`;
+Salary:       ${fmt(pSal)} --> ${fmt(cSal)}${arrow(cSal, pSal)}
+Gross Income: ${fmt(pGross)} --> ${fmt(cGross)}${arrow(cGross, pGross)}
+In-Hand:      ${fmt(pInH)} --> ${fmt(cInH)}${arrow(cInH, pInH)}`;
 }
 
 function templateBorrowers(d) {
-  if (!d.borrowers || d.borrowers.length === 0) return "No active borrowers.";
-  const skipKeys = new Set(["name", "amount", "monthly", "overdue"]);
-  const lines = d.borrowers.map((b, i) => {
-    let s = `${i + 1}. ${b.name}\n   Principal: ${fmt(b.amount)}\n   Monthly Interest: ${fmt(b.monthly)}/mo`;
-    if (b.overdue > 0) s += `\n   !! OVERDUE: ${fmt(b.overdue)}`;
-    else s += `\n   Overdue: --`;
-    for (const [k, v] of Object.entries(b)) {
-      if (skipKeys.has(k) || v === null || v === undefined || v === "" || v === "-") continue;
-      const kl = k.toLowerCase();
-      if (kl.includes("status") || kl.includes("loan status")) continue;
-      s += `\n   ${k}: ${v}`;
-    }
-    return s;
+  const rows = rawRows(d, "personalLending", ["Borrower", "Lending"]);
+  if (rows.length === 0) return "No borrower data found.";
+  const k = d.kpis || {};
+  const lines = rows.map((r, i) => {
+    const fields = Object.entries(r)
+      .filter(([, v]) => v !== null && v !== undefined && v !== "" && v !== "-")
+      .map(([key, v]) => `   ${key}: ${v}`);
+    return `${i + 1}. ${fields.join("\n")}`;
   }).join("\n\n");
 
   return `PERSONAL LENDING BREAKDOWN
@@ -469,167 +454,88 @@ function templateBorrowers(d) {
 ${lines}
 
 ---------------
-Total Lent: ${fmt(d.plTotalCapital)}
-Monthly Income: ${fmt(d.plMonthlyInterest)}/mo
-Total Overdue: ${d.plPendingInt > 0 ? fmt(d.plPendingInt) : "--"}
-Borrowers with overdue: ${d.plOverdueCount}
-Yield: 24%/yr`;
+Total Capital: ${fmt(k.plCapital)}
+Monthly Interest: ${fmt(k.plMonthly)}/mo
+Total Overdue: ${k.plPending > 0 ? fmt(k.plPending) : "--"}`;
 }
 
 function templateLoans(d) {
-  if (!d.loans || d.loans.length === 0) return "No active loans. Debt-free!";
-  const skipKeys = new Set(["name", "emi", "outstanding", "rate", "totalEmis", "paidEmis", "emisLeft"]);
-  const lines = d.loans.map((l, i) => {
-    const progress = pct(l.paidEmis, l.totalEmis);
-    const payoffMonths = l.emisLeft;
-    const payoffDate = payoffMonths > 0 ? monthsFromNow(payoffMonths) : "Done";
-    let label = `${i + 1}. ${l.name}`;
-    if (l.name === "IDFC") label += " <-- PRIORITY";
-    let s = `${label}
-   Outstanding: ${fmt(l.outstanding)} @ ${l.rate}%
-   EMI: ${fmt(l.emi)}/mo
-   Progress: ${l.paidEmis}/${l.totalEmis} EMIs paid
-   ${bar(progress)}
-   Est. payoff: ${payoffDate}`;
-    for (const [k, v] of Object.entries(l)) {
-      if (skipKeys.has(k) || v === null || v === undefined || v === "" || v === "-") continue;
-      s += `\n   ${k}: ${v}`;
-    }
-    return s;
-  }).join("\n\n");
+  const loanSec = d.raw?.loans || {};
+  const tabs = Object.keys(loanSec);
+  if (tabs.length === 0) return "No loan data found.";
+  const k = d.kpis || {};
+  const lines = tabs.map((tab, i) => {
+    const rows = loanSec[tab];
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    const r = rows[0];
+    const fields = Object.entries(r)
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
+      .map(([key, v]) => `   ${key}: ${v}`);
+    return `${i + 1}. ${tab}${tab === "IDFC" ? " <-- PRIORITY" : ""}\n${fields.join("\n")}`;
+  }).filter(Boolean).join("\n\n");
 
   return `LOAN BREAKDOWN
 
 ${lines}
 
 ---------------
-Total Debt: ${fmt(d.totalDebt)}
-Total EMI: ${fmt(d.loanEMI)}/mo
-EMI Burden: ${d.emiBurdenPct}% of salary`;
+Total Debt: ${fmt(k.totalDebt)}
+Total EMI: ${fmt(k.loanEMI)}/mo
+EMI Burden: ${k.emiBurdenPct}% of salary`;
 }
 
 function templateExpenses(d) {
-  const gross = d.grossIncome || 1;
-  const items = [
-    { name: "CC Bills", val: d.creditCardBills },
-    { name: "HDFC EMI", val: d.hdfcEmi },
-    { name: "IDFC EMI", val: d.idfcEmi },
-    { name: "SBI EMI", val: d.sbiEmi },
-  ];
-  const totalOut = d.creditCardBills + d.loanEMI;
-  const lines = items
-    .filter(i => i.val > 0)
-    .map(i => `  ${i.name}: ${fmt(i.val)}  (${pct(i.val, gross)}% of gross)`)
-    .join("\n");
+  const k = d.kpis || {};
+  const gross = k.grossIncome || 1;
+  const totalOut = (k.loanEMI || 0);
 
-  return `EXPENSE BREAKDOWN (${d.month || "Current"})
+  return `EXPENSE BREAKDOWN (${k.month || "Current"})
 
-OUTFLOWS
-${lines}
-  ---------------
-  Total Outflow: ${fmt(totalOut)}  (${pct(totalOut, gross)}% of gross)
+  Loan EMIs: ${fmt(k.loanEMI)}  (${pct(k.loanEMI, gross)}% of gross)
+  In-Hand: ${fmt(k.inHand)}  (${pct(k.inHand, gross)}% of gross)
 
-DEPLOYMENTS (this month)
-  LendenClub: ${fmt(N(0))}
-  Equity/MF: ${fmt(N(0))}
-  Real Estate: ${fmt(N(0))}
-
-REMAINING
-  In-Hand: ${fmt(d.inHand)}  (${pct(d.inHand, gross)}% of gross)
-
-Gross Income: ${fmt(d.grossIncome)}`;
+Gross Income: ${fmt(k.grossIncome)}
+Savings Rate: ${k.savingsRatePct}%`;
 }
 
 function templateProjection(d) {
-  const cap = d.monthlyCap;
-  if (cap <= 0) return "Savings capacity is below baseline (Rs 15,000). Cannot project goal timelines until in-hand improves.";
+  const k = d.kpis || {};
+  const cap = k.monthlyCap;
+  if (cap <= 0) return "Savings capacity is below baseline (Rs 15,000). Cannot project.";
 
   const lines = [];
-
-  const idfcOut = d.loans?.find(l => l.name === "IDFC")?.outstanding || 0;
-  if (idfcOut > 0) {
-    const m = Math.ceil(idfcOut / cap);
-    lines.push(`1. Clear IDFC (${fmt(idfcOut)})\n   At ${fmt(cap)}/mo: ~${m} months (${monthsFromNow(m)})`);
-  } else {
-    lines.push("1. Clear IDFC: DONE");
-  }
-
-  const sbiOut = d.loans?.find(l => l.name === "SBI")?.outstanding || 0;
-  if (sbiOut > 0) {
-    const m = Math.ceil(sbiOut / cap);
-    lines.push(`2. Clear SBI (${fmt(sbiOut)})\n   At ${fmt(cap)}/mo: ~${m} months (${monthsFromNow(m)})`);
-  } else {
-    lines.push("2. Clear SBI: DONE");
-  }
-
-  const invGap = Math.max(0, 1000000 - d.totalAssets);
+  const invGap = Math.max(0, 1000000 - k.totalInvestments);
   if (invGap > 0) {
     const m = Math.ceil(invGap / cap);
-    lines.push(`3. Rs 10L Investments (gap: ${fmt(invGap)})\n   At ${fmt(cap)}/mo: ~${m} months (${monthsFromNow(m)})`);
-  } else {
-    lines.push("3. Rs 10L Investments: ACHIEVED");
-  }
+    lines.push(`1. Rs 10L Investments (gap: ${fmt(invGap)})\n   At ${fmt(cap)}/mo: ~${m} months (${monthsFromNow(m)})`);
+  } else lines.push("1. Rs 10L Investments: ACHIEVED");
 
-  const lcGap = Math.max(0, 500000 - d.lcPooled);
+  const lcGap = Math.max(0, 500000 - k.lcPooled);
   if (lcGap > 0) {
     const m = Math.ceil(lcGap / cap);
-    lines.push(`4. Rs 5L LC Pool (gap: ${fmt(lcGap)})\n   At ${fmt(cap)}/mo: ~${m} months (${monthsFromNow(m)})`);
-  } else {
-    lines.push("4. Rs 5L LC Pool: ACHIEVED");
-  }
+    lines.push(`2. Rs 5L LC Pool (gap: ${fmt(lcGap)})\n   At ${fmt(cap)}/mo: ~${m} months (${monthsFromNow(m)})`);
+  } else lines.push("2. Rs 5L LC Pool: ACHIEVED");
 
-  const nwGap = Math.max(0, 10000000 - d.netWorth);
+  const nwGap = Math.max(0, 10000000 - k.netWorth);
   if (nwGap > 0) {
     const mFlat = Math.ceil(nwGap / cap);
-    const mCagr = Math.ceil(Math.log(10000000 / Math.max(1, d.totalAssets)) / Math.log(1 + 0.12 / 12));
-    lines.push(`5. Rs 1Cr Net Worth (gap: ${fmt(nwGap)})\n   Savings only: ~${mFlat} months (${monthsFromNow(mFlat)})\n   With 12% CAGR: ~${mCagr} months (${monthsFromNow(mCagr)})`);
-  } else {
-    lines.push("5. Rs 1Cr Net Worth: ACHIEVED");
-  }
+    lines.push(`3. Rs 1Cr Net Worth (gap: ${fmt(nwGap)})\n   At ${fmt(cap)}/mo: ~${mFlat} months (${monthsFromNow(mFlat)})`);
+  } else lines.push("3. Rs 1Cr Net Worth: ACHIEVED");
 
   return `GOAL PROJECTIONS
 (Based on ${fmt(cap)}/mo savings capacity)
 
-${lines.join("\n\n")}
-
-Note: Projections assume constant savings. Prepaying high-rate loans first improves timelines.`;
+${lines.join("\n\n")}`;
 }
 
 function templateTransactions(d) {
-  const txns = d.dailyExpenses || [];
-  const summary = d.expenseSummary || {};
-  if (txns.length === 0) return "No daily expense data available for this month.";
+  const txnRows = rawRows(d, "income", ["Daily", "Expense", "Transaction"]);
+  if (txnRows.length === 0) return "No daily expense data available.";
+  const recent = txnRows.slice(-20);
+  const lines = recent.map(r => "  " + rowToLine(r)).join("\n");
+  return `DAILY EXPENSES (last ${recent.length} of ${txnRows.length} transactions)
 
-  const modeLines = Object.entries(summary.byMode || {})
-    .filter(([, v]) => v > 0)
-    .map(([k, v]) => `  ${k}: ${fmt(v)}`)
-    .join("\n");
-  const catLines = Object.entries(summary.byCategory || {})
-    .filter(([, v]) => v > 0)
-    .map(([k, v]) => `  ${k}: ${fmt(v)}`)
-    .join("\n");
-
-  const recent = txns.slice(-15).map(t => {
-    const date = t["Date"] || t["date"] || "";
-    const desc = t["Description"] || t["description"] || "";
-    const amt = t["Amount (₹)"] || t["Amount"] || "";
-    const mode = t["Payment Mode"] || t["Mode"] || "";
-    const cat = t["Category"] || "";
-    return `  ${date} | ${desc} | Rs ${amt} | ${mode} | ${cat}`;
-  }).join("\n");
-
-  return `DAILY EXPENSES (This Month)
-
-${summary.count || 0} transactions | Total: ${fmt(summary.total || 0)}
-
-BY PAYMENT MODE:
-${modeLines || "  No data"}
-
-BY CATEGORY:
-${catLines || "  No data"}
-
-RECENT TRANSACTIONS:
-${recent}`;
+${lines}`;
 }
 
 // ── Help ─────────────────────────────────────────────────────────────────────
@@ -662,126 +568,66 @@ Or just ask anything:
 
 // ── AI System Prompt ─────────────────────────────────────────────────────────
 
-const SKIP_BORROWER = new Set(["name", "amount", "monthly", "overdue"]);
-const SKIP_LOAN = new Set(["name", "emi", "outstanding", "rate", "totalEmis", "paidEmis", "emisLeft"]);
-const SKIP_INV = new Set(["name", "current", "pl", "items"]);
-
-function dumpRaw(label, obj, skipKeys) {
-  if (!obj || typeof obj !== "object") return "";
-  const skip = skipKeys || new Set();
-  const entries = Object.entries(obj).filter(([k, v]) =>
-    v !== null && v !== undefined && v !== "" && v !== "-" && !skip.has(k)
-  );
-  if (entries.length === 0) return "";
-  return `\n[${label} EXTRA]: ${entries.map(([k, v]) => `${k}=${v}`).join(" | ")}`;
-}
-
-function buildExpensePrompt(d) {
-  const txns = d.dailyExpenses || [];
-  const summary = d.expenseSummary || {};
-  if (txns.length === 0) return "";
-
-  const modeLines = Object.entries(summary.byMode || {})
-    .filter(([, v]) => v > 0)
-    .map(([k, v]) => `  ${k}: Rs ${I(v)}`)
-    .join("\n");
-  const catLines = Object.entries(summary.byCategory || {})
-    .filter(([, v]) => v > 0)
-    .map(([k, v]) => `  ${k}: Rs ${I(v)}`)
-    .join("\n");
-
-  const txnLines = txns.map(t => {
-    const parts = Object.entries(t)
-      .filter(([, v]) => v !== null && v !== undefined && v !== "")
-      .map(([k, v]) => `${k}=${v}`);
-    return "  " + parts.join(" | ");
-  }).join("\n");
-
-  return `\nDAILY EXPENSES (This Month - ${summary.count || 0} transactions, Total: Rs ${I(summary.total || 0)}):
-By Payment Mode:
-${modeLines || "  No data"}
-By Category:
-${catLines || "  No data"}
-All Transactions:
-${txnLines || "  No transactions"}
-`;
+// ── Raw data dumper for system prompt ─────────────────────────────────────────
+function dumpSection(label, sectionData, maxRows) {
+  if (!sectionData || typeof sectionData !== "object") return "";
+  const tabs = Object.keys(sectionData);
+  if (tabs.length === 0) return "";
+  let out = `\n${label.toUpperCase()}:\n`;
+  for (const tab of tabs) {
+    const rows = sectionData[tab];
+    if (!Array.isArray(rows) || rows.length === 0) continue;
+    const limit = maxRows || rows.length;
+    const display = rows.slice(-limit);
+    out += `[${tab}] (${rows.length} rows${rows.length > limit ? `, showing last ${limit}` : ""}):\n`;
+    for (const row of display) {
+      const fields = Object.entries(row)
+        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+        .map(([k, v]) => `${k}=${v}`);
+      out += "  " + fields.join(" | ") + "\n";
+    }
+  }
+  return out;
 }
 
 function buildSystemPrompt(d) {
-  const g = d.goals || {};
+  const k = d.kpis || {};
+  const raw = d.raw || {};
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const histText = (d.salaryHistory || []).map(h => `  ${h.month}: gross Rs ${I(h.gross)}, in-hand Rs ${I(h.inHand)}`).join("\n") || "  No history";
+  const eb = k.emiBurdenPct || 0;
 
-  const loanLines = (d.loans || []).map(l => {
-    const extra = dumpRaw(l.name, l, SKIP_LOAN);
-    return `- ${l.name}: Rs ${I(l.outstanding)} @ ${l.rate}% | EMI Rs ${I(l.emi)} | ${l.emisLeft} EMIs left${l.name === "IDFC" ? " <-- PRIORITY" : ""}${extra}`;
-  }).join("\n");
+  const incomeSection = dumpSection("Income & Expenses", raw.income, 100);
+  const loanSection = dumpSection("Loans", raw.loans);
+  const stockSection = dumpSection("Investments & Stocks", raw.stocks);
+  const lcSection = dumpSection("LendenClub P2P", raw.lendenClub);
+  const plSection = dumpSection("Personal Lending", raw.personalLending);
+  const reSection = dumpSection("Real Estate", raw.realEstate);
 
-  const invLines = (d.investments || []).map(i => {
-    const extra = dumpRaw(i.name, i, SKIP_INV);
-    return `- ${i.name}: Rs ${I(i.current)} | P&L Rs ${I(i.pl)}${extra}`;
-  }).join("\n") || "  No data";
-
-  const plLines = (d.borrowers || []).map(b => {
-    const skip = new Set([...SKIP_BORROWER, "#", "Borrower Name", "Amount Lent (₹)", "Amount Lent", "Monthly Interest (₹)", "Monthly Int", "Pending Interest (₹)", "Pending Int", "Payment Status", "Loan Status", "Status"]);
-    const extras = Object.entries(b)
-      .filter(([k, v]) => v !== null && v !== undefined && v !== "" && v !== "-" && !skip.has(k))
-      .map(([k, v]) => `  ${k}: ${v}`);
-    let line = `- ${b.name}: Rs ${I(b.amount)} @ Rs ${I(b.monthly)}/mo${b.overdue > 0 ? ` (OVERDUE Rs ${I(b.overdue)})` : ""}`;
-    if (extras.length > 0) line += "\n" + extras.join("\n");
-    return line;
-  }).join("\n") || "  None";
-
-  const eb = d.emiBurdenPct || 0;
-  const incomeRaw = dumpRaw("Income Current Month", d.rawCurrentIncome);
-  const reRaw = dumpRaw("Real Estate", d.rawRealEstate);
-
-  return `You are Arth - a sharp, empathetic personal financial advisor for Naresh, a ${d.age || 30}-year-old software professional in Hyderabad, India.
-Today is ${today}. Data is as of ${d.month || "Current"}.
+  return `You are Arth - a sharp, empathetic personal financial advisor for Naresh, a software professional in Hyderabad, India.
+Today is ${today}. Data is as of ${k.month || "Current"}.
 
 CRITICAL RULES:
-1. Use ONLY the EXACT numbers below. Do NOT recalculate or change any figure.
-2. All totals are pre-calculated. Use them as-is.
-3. Never say "I don't have access to your data" - you have COMPLETE live data below including contact details, mobile numbers, addresses, and all other fields from the spreadsheet.
-4. For casual/non-financial messages (greetings, jokes, "I love you", etc.): respond warmly and briefly, then gently steer toward a financial insight or tip.
-5. For what-if scenarios: model the impact using the data below, show before vs after.
-6. When asked for contact info (mobile, phone, address, email), look in the ALL FIELDS section for each person/record.
+1. Use the EXACT numbers from the data below. Do NOT make up figures.
+2. You have COMPLETE live data from ALL spreadsheets - income, expenses, loans, investments, borrowers, real estate, daily transactions.
+3. Never say "I don't have access" - every field from every sheet is included below.
+4. When asked for contact info (mobile, phone, address), dates, or any specific field - search the raw data below.
+5. For casual messages: respond warmly, then steer toward a financial insight.
+6. For what-if scenarios: model impact using data below, show before vs after.
 
-INCOME (Gross: Rs ${I(d.grossIncome)}/mo):
-- Salary: Rs ${I(d.salary)}/mo | Tutoring: Rs ${I(d.tutoring)}/mo
-- Lending interest: Rs ${I(d.lendingInterest)}/mo | In-hand: Rs ${I(d.inHand)}/mo
-- CC bills: Rs ${I(d.creditCardBills)}/mo | Savings rate: ${d.savingsRatePct}%${incomeRaw}
+PRE-CALCULATED KPIs (use as-is):
+  Salary: Rs ${I(k.salary)}/mo | Gross: Rs ${I(k.grossIncome)}/mo
+  In-Hand: Rs ${I(k.inHand)}/mo | Loan EMI: Rs ${I(k.loanEMI)}/mo
+  EMI Burden: ${eb}%${eb > 50 ? " !! HIGH" : ""} | Savings Rate: ${k.savingsRatePct || 0}%
+  Total Investments: Rs ${I(k.totalInvestments)} | Total Debt: Rs ${I(k.totalDebt)}
+  NET WORTH: Rs ${I(k.netWorth)}
+  LendenClub Pooled: Rs ${I(k.lcPooled)}
+  Personal Lending: Rs ${I(k.plCapital)} capital | Rs ${I(k.plMonthly)}/mo interest${k.plPending > 0 ? ` | OVERDUE: Rs ${I(k.plPending)}` : ""}
+  Real Estate: Rs ${I(k.rePaid)} paid of Rs ${I(k.reCost || 0)}
+  Monthly Savings Capacity: Rs ${I(k.monthlyCap)}
 
-SALARY HISTORY:
-${histText}
-
-LOANS (Total debt: Rs ${I(d.totalDebt)}):
-${loanLines}
-- EMI burden: Rs ${I(d.loanEMI)}/mo = ${eb}% of salary ${eb > 50 ? "!! HIGH" : ""}
-
-INVESTMENTS (Total assets: Rs ${I(d.totalAssets)}):
-${invLines}
-- LendenClub P2P: Rs ${I(d.lcPooled)} | ~10% ROI | NPA: Rs ${I(d.lcNPA)}
-- Real estate: Rs ${I(d.rePaid)} paid of Rs ${I(d.reTotalCost)} (${d.rePct}%)${reRaw}
-
-PERSONAL LENDING (Total: Rs ${I(d.plTotalCapital)} @ 24%/yr):
-${plLines}
-  Monthly interest income: Rs ${I(d.plMonthlyInterest)}${d.plPendingInt > 0 ? `\n  !! TOTAL OVERDUE: Rs ${I(d.plPendingInt)}` : ""}
-
-NET WORTH: Rs ${I(d.netWorth)} (PRE-CALCULATED, USE AS-IS)
-EMI BURDEN: ${eb}% (PRE-CALCULATED, USE AS-IS)
-SAVINGS RATE: ${d.savingsRatePct}% (PRE-CALCULATED, USE AS-IS)
-
-GOALS:
-1. Clear IDFC (13.5%) - Outstanding Rs ${I(d.loans?.[1]?.outstanding || 0)}
-2. Clear SBI - Outstanding Rs ${I(d.loans?.[2]?.outstanding || 0)}
-3. Rs 10L investments - ${g.invPct || 0}% done
-4. Rs 5L LC pool - ${g.lcPct || 0}% done
-5. Rs 1Cr net worth - ${g.nwPct || 0}% done
-
-Monthly savings capacity: Rs ${I(d.monthlyCap)} (in-hand minus Rs 15,000 baseline)
-${buildExpensePrompt(d)}
-STYLE: Speak like a trusted CA-cum-wealth-manager. Use exact Rs numbers from above. Indian financial context (80C, 24b, LTCG, NPS, ELSS). Be specific and actionable. Under 350 words unless asked to elaborate.`;
+RAW SPREADSHEET DATA (search here for any specific detail):
+${incomeSection}${loanSection}${stockSection}${lcSection}${plSection}${reSection}
+STYLE: Speak like a trusted CA-cum-wealth-manager. Use exact Rs numbers. Indian financial context (80C, 24b, LTCG, NPS, ELSS). Be specific and actionable. Under 350 words unless asked to elaborate.`;
 }
 
 // ── Query Classification ─────────────────────────────────────────────────────
@@ -1007,5 +853,3 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   }
 }
-
-
