@@ -465,14 +465,43 @@ function templateLoans(d) {
   const tabs = Object.keys(loanSec);
   if (tabs.length === 0) return "No loan data found.";
   const k = d.kpis || {};
+
   const lines = tabs.map((tab, i) => {
     const rows = loanSec[tab];
     if (!Array.isArray(rows) || rows.length === 0) return null;
-    const r = rows[0];
-    const fields = Object.entries(r)
-      .filter(([, v]) => v !== null && v !== undefined && v !== "")
-      .map(([key, v]) => `   ${key}: ${v}`);
-    return `${i + 1}. ${tab}${tab === "IDFC" ? " <-- PRIORITY" : ""}\n${fields.join("\n")}`;
+
+    let lastPaidIdx = -1;
+    for (let r = 0; r < rows.length; r++) {
+      const st = String(Object.values(rows[r]).find(v => /^(paid|done|completed)$/i.test(String(v))) || "");
+      if (/paid|done|completed/i.test(st)) lastPaidIdx = r;
+    }
+
+    const lastPaid = lastPaidIdx >= 0 ? rows[lastPaidIdx] : null;
+    const nextDue = lastPaidIdx < rows.length - 1 ? rows[lastPaidIdx + 1] : null;
+    const emiVal = N(Object.values(rows[0]).find(v => typeof v === "number" && v > 1000 && v < 100000) || 0);
+
+    let s = `${i + 1}. ${tab}${tab === "IDFC" ? " <-- PRIORITY" : ""}`;
+
+    if (lastPaid) {
+      const outstandingKeys = Object.keys(lastPaid).filter(k => /outstanding|closing.*balance/i.test(k.replace(/\s+/g, " ")));
+      const outVal = outstandingKeys.length > 0 ? N(lastPaid[outstandingKeys[0]]) : 0;
+      const paidNo = lastPaid["Instalment No."] || lastPaid["#"] || "";
+      s += `\n   Last Paid: #${paidNo}`;
+      s += `\n   Outstanding: ${fmt(outVal)}`;
+    } else {
+      const openKeys = Object.keys(rows[0]).filter(k => /opening.*balance|outstanding/i.test(k.replace(/\s+/g, " ")));
+      const openVal = openKeys.length > 0 ? N(rows[0][openKeys[0]]) : 0;
+      s += `\n   Outstanding: ${fmt(openVal)} (no EMIs paid yet)`;
+    }
+
+    if (nextDue) {
+      const dateVal = nextDue["Due Date"] || "";
+      const emiKeys = Object.keys(nextDue).filter(k => /instalment amt|emi/i.test(k.replace(/\s+/g, " ")));
+      const nextEmi = emiKeys.length > 0 ? N(nextDue[emiKeys[0]]) : 0;
+      s += `\n   Next EMI: ${fmt(nextEmi)} due ${dateVal}`;
+    }
+
+    return s;
   }).filter(Boolean).join("\n\n");
 
   return `LOAN BREAKDOWN
