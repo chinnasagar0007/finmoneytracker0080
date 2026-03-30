@@ -596,12 +596,12 @@ function buildSystemPrompt(d) {
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const eb = k.emiBurdenPct || 0;
 
-  const incomeSection = dumpSection("Income & Expenses", raw.income, 100);
-  const loanSection = dumpSection("Loans", raw.loans);
-  const stockSection = dumpSection("Investments & Stocks", raw.stocks);
-  const lcSection = dumpSection("LendenClub P2P", raw.lendenClub);
-  const plSection = dumpSection("Personal Lending", raw.personalLending);
-  const reSection = dumpSection("Real Estate", raw.realEstate);
+  const incomeSection = dumpSection("Income & Expenses", raw.income, 30);
+  const loanSection = dumpSection("Loans", raw.loans, 10);
+  const stockSection = dumpSection("Investments & Stocks", raw.stocks, 20);
+  const lcSection = dumpSection("LendenClub P2P", raw.lendenClub, 15);
+  const plSection = dumpSection("Personal Lending", raw.personalLending, 20);
+  const reSection = dumpSection("Real Estate", raw.realEstate, 10);
 
   return `You are Arth - a sharp, empathetic personal financial advisor for Naresh, a software professional in Hyderabad, India.
 Today is ${today}. Data is as of ${k.month || "Current"}.
