@@ -8,7 +8,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CHAT_ID        = process.env.TELEGRAM_CHAT_ID;
 const DASHBOARD_URL  = process.env.DASHBOARD_URL;
 const GROQ_MODEL     = "llama-3.3-70b-versatile";
-const MAX_TOKENS     = 4096;
+const MAX_TOKENS     = 2048;
 const CACHE_TTL_TEMPLATE = 15 * 60 * 1000;
 const CACHE_TTL_CHAT     = 5 * 60 * 1000;
 
@@ -89,6 +89,19 @@ const mainKeyboard = {
 async function getFinancialData(forTemplate = true) {
   const ttl = forTemplate ? CACHE_TTL_TEMPLATE : CACHE_TTL_CHAT;
   if (dataCache.data && Date.now() - dataCache.ts < ttl) return dataCache.data;
+
+  // Strategy 1: Try ?mode=bot (pre-calculated data from Apps Script)
+  try {
+    const botUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + "mode=bot";
+    const botResp = await fetch(botUrl, { redirect: "follow" });
+    const botData = await botResp.json();
+    if (botData && botData._source === "bot" && botData.salary > 0) {
+      dataCache = { data: botData, ts: Date.now() };
+      return botData;
+    }
+  } catch (_) { /* fallback below */ }
+
+  // Strategy 2: Parse raw data locally with V() flexible field lookup
   const resp = await fetch(DASHBOARD_URL, { redirect: "follow" });
   let raw = await resp.json();
   if (raw?.data) raw = raw.data;
@@ -100,6 +113,18 @@ async function getFinancialData(forTemplate = true) {
 // ── buildBotSummary (mirrors React dashboard calculations) ───────────────────
 function buildBotSummary(p) {
   p = p || {};
+
+  // Case-insensitive, trim-aware field lookup
+  function V(row, ...names) {
+    if (!row || typeof row !== "object") return undefined;
+    for (const name of names) {
+      const lower = name.toLowerCase().trim();
+      for (const key of Object.keys(row)) {
+        if (key.trim().toLowerCase() === lower) return row[key];
+      }
+    }
+    return undefined;
+  }
 
   function findSheet(section, names) {
     if (!section) return [];
@@ -114,40 +139,43 @@ function buildBotSummary(p) {
 
   // Income (current month)
   const incRows = findSheet(p.income, ["Income Tracker"]);
-  const validRows = incRows.filter(r => N(r["Salary"] || r["salary"]) > 0);
+  const validRows = incRows.filter(r => N(V(r, "Salary", "salary")) > 0);
   const cur = validRows.length > 0 ? validRows[validRows.length - 1] : {};
-  const salary = N(cur["Salary"] || cur["salary"]);
-  const tutoring = N(cur["DevOps Tutoring"] || cur["Tutoring"]);
-  const lendingInt = N(cur["Personal Lending Interest"] || cur["Lending Interest"]);
-  const otherInc = N(cur["Other Income"]);
-  const grossTotal = N(cur["Gross Total"] || cur["gross_total"]);
-  const ccBills = N(cur["CreditCard Bills"] || cur["Credit Card Bills"]);
-  const hdfcEmi = N(cur["HDFC EMI"]);
-  const idfcEmi = N(cur["IDFC EMI"]);
-  const sbiEmi = N(cur["SBI EMI"]);
+  const salary = N(V(cur, "Salary"));
+  const tutoring = N(V(cur, "DevOps Tutoring", "Tutoring"));
+  const lendingInt = N(V(cur, "Personal Lending Interest", "Lending Interest"));
+  const otherInc = N(V(cur, "Other Income"));
+  const grossTotal = N(V(cur, "Gross Total", "Total Gross", "Gross Income", "gross_total")) || (salary + tutoring + lendingInt + otherInc);
+  const ccBills = N(V(cur, "CreditCard Bills", "Credit Card Bills", "CC Bills"));
+  const hdfcEmi = N(V(cur, "HDFC EMI"));
+  const idfcEmi = N(V(cur, "IDFC EMI"));
+  const sbiEmi = N(V(cur, "SBI EMI"));
   const loanEMI = hdfcEmi + idfcEmi + sbiEmi;
-  const inHand = N(cur["In Hand"] || cur["in_hand"]);
-  const month = String(cur["Month"] || cur["month"] || "");
-  const age = N(cur["Age"] || cur["age"]) || 30;
+  const inHand = N(V(cur, "In Hand", "In-Hand", "in_hand", "Net Balance")) || Math.max(0, grossTotal - ccBills - loanEMI);
+  const month = String(V(cur, "Month") || "");
+  const age = N(V(cur, "Age")) || 30;
 
   // Previous month (for /compare)
   const prev = validRows.length > 1 ? validRows[validRows.length - 2] : {};
+  const pSal = N(V(prev, "Salary"));
+  const pTut = N(V(prev, "DevOps Tutoring", "Tutoring"));
+  const pLend = N(V(prev, "Personal Lending Interest", "Lending Interest"));
+  const pGross = N(V(prev, "Gross Total", "Total Gross", "Gross Income", "gross_total")) || (pSal + pTut + pLend + N(V(prev, "Other Income")));
+  const pCC = N(V(prev, "CreditCard Bills", "Credit Card Bills", "CC Bills"));
+  const pEMI = N(V(prev, "HDFC EMI")) + N(V(prev, "IDFC EMI")) + N(V(prev, "SBI EMI"));
+  const pInHand = N(V(prev, "In Hand", "In-Hand", "in_hand", "Net Balance")) || Math.max(0, pGross - pCC - pEMI);
   const prevMonthData = {
-    month: String(prev["Month"] || ""),
-    salary: N(prev["Salary"] || prev["salary"]),
-    grossIncome: N(prev["Gross Total"] || prev["gross_total"]),
-    creditCardBills: N(prev["CreditCard Bills"] || prev["Credit Card Bills"]),
-    loanEMI: N(prev["HDFC EMI"]) + N(prev["IDFC EMI"]) + N(prev["SBI EMI"]),
-    inHand: N(prev["In Hand"] || prev["in_hand"]),
-    tutoring: N(prev["DevOps Tutoring"] || prev["Tutoring"]),
-    lendingInterest: N(prev["Personal Lending Interest"] || prev["Lending Interest"]),
+    month: String(V(prev, "Month") || ""),
+    salary: pSal, grossIncome: pGross, creditCardBills: pCC,
+    loanEMI: pEMI, inHand: pInHand, tutoring: pTut, lendingInterest: pLend,
   };
 
-  const salaryHistory = validRows.slice(-6).map(r => ({
-    month: String(r["Month"] || ""),
-    gross: N(r["Gross Total"] || r["gross_total"]),
-    inHand: N(r["In Hand"] || r["in_hand"]),
-  }));
+  const salaryHistory = validRows.slice(-6).map(r => {
+    const rSal = N(V(r, "Salary"));
+    const rGross = N(V(r, "Gross Total", "Total Gross", "Gross Income", "gross_total")) || rSal;
+    const rInHand = N(V(r, "In Hand", "In-Hand", "in_hand"));
+    return { month: String(V(r, "Month") || ""), gross: rGross, inHand: rInHand };
+  });
 
   // Loans
   const loanNames = ["HDFC", "IDFC", "SBI"];
@@ -155,15 +183,20 @@ function buildBotSummary(p) {
   const defaultTotal = { HDFC: 72, IDFC: 60, SBI: 25 };
   const loans = [];
   let totalDebt = 0;
+  const loanSec = p.loans || {};
   for (const name of loanNames) {
-    const lRows = (p.loans || {})[name];
-    if (!Array.isArray(lRows) || lRows.length === 0) continue;
+    let lRows = loanSec[name];
+    if (!Array.isArray(lRows) || lRows.length === 0) {
+      if (typeof loanSec[name] === "object" && !Array.isArray(loanSec[name]) && loanSec[name]) {
+        lRows = [loanSec[name]];
+      } else continue;
+    }
     const lr = lRows[0];
-    const emi = N(lr["EMI"]);
-    const outstanding = N(lr["Outstanding"]);
-    const rate = N(lr["Interest Rate"]) || defaultRates[name];
-    const totalEmis = N(lr["Total EMIs"] || lr["Tenure"]) || defaultTotal[name];
-    const paidEmis = N(lr["EMIs Paid"] || lr["Paid"]);
+    const emi = N(V(lr, "EMI", "Monthly EMI", "emi"));
+    const outstanding = N(V(lr, "Outstanding", "Balance Outstanding", "outstanding"));
+    const rate = N(V(lr, "Interest Rate", "Rate", "interestRate")) || defaultRates[name];
+    const totalEmis = N(V(lr, "Total EMIs", "Tenure", "total")) || defaultTotal[name];
+    const paidEmis = N(V(lr, "EMIs Paid", "Paid", "paid"));
     const emisLeft = Math.max(0, totalEmis - paidEmis);
     if (emi > 0 || outstanding > 0) {
       loans.push({ name, emi, outstanding, rate, totalEmis, paidEmis, emisLeft });
@@ -175,12 +208,12 @@ function buildBotSummary(p) {
   const stocksSec = p.stocks || {};
   const investments = [];
   let totalStocksCurrent = 0;
-  const portSummary = findSheet(stocksSec, ["Portfolio Summary"]);
+  const portSummary = findSheet(stocksSec, ["Portfolio Summary", "Summary"]);
   for (const row of portSummary) {
-    const cls = String(row["Asset Class"] || "").trim();
+    const cls = String(V(row, "Asset Class", "Name", "Category") || "").trim();
     if (!cls || cls === "TOTAL" || cls.includes("HOW TO") || cls === "Step") continue;
-    const cv = N(row["Current Value"] || row["Current Value (₹)"]);
-    const pl = N(row["P&L"] || row["P&L (₹)"]);
+    const cv = N(V(row, "Current Value", "Current Value (₹)", "Value", "Market Value"));
+    const pl = N(V(row, "P&L", "P&L (₹)", "Returns", "Gain"));
     if (cv > 0) { investments.push({ name: cls, current: cv, pl }); totalStocksCurrent += cv; }
   }
   if (investments.length === 0) {
@@ -189,11 +222,18 @@ function buildBotSummary(p) {
       if (!Array.isArray(sRows)) continue;
       let tv = 0, tp = 0;
       for (const sr of sRows) {
-        tv += N(sr["Current Value (₹)"] || sr["Current Value"] || sr["Value"] || sr["Market Value"]);
-        tp += N(sr["P&L (₹)"] || sr["P&L"] || sr["Returns (₹)"] || sr["Gain"]);
+        tv += N(V(sr, "Current Value (₹)", "Current Value", "Value", "Market Value"));
+        tp += N(V(sr, "P&L (₹)", "P&L", "Returns (₹)", "Gain"));
       }
       if (tv > 0) { investments.push({ name: sn, current: tv, pl: tp }); totalStocksCurrent += tv; }
     }
+  }
+  // Fallback: check if summary totals exist directly
+  if (totalStocksCurrent === 0 && stocksSec.summary) {
+    const st = stocksSec.summary?.total || stocksSec.summary;
+    totalStocksCurrent = N(V(st, "current", "Current Value", "value")) || 0;
+    const stPl = N(V(st, "pl", "P&L", "returns")) || 0;
+    if (totalStocksCurrent > 0) investments.push({ name: "All Stocks", current: totalStocksCurrent, pl: stPl });
   }
 
   // LendenClub
@@ -201,38 +241,39 @@ function buildBotSummary(p) {
   const tabSummary = findSheet(lcSec, ["Tab Summary"]);
   let lcDisbursed = 0, lcInterest = 0, lcOutstanding = 0, lcLoans = 0, lcNPA = 0;
   for (const t of tabSummary) {
-    lcDisbursed += N(t["Disbursed"]); lcInterest += N(t["Interest"]);
-    lcOutstanding += N(t["Outstanding"]); lcLoans += N(t["Loans"]); lcNPA += N(t["NPA"] || t["npa"]);
+    lcDisbursed += N(V(t, "Disbursed")); lcInterest += N(V(t, "Interest"));
+    lcOutstanding += N(V(t, "Outstanding")); lcLoans += N(V(t, "Loans")); lcNPA += N(V(t, "NPA", "npa"));
   }
   const lcSummaryRows = findSheet(lcSec, ["LC Summary"]);
   let lcPooled = 0;
   for (let i = lcSummaryRows.length - 1; i >= 0; i--) {
-    const pool = N(lcSummaryRows[i]["Closing Pool"]);
+    const pool = N(V(lcSummaryRows[i], "Closing Pool", "Pool"));
     if (pool > 0) { lcPooled = pool; break; }
   }
+  if (lcPooled === 0) lcPooled = N(lcSec.totalPooled || lcSec.closingPool);
 
   // Personal lending
   const plRows = findSheet(p.personalLending || {}, ["Borrowers"]);
   let plCap = 0, plMonthly = 0, plOverdue = 0, plPendingInt = 0;
   const borrowers = [];
   for (const pr of plRows) {
-    const amt = N(pr["Amount"]);
-    if (!pr["Name"] || amt === 0) continue;
-    if (/closed|inactive/i.test(String(pr["Loan Status"] || ""))) continue;
-    const mInt = N(pr["Monthly Int"]);
-    const pend = N(pr["Pending Int"]);
+    const amt = N(V(pr, "Amount"));
+    if (!V(pr, "Name") || amt === 0) continue;
+    if (/closed|inactive/i.test(String(V(pr, "Loan Status") || ""))) continue;
+    const mInt = N(V(pr, "Monthly Int", "Monthly Interest"));
+    const pend = N(V(pr, "Pending Int", "Pending Interest", "Overdue"));
     plCap += amt; plMonthly += mInt; plPendingInt += pend;
     if (pend > 0) plOverdue++;
-    borrowers.push({ name: pr["Name"], amount: amt, monthly: mInt, overdue: pend });
+    borrowers.push({ name: String(V(pr, "Name")), amount: amt, monthly: mInt, overdue: pend });
   }
 
   // Real estate
   const reProp = findSheet(p.realEstate || {}, ["Property Detail", "Real Estate", "Property", "Land"]);
   const reRow = reProp.length > 0 ? reProp[0] : {};
-  let reName = String(reRow["Property Name"] || reRow["Name"] || reRow["Builder"] || "");
-  let reTotalCost = N(reRow["Total Cost"] || reRow["Total Amount"]);
-  let rePaid = N(reRow["Paid"] || reRow["Amount Paid"]);
-  let reRemaining = N(reRow["Remaining"] || reRow["Balance"]);
+  let reName = String(V(reRow, "Property Name", "Name", "Builder") || "");
+  let reTotalCost = N(V(reRow, "Total Cost", "Total Amount"));
+  let rePaid = N(V(reRow, "Paid", "Amount Paid"));
+  let reRemaining = N(V(reRow, "Remaining", "Balance"));
   if (reTotalCost === 0 && rePaid === 0) {
     reName = "Tricolour Properties"; reTotalCost = 857500; rePaid = 542500; reRemaining = 315000;
   }
@@ -759,6 +800,31 @@ export default async function handler(req, res) {
       conversationMemory = [];
       dataCache = { data: null, ts: 0 };
       await sendTelegram(chatId, "Memory and data cache cleared.");
+      return res.status(200).json({ ok: true });
+    }
+
+    // Debug: show raw field names from API
+    if (text === "/raw") {
+      try {
+        const resp = await fetch(DASHBOARD_URL, { redirect: "follow" });
+        let raw = await resp.json();
+        if (raw?.data) raw = raw.data;
+        const incSection = raw?.income || {};
+        const sheetNames = Object.keys(incSection);
+        let firstRows = "No income data";
+        for (const sn of sheetNames) {
+          if (Array.isArray(incSection[sn]) && incSection[sn].length > 0) {
+            const lastRow = incSection[sn][incSection[sn].length - 1];
+            firstRows = `Sheet: "${sn}"\nFields: ${Object.keys(lastRow).join(", ")}\n\nValues:\n${Object.entries(lastRow).map(([k, v]) => `  ${k}: ${v}`).join("\n")}`;
+            break;
+          }
+        }
+        const stocksKeys = Object.keys(raw?.stocks || {}).join(", ") || "none";
+        const loansKeys = Object.keys(raw?.loans || {}).join(", ") || "none";
+        await sendTelegram(chatId, `RAW DATA DEBUG\n\nIncome sheets: ${sheetNames.join(", ") || "none"}\n\n${firstRows}\n\nStocks keys: ${stocksKeys}\nLoans keys: ${loansKeys}`);
+      } catch (e) {
+        await sendTelegram(chatId, `Debug error: ${e.message}`);
+      }
       return res.status(200).json({ ok: true });
     }
 
