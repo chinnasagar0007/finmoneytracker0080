@@ -3,5 +3,11 @@
     "api/telegram.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/telegram?cron=1",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }
