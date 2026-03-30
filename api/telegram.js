@@ -577,14 +577,20 @@ function dumpSection(label, sectionData, maxRows) {
   for (const tab of tabs) {
     const rows = sectionData[tab];
     if (!Array.isArray(rows) || rows.length === 0) continue;
-    const limit = maxRows || rows.length;
-    const display = rows.slice(-limit);
-    out += `[${tab}] (${rows.length} rows${rows.length > limit ? `, showing last ${limit}` : ""}):\n`;
+    const limit = maxRows || 10;
+    const useful = rows.filter(r => {
+      const vals = Object.values(r);
+      const nonEmpty = vals.filter(v => v !== null && v !== undefined && v !== "" && v !== 0);
+      return nonEmpty.length >= 2;
+    });
+    const display = useful.slice(-limit);
+    if (display.length === 0) continue;
+    out += `[${tab}] (${useful.length} rows${useful.length > limit ? `, last ${limit}` : ""}):\n`;
     for (const row of display) {
       const fields = Object.entries(row)
-        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+        .filter(([, v]) => v !== null && v !== undefined && v !== "" && v !== 0)
         .map(([k, v]) => `${k}=${v}`);
-      out += "  " + fields.join(" | ") + "\n";
+      if (fields.length > 0) out += "  " + fields.join(" | ") + "\n";
     }
   }
   return out;
