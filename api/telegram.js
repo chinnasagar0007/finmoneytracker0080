@@ -1,6 +1,7 @@
 // ── Vercel Serverless Telegram Bot for Arth Finance Advisor (v2.0) ───────────
 // 10 template commands, AI chat with Gemini fallback, inline keyboards,
 // smart caching, progress bars, month-over-month comparison.
+//test
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const GROQ_API_KEY   = process.env.GROQ_API_KEY;
