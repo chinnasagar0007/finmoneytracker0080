@@ -3651,7 +3651,7 @@ function SalaryTracker({ data }) {
   const filtered = filterYear==="ALL" ? hist : hist.filter(h => parseM(h.month).yr === filterYear);
 
   // Aggregate KPIs
-  const totalSalary   = filtered.reduce((s,h) => s+n(h.salary), 0);
+  const totalSalary   = filtered.reduce((s,h) => s+n(h.salary) - n(h.taxDed), 0);
   const totalTutoring = filtered.reduce((s,h) => s+n(h.tutoring), 0);
   const totalLending  = filtered.reduce((s,h) => s+n(h.lendingInterest), 0);
   const totalGross    = filtered.reduce((s,h) => s+n(h.grossTotal||h.totalIncome), 0);
@@ -3695,11 +3695,11 @@ function SalaryTracker({ data }) {
       {/* KPI Row */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:16}}>
         {[
-          {label:"Total Salary",    v:abs(totalSalary),   color:P.gold,     icon:"💼", sub:`${filtered.length} months`},
+          {label:"In-Hand Salary",   v:abs(totalSalary),   color:P.gold,     icon:"💼", sub:"Salary received"},
           {label:"DevOps Tutoring", v:abs(totalTutoring), color:P.emerald,  icon:"🎓", sub:"Side income"},
           {label:"Lending Interest",v:abs(totalLending),  color:P.teal,     icon:"🤝", sub:"Personal lending"},
           {label:"Total Gross",     v:abs(totalGross),    color:P.sapphire, icon:"💰", sub:"All income combined"},
-          {label:"Total In-Hand",   v:abs(totalInHand),   color:P.violet,   icon:"💵", sub:"After all deductions"},
+          {label:"Net Balance",      v:abs(totalInHand),   color:P.violet,   icon:"💵", sub:"After EMIs & investments"},
           {label:"Avg Savings Rate",v:`${avgSavingsRate}%`,color:avgSavingsRate>=20?P.emerald:avgSavingsRate>=10?P.gold:P.ruby, icon:"📈", sub:trend>=0?`↑ ₹${Math.round(trend).toLocaleString("en-IN")} vs last`:`↓ ₹${Math.round(Math.abs(trend)).toLocaleString("en-IN")} vs last`},
         ].map((k,i)=>(
           <div key={i} style={{background:`${k.color}0A`,border:`1px solid ${k.color}33`,borderRadius:14,padding:"14px 16px",transition:"transform .2s,box-shadow .2s",cursor:"default"}}
