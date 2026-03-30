@@ -343,10 +343,14 @@ function mapLoansData(raw) {
     const calcInterestPaid  = paidEmis.reduce((s, e) => s + e.interest, 0);
     const sheetInterestPaid   = num(getField(meta, "Total Interest Paid"));
     const sheetPrincipalPaid  = num(getField(meta, "Total Principal Paid"));
+    const lastPaid = paidEmis.length > 0 ? paidEmis[paidEmis.length - 1] : null;
+    const currentOutstanding = lastPaid
+      ? lastPaid.balance
+      : (schedule.length > 0 ? num(getField(schedule[0], "Opening Balance", "Opening Principal")) || num(getField(meta, "Outstanding", "Balance Outstanding", "Loan Amount", "Original Loan")) : 0);
     return {
       name:                String(getField(meta, "Loan Name", "Name") || ""),
       emi:                 num(getField(meta, "EMI", "Monthly EMI")),
-      outstanding:         num(getField(meta, "Outstanding", "Balance Outstanding")),
+      outstanding:         currentOutstanding || num(getField(meta, "Outstanding", "Balance Outstanding")),
       paid:                num(getField(meta, "EMIs Paid")) || paidEmis.length,
       total:               num(getField(meta, "Total EMIs", "Tenure")),
       originalLoan:        num(getField(meta, "Original Loan", "Loan Amount")),
