@@ -177,7 +177,7 @@ function buildBotSummary(p) {
     return { month: String(V(r, "Month") || ""), gross: rGross, inHand: rInHand };
   });
 
-  // Loans
+  // Loans (full raw rows preserved)
   const loanNames = ["HDFC", "IDFC", "SBI"];
   const defaultRates = { HDFC: 10.5, IDFC: 13.5, SBI: 9.35 };
   const defaultTotal = { HDFC: 72, IDFC: 60, SBI: 25 };
@@ -199,7 +199,7 @@ function buildBotSummary(p) {
     const paidEmis = N(V(lr, "EMIs Paid", "Paid", "paid"));
     const emisLeft = Math.max(0, totalEmis - paidEmis);
     if (emi > 0 || outstanding > 0) {
-      loans.push({ name, emi, outstanding, rate, totalEmis, paidEmis, emisLeft });
+      loans.push({ ...lr, name, emi, outstanding, rate, totalEmis, paidEmis, emisLeft });
       totalDebt += outstanding;
     }
   }
@@ -214,18 +214,20 @@ function buildBotSummary(p) {
     if (!cls || cls === "TOTAL" || cls.includes("HOW TO") || cls === "Step") continue;
     const cv = N(V(row, "Current Value", "Current Value (₹)", "Value", "Market Value"));
     const pl = N(V(row, "P&L", "P&L (₹)", "Returns", "Gain"));
-    if (cv > 0) { investments.push({ name: cls, current: cv, pl }); totalStocksCurrent += cv; }
+    if (cv > 0) { investments.push({ ...row, name: cls, current: cv, pl }); totalStocksCurrent += cv; }
   }
   if (investments.length === 0) {
     for (const sn of ["Mutual Funds", "Equity", "Options", "Crypto", "Real Estate"]) {
       const sRows = stocksSec[sn];
       if (!Array.isArray(sRows)) continue;
       let tv = 0, tp = 0;
+      const rawItems = [];
       for (const sr of sRows) {
         tv += N(V(sr, "Current Value (₹)", "Current Value", "Value", "Market Value"));
         tp += N(V(sr, "P&L (₹)", "P&L", "Returns (₹)", "Gain"));
+        rawItems.push(sr);
       }
-      if (tv > 0) { investments.push({ name: sn, current: tv, pl: tp }); totalStocksCurrent += tv; }
+      if (tv > 0) { investments.push({ name: sn, current: tv, pl: tp, items: rawItems }); totalStocksCurrent += tv; }
     }
   }
   // Fallback: check if summary totals exist directly
@@ -252,7 +254,7 @@ function buildBotSummary(p) {
   }
   if (lcPooled === 0) lcPooled = N(lcSec.totalPooled || lcSec.closingPool);
 
-  // Personal lending
+  // Personal lending (full raw rows preserved)
   const plRows = findSheet(p.personalLending || {}, ["Borrowers"]);
   let plCap = 0, plMonthly = 0, plOverdue = 0, plPendingInt = 0;
   const borrowers = [];
@@ -264,7 +266,7 @@ function buildBotSummary(p) {
     const pend = N(V(pr, "Pending Int", "Pending Interest", "Overdue"));
     plCap += amt; plMonthly += mInt; plPendingInt += pend;
     if (pend > 0) plOverdue++;
-    borrowers.push({ name: String(V(pr, "Name")), amount: amt, monthly: mInt, overdue: pend });
+    borrowers.push({ ...pr, name: String(V(pr, "Name")), amount: amt, monthly: mInt, overdue: pend });
   }
 
   // Real estate
@@ -306,6 +308,10 @@ function buildBotSummary(p) {
       lcPct: Math.min(100, Math.round((lcPooled / 500000) * 100)),
       nwPct: Math.min(100, Math.max(0, Math.round((netWorth / 10000000) * 100))),
     },
+    rawCurrentIncome: cur,
+    rawRealEstate: reRow,
+    rawLCTabSummary: tabSummary,
+    rawLCSummary: lcSummaryRows,
   };
 }
 
@@ -441,10 +447,17 @@ EMI Burden: ${d.emiBurdenPct}% | Savings Rate: ${d.savingsRatePct}%`;
 
 function templateBorrowers(d) {
   if (!d.borrowers || d.borrowers.length === 0) return "No active borrowers.";
+  const skipKeys = new Set(["name", "amount", "monthly", "overdue"]);
   const lines = d.borrowers.map((b, i) => {
     let s = `${i + 1}. ${b.name}\n   Principal: ${fmt(b.amount)}\n   Monthly Interest: ${fmt(b.monthly)}/mo`;
     if (b.overdue > 0) s += `\n   !! OVERDUE: ${fmt(b.overdue)}`;
     else s += `\n   Overdue: --`;
+    for (const [k, v] of Object.entries(b)) {
+      if (skipKeys.has(k) || v === null || v === undefined || v === "" || v === "-") continue;
+      const kl = k.toLowerCase();
+      if (kl.includes("status") || kl.includes("loan status")) continue;
+      s += `\n   ${k}: ${v}`;
+    }
     return s;
   }).join("\n\n");
 
@@ -462,18 +475,24 @@ Yield: 24%/yr`;
 
 function templateLoans(d) {
   if (!d.loans || d.loans.length === 0) return "No active loans. Debt-free!";
+  const skipKeys = new Set(["name", "emi", "outstanding", "rate", "totalEmis", "paidEmis", "emisLeft"]);
   const lines = d.loans.map((l, i) => {
     const progress = pct(l.paidEmis, l.totalEmis);
     const payoffMonths = l.emisLeft;
     const payoffDate = payoffMonths > 0 ? monthsFromNow(payoffMonths) : "Done";
     let label = `${i + 1}. ${l.name}`;
     if (l.name === "IDFC") label += " <-- PRIORITY";
-    return `${label}
+    let s = `${label}
    Outstanding: ${fmt(l.outstanding)} @ ${l.rate}%
    EMI: ${fmt(l.emi)}/mo
    Progress: ${l.paidEmis}/${l.totalEmis} EMIs paid
    ${bar(progress)}
    Est. payoff: ${payoffDate}`;
+    for (const [k, v] of Object.entries(l)) {
+      if (skipKeys.has(k) || v === null || v === undefined || v === "" || v === "-") continue;
+      s += `\n   ${k}: ${v}`;
+    }
+    return s;
   }).join("\n\n");
 
   return `LOAN BREAKDOWN
@@ -601,14 +620,37 @@ Or just ask anything:
 }
 
 // ── AI System Prompt ─────────────────────────────────────────────────────────
+
+function dumpRaw(label, obj) {
+  if (!obj || typeof obj !== "object") return "";
+  const entries = Object.entries(obj).filter(([, v]) => v !== null && v !== undefined && v !== "");
+  if (entries.length === 0) return "";
+  return `\n[${label} - ALL FIELDS]: ${entries.map(([k, v]) => `${k}=${v}`).join(" | ")}`;
+}
+
 function buildSystemPrompt(d) {
   const g = d.goals || {};
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const histText = (d.salaryHistory || []).map(h => `  ${h.month}: gross Rs ${I(h.gross)}, in-hand Rs ${I(h.inHand)}`).join("\n") || "  No history";
-  const loanLines = (d.loans || []).map(l => `- ${l.name}: Rs ${I(l.outstanding)} @ ${l.rate}% | EMI Rs ${I(l.emi)} | ${l.emisLeft} EMIs left${l.name === "IDFC" ? " <-- PRIORITY" : ""}`).join("\n");
-  const invLines = (d.investments || []).map(i => `- ${i.name}: Rs ${I(i.current)} | P&L Rs ${I(i.pl)}`).join("\n") || "  No data";
-  const plLines = (d.borrowers || []).map(b => `- ${b.name}: Rs ${I(b.amount)} @ Rs ${I(b.monthly)}/mo${b.overdue > 0 ? ` (OVERDUE Rs ${I(b.overdue)})` : ""}`).join("\n") || "  None";
+
+  const loanLines = (d.loans || []).map(l => {
+    const extra = dumpRaw(l.name, l);
+    return `- ${l.name}: Rs ${I(l.outstanding)} @ ${l.rate}% | EMI Rs ${I(l.emi)} | ${l.emisLeft} EMIs left${l.name === "IDFC" ? " <-- PRIORITY" : ""}${extra}`;
+  }).join("\n");
+
+  const invLines = (d.investments || []).map(i => {
+    const extra = dumpRaw(i.name, i);
+    return `- ${i.name}: Rs ${I(i.current)} | P&L Rs ${I(i.pl)}${extra}`;
+  }).join("\n") || "  No data";
+
+  const plLines = (d.borrowers || []).map(b => {
+    const extra = dumpRaw(b.name, b);
+    return `- ${b.name}: Rs ${I(b.amount)} @ Rs ${I(b.monthly)}/mo${b.overdue > 0 ? ` (OVERDUE Rs ${I(b.overdue)})` : ""}${extra}`;
+  }).join("\n") || "  None";
+
   const eb = d.emiBurdenPct || 0;
+  const incomeRaw = dumpRaw("Income Current Month", d.rawCurrentIncome);
+  const reRaw = dumpRaw("Real Estate", d.rawRealEstate);
 
   return `You are Arth - a sharp, empathetic personal financial advisor for Naresh, a ${d.age || 30}-year-old software professional in Hyderabad, India.
 Today is ${today}. Data is as of ${d.month || "Current"}.
@@ -616,14 +658,15 @@ Today is ${today}. Data is as of ${d.month || "Current"}.
 CRITICAL RULES:
 1. Use ONLY the EXACT numbers below. Do NOT recalculate or change any figure.
 2. All totals are pre-calculated. Use them as-is.
-3. Never say "I don't have access to your data" - you have COMPLETE live data below.
+3. Never say "I don't have access to your data" - you have COMPLETE live data below including contact details, mobile numbers, addresses, and all other fields from the spreadsheet.
 4. For casual/non-financial messages (greetings, jokes, "I love you", etc.): respond warmly and briefly, then gently steer toward a financial insight or tip.
 5. For what-if scenarios: model the impact using the data below, show before vs after.
+6. When asked for contact info (mobile, phone, address, email), look in the ALL FIELDS section for each person/record.
 
 INCOME (Gross: Rs ${I(d.grossIncome)}/mo):
 - Salary: Rs ${I(d.salary)}/mo | Tutoring: Rs ${I(d.tutoring)}/mo
 - Lending interest: Rs ${I(d.lendingInterest)}/mo | In-hand: Rs ${I(d.inHand)}/mo
-- CC bills: Rs ${I(d.creditCardBills)}/mo | Savings rate: ${d.savingsRatePct}%
+- CC bills: Rs ${I(d.creditCardBills)}/mo | Savings rate: ${d.savingsRatePct}%${incomeRaw}
 
 SALARY HISTORY:
 ${histText}
@@ -635,7 +678,7 @@ ${loanLines}
 INVESTMENTS (Total assets: Rs ${I(d.totalAssets)}):
 ${invLines}
 - LendenClub P2P: Rs ${I(d.lcPooled)} | ~10% ROI | NPA: Rs ${I(d.lcNPA)}
-- Real estate: Rs ${I(d.rePaid)} paid of Rs ${I(d.reTotalCost)} (${d.rePct}%)
+- Real estate: Rs ${I(d.rePaid)} paid of Rs ${I(d.reTotalCost)} (${d.rePct}%)${reRaw}
 
 PERSONAL LENDING (Total: Rs ${I(d.plTotalCapital)} @ 24%/yr):
 ${plLines}
