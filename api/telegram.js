@@ -351,6 +351,7 @@ function templateSummary(d) {
 INCOME
   Salary: ${fmt(k.salary)}/mo
   Gross Income: ${fmt(k.grossIncome)}
+  CC Bills: ${fmt(k.ccBills || 0)}
   Loan EMIs: ${fmt(k.loanEMI)}
   In-Hand: ${fmt(k.inHand)}
 
@@ -622,7 +623,8 @@ CRITICAL RULES:
 
 PRE-CALCULATED KPIs (use as-is):
   Salary: Rs ${I(k.salary)}/mo | Gross: Rs ${I(k.grossIncome)}/mo
-  In-Hand: Rs ${I(k.inHand)}/mo | Loan EMI: Rs ${I(k.loanEMI)}/mo
+  CC Bills: Rs ${I(k.ccBills || 0)}/mo | Loan EMIs: Rs ${I(k.loanEMI)}/mo
+  In-Hand: Rs ${I(k.inHand)}/mo
   EMI Burden: ${eb}%${eb > 50 ? " !! HIGH" : ""} | Savings Rate: ${k.savingsRatePct || 0}%
   Total Investments: Rs ${I(k.totalInvestments)} | Total Debt: Rs ${I(k.totalDebt)}
   NET WORTH: Rs ${I(k.netWorth)}
