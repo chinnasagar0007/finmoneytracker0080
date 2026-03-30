@@ -260,14 +260,15 @@ function buildBotSummary(p) {
   let plCap = 0, plMonthly = 0, plOverdue = 0, plPendingInt = 0;
   const borrowers = [];
   for (const pr of plRows) {
-    const amt = N(V(pr, "Amount"));
-    if (!V(pr, "Name") || amt === 0) continue;
-    if (/closed|inactive/i.test(String(V(pr, "Loan Status") || ""))) continue;
-    const mInt = N(V(pr, "Monthly Int", "Monthly Interest"));
-    const pend = N(V(pr, "Pending Int", "Pending Interest", "Overdue"));
+    const amt = N(V(pr, "Amount", "Amount Lent", "Amount Lent (₹)", "Principal"));
+    const bName = V(pr, "Name", "Borrower Name", "Borrower");
+    if (!bName || amt === 0) continue;
+    if (/closed|inactive/i.test(String(V(pr, "Loan Status", "Payment Status", "Status") || ""))) continue;
+    const mInt = N(V(pr, "Monthly Int", "Monthly Interest", "Monthly Interest (₹)"));
+    const pend = N(V(pr, "Pending Int", "Pending Interest", "Pending Interest (₹)", "Overdue"));
     plCap += amt; plMonthly += mInt; plPendingInt += pend;
     if (pend > 0) plOverdue++;
-    borrowers.push({ ...pr, name: String(V(pr, "Name")), amount: amt, monthly: mInt, overdue: pend });
+    borrowers.push({ ...pr, name: String(bName), amount: amt, monthly: mInt, overdue: pend });
   }
 
   // Real estate
