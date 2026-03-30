@@ -594,9 +594,46 @@ ${lines.join("\n\n")}
 Note: Projections assume constant savings. Prepaying high-rate loans first improves timelines.`;
 }
 
+function templateTransactions(d) {
+  const txns = d.dailyExpenses || [];
+  const summary = d.expenseSummary || {};
+  if (txns.length === 0) return "No daily expense data available for this month.";
+
+  const modeLines = Object.entries(summary.byMode || {})
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `  ${k}: ${fmt(v)}`)
+    .join("\n");
+  const catLines = Object.entries(summary.byCategory || {})
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `  ${k}: ${fmt(v)}`)
+    .join("\n");
+
+  const recent = txns.slice(-15).map(t => {
+    const date = t["Date"] || t["date"] || "";
+    const desc = t["Description"] || t["description"] || "";
+    const amt = t["Amount (₹)"] || t["Amount"] || "";
+    const mode = t["Payment Mode"] || t["Mode"] || "";
+    const cat = t["Category"] || "";
+    return `  ${date} | ${desc} | Rs ${amt} | ${mode} | ${cat}`;
+  }).join("\n");
+
+  return `DAILY EXPENSES (This Month)
+
+${summary.count || 0} transactions | Total: ${fmt(summary.total || 0)}
+
+BY PAYMENT MODE:
+${modeLines || "  No data"}
+
+BY CATEGORY:
+${catLines || "  No data"}
+
+RECENT TRANSACTIONS:
+${recent}`;
+}
+
 // ── Help ─────────────────────────────────────────────────────────────────────
 function helpMessage() {
-  return `Arth - Your AI Finance Advisor v2.0
+  return `Arth - Your AI Finance Advisor v2.1
 
 I have live access to all your financial data.
 
@@ -608,7 +645,8 @@ Commands:
 /compare - Month vs month changes
 /borrowers - Who owes you what
 /loans - Loan details & payoff plan
-/expenses - Where your money goes
+/expenses - Monthly expense breakdown
+/transactions - Daily expense log
 /projection - When you'll hit goals
 /whatif <scenario> - What-if analysis
 
@@ -616,9 +654,9 @@ Commands:
 /help - This menu
 
 Or just ask anything:
+"What UPI transactions did I make?"
 "Should I prepay my IDFC loan?"
-"How much SIP for Rs 1Cr in 5 years?"
-"What if I get a 20% salary hike?"`;
+"How much SIP for Rs 1Cr in 5 years?"`;
 }
 
 // ── AI System Prompt ─────────────────────────────────────────────────────────
@@ -635,6 +673,37 @@ function dumpRaw(label, obj, skipKeys) {
   );
   if (entries.length === 0) return "";
   return `\n[${label} EXTRA]: ${entries.map(([k, v]) => `${k}=${v}`).join(" | ")}`;
+}
+
+function buildExpensePrompt(d) {
+  const txns = d.dailyExpenses || [];
+  const summary = d.expenseSummary || {};
+  if (txns.length === 0) return "";
+
+  const modeLines = Object.entries(summary.byMode || {})
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `  ${k}: Rs ${I(v)}`)
+    .join("\n");
+  const catLines = Object.entries(summary.byCategory || {})
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `  ${k}: Rs ${I(v)}`)
+    .join("\n");
+
+  const txnLines = txns.map(t => {
+    const parts = Object.entries(t)
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
+      .map(([k, v]) => `${k}=${v}`);
+    return "  " + parts.join(" | ");
+  }).join("\n");
+
+  return `\nDAILY EXPENSES (This Month - ${summary.count || 0} transactions, Total: Rs ${I(summary.total || 0)}):
+By Payment Mode:
+${modeLines || "  No data"}
+By Category:
+${catLines || "  No data"}
+All Transactions:
+${txnLines || "  No transactions"}
+`;
 }
 
 function buildSystemPrompt(d) {
@@ -710,7 +779,7 @@ GOALS:
 5. Rs 1Cr net worth - ${g.nwPct || 0}% done
 
 Monthly savings capacity: Rs ${I(d.monthlyCap)} (in-hand minus Rs 15,000 baseline)
-
+${buildExpensePrompt(d)}
 STYLE: Speak like a trusted CA-cum-wealth-manager. Use exact Rs numbers from above. Indian financial context (80C, 24b, LTCG, NPS, ELSS). Be specific and actionable. Under 350 words unless asked to elaborate.`;
 }
 
@@ -817,6 +886,7 @@ function getCommandResponse(cmd, d) {
     case "/borrowers": return templateBorrowers(d);
     case "/loans": return templateLoans(d);
     case "/expenses": return templateExpenses(d);
+    case "/transactions": return templateTransactions(d);
     case "/projection": return templateProjection(d);
     default: return null;
   }
@@ -902,7 +972,7 @@ export default async function handler(req, res) {
     }
 
     // Template commands (fast, no AI)
-    const templateCmds = ["/summary", "/networth", "/goals", "/alerts", "/compare", "/borrowers", "/loans", "/expenses", "/projection"];
+    const templateCmds = ["/summary", "/networth", "/goals", "/alerts", "/compare", "/borrowers", "/loans", "/expenses", "/transactions", "/projection"];
     if (templateCmds.includes(text)) {
       const d = await getFinancialData(true);
       const reply = getCommandResponse(text, d);
