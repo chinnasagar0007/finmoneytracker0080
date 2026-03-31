@@ -598,30 +598,25 @@ ${lines}`;
 
 // ── Help ─────────────────────────────────────────────────────────────────────
 function helpMessage() {
-  return `Arth - Your AI Finance Advisor v2.1
+  return `Arth - Your AI Finance Advisor v3.0
 
-I have live access to all your financial data.
-
-View Commands:
-/summary - Full financial snapshot
-/networth - Net worth breakdown
-/goals - Goal progress
-/alerts - What needs attention
-/compare - Month vs month changes
+View Data:
+/summary - Financial snapshot
+/loans - Loan details
 /borrowers - Who owes you what
-/loans - Loan details & payoff plan
-/expenses - Monthly expense breakdown
+/expenses - Expense breakdown
 /transactions - Daily expense log
-/projection - When you'll hit goals
-/whatif <scenario> - What-if analysis
+/networth | /goals | /alerts
+/compare | /projection
+/whatif <scenario>
 
-Data Entry:
-/set otherincome 5000
-/set taxdeducted 3000
-/set taxrefunded 10000
-/set cashfd 25000
+Enter Data:
+/write - Show ALL data entry commands
+/log 500 food lunch UPI
+/set salary 95000
+/received 13000 Yadagiri interest
 
-/clear - Reset memory
+/clear - Reset cache
 /help - This menu
 
 Or just ask anything:
@@ -908,44 +903,159 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // /set -- write a value to IncomeTracker
+    // ── WRITE COMMANDS ──────────────────────────────────────────────────────
+    // Universal write helper
+    async function callWrite(action, data) {
+      const payload = encodeURIComponent(JSON.stringify(data));
+      const writeUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + `mode=write&action=${action}&data=${payload}`;
+      const resp = await fetch(writeUrl, { redirect: "follow" });
+      const result = await resp.json();
+      dataCache = { data: null, ts: 0 };
+      return result;
+    }
+
+    const VALID_MODES = { upi: "UPI", cash: "Cash", creditcard: "CreditCard", credit: "CreditCard", bank: "Bank Transfer", banktransfer: "Bank Transfer", "auto-debit": "Auto-Debit", autodebit: "Auto-Debit", auto: "Auto-Debit", cheque: "Cheque", check: "Cheque" };
+    function parseMode(m) { return VALID_MODES[(m || "upi").toLowerCase()] || "UPI"; }
+
+    const FIELD_MAP = {
+      salary: "in hand Salary", inhand: "in hand Salary",
+      otherincome: "Other Income", other: "Other Income",
+      tutoring: "DevOps Tutoring", devops: "DevOps Tutoring",
+      taxdeducted: "Tax Deducted", tax: "Tax Deducted",
+      taxrefunded: "Tax Refunded", taxrefund: "Tax Refunded",
+      creditcard: "CreditCard Bills", cc: "CreditCard Bills", ccbills: "CreditCard Bills",
+      cashfd: "Cash / FD / Other", cash: "Cash / FD / Other", fd: "Cash / FD / Other",
+    };
+
+    // /write -- show all data entry commands
+    if (text === "/write") {
+      await sendTelegram(chatId, `DATA ENTRY COMMANDS
+
+Payment Modes: UPI, Cash, CreditCard, Bank Transfer, Auto-Debit, Cheque
+
+-- INCOME TRACKER (monthly) --
+/set salary 95000
+/set otherincome 5000
+/set tutoring 8000
+/set taxdeducted 3000
+/set taxrefunded 10000
+/set creditcard 24000
+/set cashfd 25000
+/set salary 95000 Apr-2026
+
+-- MONTHLY BUDGET --
+/budget food 5000
+/budget transport 2000
+/budget medical 1000
+
+-- DAILY EXPENSES --
+/log 500 food lunch UPI
+/log 1200 fuel petrol cash
+/log 299 entertainment Netflix auto-debit
+/log 12000 emi Land-EMI auto-debit
+
+-- PERSONAL LENDING --
+/lent 100000 RamuKaka 2 12 9876543210
+/received 13000 Yadagiri interest UPI
+/received 50000 KishanRao principal cash
+
+-- LENDENCLUB --
+/invest lc 5000 salary
+/invest lc 13000 Yadagiri-interest
+
+-- STOCK MARKET --
+/invest equity 10000 RELIANCE
+/invest mf 5000 Nifty50-SIP
+/invest options 2000 NIFTY-CE
+/invest crypto 3000 BTC
+
+-- REAL ESTATE --
+/paid re 25000 banktransfer`);
+      return res.status(200).json({ ok: true });
+    }
+
+    // /set -- update IncomeTracker field
     if (text.startsWith("/set")) {
       const parts = rawText.replace(/^\/set(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) {
-        await sendTelegram(chatId, `Usage: /set <field> <value> [month]\n\nExamples:\n/set otherincome 5000\n/set taxdeducted 3000\n/set taxrefunded 10000\n/set cashfd 25000\n\nFields: otherincome, taxdeducted, taxrefunded, cashfd`);
-        return res.status(200).json({ ok: true });
-      }
-
-      const fieldMap = {
-        "otherincome": "Other Income",
-        "other": "Other Income",
-        "taxdeducted": "Tax Deducted",
-        "tax": "Tax Deducted",
-        "taxrefunded": "Tax Refunded",
-        "taxrefund": "Tax Refunded",
-        "cashfd": "Cash / FD / Other",
-        "cash": "Cash / FD / Other",
-        "fd": "Cash / FD / Other",
-      };
-
-      const fieldKey = parts[0].toLowerCase();
-      const field = fieldMap[fieldKey] || parts[0];
-      const value = parts[1];
-      const month = parts[2] || "";
-
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /set <field> <value> [month]\nType /write for all commands"); return res.status(200).json({ ok: true }); }
+      const field = FIELD_MAP[parts[0].toLowerCase()] || parts[0];
       try {
-        const writeUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + `mode=write&field=${encodeURIComponent(field)}&value=${encodeURIComponent(value)}&month=${encodeURIComponent(month)}`;
-        const writeResp = await fetch(writeUrl, { redirect: "follow" });
-        const writeData = await writeResp.json();
+        const r = await callWrite("set", { field, value: parts[1], month: parts[2] || "" });
+        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+      } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
+      return res.status(200).json({ ok: true });
+    }
 
-        if (writeData.success) {
-          dataCache = { data: null, ts: 0 };
-          await sendTelegram(chatId, `Done! ${writeData.message}`);
-        } else {
-          await sendTelegram(chatId, `Error: ${writeData.error || "Unknown error"}`);
-        }
-      } catch (err) {
-        await sendTelegram(chatId, `Write failed: ${err.message}`);
+    // /log -- daily expense
+    if (text.startsWith("/log")) {
+      const parts = rawText.replace(/^\/log(@\w+)?\s*/i, "").trim().split(/\s+/);
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /log <amount> <category> [description] [mode]\nModes: UPI, Cash, CreditCard, Bank Transfer, Auto-Debit, Cheque\nExample: /log 500 food lunch UPI\nExample: /log 299 entertainment Netflix auto-debit"); return res.status(200).json({ ok: true }); }
+      try {
+        const r = await callWrite("log", { amount: parts[0], category: parts[1] || "Misc", description: parts[2] || "", mode: parseMode(parts[3]), notes: parts.slice(4).join(" ") });
+        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+      } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
+      return res.status(200).json({ ok: true });
+    }
+
+    // /budget -- set monthly budget (BUDGET PER CATEGORY section only)
+    if (text.startsWith("/budget")) {
+      const parts = rawText.replace(/^\/budget(@\w+)?\s*/i, "").trim().split(/\s+/);
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /budget <category> <amount>\nCategories: food, transport, utilities, medical, entertainment, shopping, education, fuel, grooming, misc\nExample: /budget food 5000"); return res.status(200).json({ ok: true }); }
+      try {
+        const r = await callWrite("budget", { category: parts[0], value: parts[1], month: parts[2] || "" });
+        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+      } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
+      return res.status(200).json({ ok: true });
+    }
+
+    // /received -- lending repayment
+    if (text.startsWith("/received")) {
+      const parts = rawText.replace(/^\/received(@\w+)?\s*/i, "").trim().split(/\s+/);
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /received <amount> <borrower> [interest/principal] [mode]\nModes: UPI, Cash, CreditCard, Bank Transfer, Cheque\nExample: /received 13000 Yadagiri interest UPI"); return res.status(200).json({ ok: true }); }
+      try {
+        const r = await callWrite("received", { amount: parts[0], borrower: parts[1] || "", type: parts[2] || "Interest", mode: parseMode(parts[3]), notes: parts.slice(4).join(" ") });
+        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+      } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
+      return res.status(200).json({ ok: true });
+    }
+
+    // /lent -- new borrower
+    if (text.startsWith("/lent")) {
+      const parts = rawText.replace(/^\/lent(@\w+)?\s*/i, "").trim().split(/\s+/);
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /lent <amount> <name> [rate%] [months] [phone]\nExample: /lent 100000 RamuKaka 2 12 9876543210"); return res.status(200).json({ ok: true }); }
+      try {
+        const r = await callWrite("lent", { amount: parts[0], name: parts[1] || "", rate: parts[2] || "2", duration: parts[3] || "12", phone: parts[4] || "", notes: parts.slice(5).join(" ") });
+        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+      } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
+      return res.status(200).json({ ok: true });
+    }
+
+    // /invest -- LC or Stock market
+    if (text.startsWith("/invest")) {
+      const parts = rawText.replace(/^\/invest(@\w+)?\s*/i, "").trim().split(/\s+/);
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage:\n/invest lc <amount> [remarks]\n/invest equity <amount> [remarks]\n/invest mf <amount> [remarks]\n/invest options <amount> [remarks]\n/invest crypto <amount> [remarks]"); return res.status(200).json({ ok: true }); }
+      const typeMap = { lc: "invest_lc", lendenclub: "invest_lc", equity: "invest_stock", mf: "invest_stock", mutualfunds: "invest_stock", options: "invest_stock", crypto: "invest_stock" };
+      const stockTypes = { equity: "Equity", mf: "MutualFunds", mutualfunds: "MutualFunds", options: "Options", crypto: "Crypto" };
+      const invType = parts[0].toLowerCase();
+      const action = typeMap[invType] || "invest_stock";
+      try {
+        const payload = { amount: parts[1], remarks: parts.slice(2).join(" ") };
+        if (action === "invest_stock") payload.type = stockTypes[invType] || "Equity";
+        const r = await callWrite(action, payload);
+        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+      } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
+      return res.status(200).json({ ok: true });
+    }
+
+    // /paid -- Real Estate EMI
+    if (text.startsWith("/paid")) {
+      const parts = rawText.replace(/^\/paid(@\w+)?\s*/i, "").trim().split(/\s+/);
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /paid re <amount> [mode]\nModes: UPI, Cash, Bank Transfer, Auto-Debit, Cheque\nExample: /paid re 25000 banktransfer"); return res.status(200).json({ ok: true }); }
+      if (parts[0].toLowerCase() === "re") {
+        try {
+          const r = await callWrite("paid_re", { amount: parts[1] || "25000", mode: parseMode(parts[2]) });
+          await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+        } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       }
       return res.status(200).json({ ok: true });
     }
