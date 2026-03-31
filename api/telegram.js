@@ -929,9 +929,11 @@ export default async function handler(req, res) {
 
     // /write -- show all data entry commands
     if (text === "/write") {
-      await sendTelegram(chatId, `DATA ENTRY COMMANDS
+      const writeMsg1 = `DATA ENTRY COMMANDS (1/2)
 
-Payment Modes: UPI, Cash, CreditCard, Bank Transfer, Auto-Debit, Cheque
+Modes: UPI Cash CreditCard BankTransfer Auto-Debit Cheque
+Types: Expense Income Investment Transfer
+Tags: Essential Lifestyle Impulsive Planned Fixed
 
 -- INCOME TRACKER (monthly) --
 /set salary 95000
@@ -941,36 +943,60 @@ Payment Modes: UPI, Cash, CreditCard, Bank Transfer, Auto-Debit, Cheque
 /set taxrefunded 10000
 /set creditcard 24000
 /set cashfd 25000
-/set salary 95000 Apr-2026
+/set salary 95000 Apr-26
+  Note: Updates current month row
 
 -- MONTHLY BUDGET --
 /budget food 5000
 /budget transport 2000
 /budget medical 1000
+/budget entertainment 500
+  Categories: food transport utilities medical entertainment shopping education fuel grooming misc
 
 -- DAILY EXPENSES --
 /log 500 food lunch UPI
 /log 1200 fuel petrol cash
-/log 299 entertainment Netflix auto-debit
-/log 12000 emi Land-EMI auto-debit
+/log 299 entertainment Netflix auto-debit expense lifestyle
+/log 12000 emi Land-EMI auto-debit expense fixed
+/log 95000 salary March-salary bank income planned
+/log 5000 investment SIP auto-debit investment planned
+  Format: /log <amt> <category> [desc] [mode] [type] [tag]`;
+
+      const writeMsg2 = `DATA ENTRY COMMANDS (2/2)
 
 -- PERSONAL LENDING --
 /lent 100000 RamuKaka 2 12 9876543210
+  Format: /lent <amt> <name> [rate%] [months] [phone]
 /received 13000 Yadagiri interest UPI
 /received 50000 KishanRao principal cash
+  Format: /received <amt> <name> [interest/principal] [mode]
+/close Yadagiri
+  Marks borrower's loan as Closed
+
+-- LOANS --
+/hdfc paid
+/idfc paid
+/sbi paid
+  Marks next unpaid instalment as paid
 
 -- LENDENCLUB --
 /invest lc 5000 salary
 /invest lc 13000 Yadagiri-interest
+  Format: /invest lc <amt> [remarks]
 
 -- STOCK MARKET --
 /invest equity 10000 RELIANCE
 /invest mf 5000 Nifty50-SIP
 /invest options 2000 NIFTY-CE
 /invest crypto 3000 BTC
+  Format: /invest <type> <amt> [remarks]
 
 -- REAL ESTATE --
-/paid re 25000 banktransfer`);
+/paid re 25000 banktransfer
+  Marks next pending EMI as paid`;
+
+      await sendTelegram(chatId, writeMsg1);
+      await sendTelegram(chatId, writeMsg2);
       return res.status(200).json({ ok: true });
     }
 
@@ -986,12 +1012,40 @@ Payment Modes: UPI, Cash, CreditCard, Bank Transfer, Auto-Debit, Cheque
       return res.status(200).json({ ok: true });
     }
 
-    // /log -- daily expense
+    // /log -- daily expense/income/investment/transfer
     if (text.startsWith("/log")) {
       const parts = rawText.replace(/^\/log(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /log <amount> <category> [description] [mode]\nModes: UPI, Cash, CreditCard, Bank Transfer, Auto-Debit, Cheque\nExample: /log 500 food lunch UPI\nExample: /log 299 entertainment Netflix auto-debit"); return res.status(200).json({ ok: true }); }
+      if (parts.length < 2) { await sendTelegram(chatId, `Usage: /log <amount> <category> [desc] [mode] [type] [tag]
+
+Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
+Types: Expense (default), Income, Investment, Transfer
+Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
+
+Examples:
+/log 500 food lunch UPI
+/log 1200 fuel petrol cash
+/log 299 entertainment Netflix auto-debit expense lifestyle
+/log 95000 salary March-salary bank income planned
+/log 5000 investment SIP auto-debit investment planned
+/log 10000 transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
+
+      const typeMap = { expense: "Expense", income: "Income", investment: "Investment", transfer: "Transfer" };
+      const tagMap = { essential: "Essential", lifestyle: "Lifestyle", impulsive: "Impulsive", planned: "Planned", fixed: "Fixed" };
+      const catTags = { food: "Essential", groceries: "Essential", transport: "Essential", fuel: "Essential", medical: "Fixed", health: "Fixed", insurance: "Fixed", utilities: "Fixed", electricity: "Fixed", emi: "Fixed", loan: "Fixed", rent: "Fixed", entertainment: "Lifestyle", shopping: "Lifestyle", education: "Essential", grooming: "Lifestyle", salary: "Planned", investment: "Planned", transfer: "Planned", misc: "Lifestyle" };
+
+      const cat = parts[1] || "Misc";
+      const userType = typeMap[(parts[4] || "").toLowerCase()];
+      const userTag = tagMap[(parts[5] || "").toLowerCase()];
+      const autoTag = catTags[cat.toLowerCase()] || "Lifestyle";
+
       try {
-        const r = await callWrite("log", { amount: parts[0], category: parts[1] || "Misc", description: parts[2] || "", mode: parseMode(parts[3]), notes: parts.slice(4).join(" ") });
+        const r = await callWrite("log", {
+          amount: parts[0], category: cat, description: parts[2] || "",
+          mode: parseMode(parts[3]),
+          type: userType || "Expense",
+          tag: userTag || autoTag,
+          notes: parts.slice(6).join(" ")
+        });
         await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       return res.status(200).json({ ok: true });
@@ -1057,6 +1111,27 @@ Payment Modes: UPI, Cash, CreditCard, Bank Transfer, Auto-Debit, Cheque
           await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
         } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       }
+      return res.status(200).json({ ok: true });
+    }
+
+    // /hdfc, /idfc, /sbi -- mark loan EMI as paid
+    if (/^\/(hdfc|idfc|sbi)\s+paid/i.test(text)) {
+      const loan = text.match(/^\/(hdfc|idfc|sbi)/i)[1].toUpperCase();
+      try {
+        const r = await callWrite("loan_paid", { loan });
+        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+      } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
+      return res.status(200).json({ ok: true });
+    }
+
+    // /close -- mark borrower loan as Closed
+    if (text.startsWith("/close")) {
+      const name = rawText.replace(/^\/close(@\w+)?\s*/i, "").trim();
+      if (!name) { await sendTelegram(chatId, "Usage: /close <borrower name>\nExample: /close Yadagiri"); return res.status(200).json({ ok: true }); }
+      try {
+        const r = await callWrite("close_loan", { name });
+        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+      } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       return res.status(200).json({ ok: true });
     }
 
