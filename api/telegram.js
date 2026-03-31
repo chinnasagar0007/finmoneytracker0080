@@ -935,7 +935,8 @@ Modes: UPI Cash CreditCard BankTransfer Auto-Debit Cheque
 Types: Expense Income Investment Transfer
 Tags: Essential Lifestyle Impulsive Planned Fixed
 
--- INCOME TRACKER (monthly) --
+-- INCOME TRACKER --
+Format: /set <field> <value> [month]
 /set salary 95000
 /set otherincome 5000
 /set tutoring 8000
@@ -944,56 +945,59 @@ Tags: Essential Lifestyle Impulsive Planned Fixed
 /set creditcard 24000
 /set cashfd 25000
 /set salary 95000 Apr-26
-  Note: Updates current month row
 
 -- MONTHLY BUDGET --
+Format: /budget <category> <amount>
 /budget food 5000
 /budget transport 2000
 /budget medical 1000
 /budget entertainment 500
-  Categories: food transport utilities medical entertainment shopping education fuel grooming misc
 
 -- DAILY EXPENSES --
+Format: /log <amt> <category> [desc] [mode] [type] [tag]
 /log 500 food lunch UPI
 /log 1200 fuel petrol cash
 /log 299 entertainment Netflix auto-debit expense lifestyle
 /log 12000 emi Land-EMI auto-debit expense fixed
-/log 95000 salary March-salary bank income planned
-/log 5000 investment SIP auto-debit investment planned
-  Format: /log <amt> <category> [desc] [mode] [type] [tag]`;
+/log 95000 salary March bank income planned
+/log 5000 investment SIP auto-debit investment planned`;
 
       const writeMsg2 = `DATA ENTRY COMMANDS (2/2)
 
 -- PERSONAL LENDING --
+Format: /lent <amt> <name> [rate%] [months] [phone]
 /lent 100000 RamuKaka 2 12 9876543210
-  Format: /lent <amt> <name> [rate%] [months] [phone]
+
+Format: /received <amt> <name> [interest/principal] [mode]
 /received 13000 Yadagiri interest UPI
 /received 50000 KishanRao principal cash
-  Format: /received <amt> <name> [interest/principal] [mode]
+
+Format: /close <borrower>
 /close Yadagiri
-  Marks borrower's loan as Closed
 
 -- LOANS --
+Format: /<bank> [month] paid
 /hdfc paid
+/hdfc Apr paid
 /idfc paid
 /sbi paid
-  Marks next unpaid instalment as paid
 
 -- LENDENCLUB --
+Format: /invest lc <amt> [remarks]
 /invest lc 5000 salary
 /invest lc 13000 Yadagiri-interest
-  Format: /invest lc <amt> [remarks]
 
 -- STOCK MARKET --
+Format: /invest <type> <amt> [remarks]
 /invest equity 10000 RELIANCE
 /invest mf 5000 Nifty50-SIP
 /invest options 2000 NIFTY-CE
 /invest crypto 3000 BTC
-  Format: /invest <type> <amt> [remarks]
 
 -- REAL ESTATE --
+Format: /paid re <amt> [date] [mode]
 /paid re 25000 banktransfer
-  Marks next pending EMI as paid`;
+/paid re 25000 10-Mar-2026 banktransfer`;
 
       await sendTelegram(chatId, writeMsg1);
       await sendTelegram(chatId, writeMsg2);
@@ -1104,23 +1108,34 @@ Examples:
     // /paid -- Real Estate EMI
     if (text.startsWith("/paid")) {
       const parts = rawText.replace(/^\/paid(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /paid re <amount> [mode]\nModes: UPI, Cash, Bank Transfer, Auto-Debit, Cheque\nExample: /paid re 25000 banktransfer"); return res.status(200).json({ ok: true }); }
+      if (parts.length < 2) { await sendTelegram(chatId, "Format: /paid re <amount> [date] [mode]\nExample: /paid re 25000 10-Mar-2026 banktransfer\nExample: /paid re 25000 UPI"); return res.status(200).json({ ok: true }); }
       if (parts[0].toLowerCase() === "re") {
+        const amt = parts[1] || "25000";
+        let date = "", mode = "";
+        for (let pi = 2; pi < parts.length; pi++) {
+          if (/\d{1,2}[-/]\w{3}[-/]\d{2,4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/.test(parts[pi])) date = parts[pi];
+          else mode = parts[pi];
+        }
         try {
-          const r = await callWrite("paid_re", { amount: parts[1] || "25000", mode: parseMode(parts[2]) });
+          const r = await callWrite("paid_re", { amount: amt, date: date, mode: parseMode(mode) });
           await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
         } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       }
       return res.status(200).json({ ok: true });
     }
 
-    // /hdfc, /idfc, /sbi -- mark loan EMI as paid
-    if (/^\/(hdfc|idfc|sbi)\s+paid/i.test(text)) {
-      const loan = text.match(/^\/(hdfc|idfc|sbi)/i)[1].toUpperCase();
-      try {
-        const r = await callWrite("loan_paid", { loan });
-        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
-      } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
+    // /hdfc, /idfc, /sbi -- mark loan EMI as paid (with optional month)
+    if (/^\/(hdfc|idfc|sbi)\s/i.test(text)) {
+      const match = text.match(/^\/(hdfc|idfc|sbi)\s+(\S+)?\s*(paid)?/i);
+      if (match) {
+        const loan = match[1].toUpperCase();
+        const arg1 = (match[2] || "").toLowerCase();
+        const month = arg1 !== "paid" ? match[2] || "" : "";
+        try {
+          const r = await callWrite("loan_paid", { loan, month });
+          await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+        } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
+      }
       return res.status(200).json({ ok: true });
     }
 
