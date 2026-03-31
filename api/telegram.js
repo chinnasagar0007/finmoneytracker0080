@@ -349,11 +349,14 @@ function templateSummary(d) {
   return `ARTH FINANCIAL SNAPSHOT (${k.month || "Current"})
 
 INCOME
-  Salary: ${fmt(k.salary)}/mo
+  Salary (in-hand): ${fmt(k.salary)}/mo
   Gross Income: ${fmt(k.grossIncome)}
   CC Bills: ${fmt(k.ccBills || 0)}
   Loan EMIs: ${fmt(k.loanEMI)}
-  In-Hand: ${fmt(k.inHand)}
+  Total Outflow (EMIs+CC): ${fmt(k.totalEmiWithCC || 0)}
+  Daily Expenses: ${fmt(k.dailyExpenses || 0)}
+  Balance after EMIs: ${fmt(k.inHand)}
+  Net Balance (final): ${fmt(k.netBalance || 0)}
 
 INVESTMENTS: ${fmt(k.totalStocks)}
 LENDENCLUB: ${fmt(k.lcPooled)}
@@ -699,10 +702,13 @@ RULES:
 5. For what-if scenarios: show before vs after with exact Rs numbers.
 
 INCOME & BUDGET:
-  Salary: Rs ${I(k.salary)}/mo | Gross Income: Rs ${I(k.grossIncome)}/mo
+  Salary (in-hand): Rs ${I(k.salary)}/mo | Gross Income: Rs ${I(k.grossIncome)}/mo
   CC Bills: Rs ${I(k.ccBills || 0)}/mo
   Loan EMIs: Rs ${I(k.loanEMI)}/mo (HDFC Rs 42,318 + IDFC Rs 7,572 + SBI Rs 2,500)
-  In-Hand after all deductions: Rs ${I(k.inHand)}/mo
+  Total EMIs + CC: Rs ${I(k.totalEmiWithCC || 0)}/mo
+  Daily Expenses this month: Rs ${I(k.dailyExpenses || 0)}
+  Balance after EMIs & Investments: Rs ${I(k.inHand)}/mo
+  NET BALANCE after ALL (EMIs + Expenses + Investments): Rs ${I(k.netBalance || 0)}/mo
   EMI Burden: ${eb}%${eb > 50 ? " !! HIGH - above 50% danger zone" : ""}
   Savings Rate: ${k.savingsRatePct || 0}%
 
