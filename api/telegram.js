@@ -602,10 +602,10 @@ function helpMessage() {
 
 I have live access to all your financial data.
 
-Commands:
+View Commands:
 /summary - Full financial snapshot
 /networth - Net worth breakdown
-/goals - Goal progress with bars
+/goals - Goal progress
 /alerts - What needs attention
 /compare - Month vs month changes
 /borrowers - Who owes you what
@@ -614,6 +614,12 @@ Commands:
 /transactions - Daily expense log
 /projection - When you'll hit goals
 /whatif <scenario> - What-if analysis
+
+Data Entry:
+/set otherincome 5000
+/set taxdeducted 3000
+/set taxrefunded 10000
+/set cashfd 25000
 
 /clear - Reset memory
 /help - This menu
@@ -899,6 +905,48 @@ export default async function handler(req, res) {
     // /start and /help with inline keyboard
     if (text === "/start" || text === "/help") {
       await sendTelegram(chatId, helpMessage(), { reply_markup: mainKeyboard });
+      return res.status(200).json({ ok: true });
+    }
+
+    // /set -- write a value to IncomeTracker
+    if (text.startsWith("/set")) {
+      const parts = rawText.replace(/^\/set(@\w+)?\s*/i, "").trim().split(/\s+/);
+      if (parts.length < 2) {
+        await sendTelegram(chatId, `Usage: /set <field> <value> [month]\n\nExamples:\n/set otherincome 5000\n/set taxdeducted 3000\n/set taxrefunded 10000\n/set cashfd 25000\n\nFields: otherincome, taxdeducted, taxrefunded, cashfd`);
+        return res.status(200).json({ ok: true });
+      }
+
+      const fieldMap = {
+        "otherincome": "Other Income",
+        "other": "Other Income",
+        "taxdeducted": "Tax Deducted",
+        "tax": "Tax Deducted",
+        "taxrefunded": "Tax Refunded",
+        "taxrefund": "Tax Refunded",
+        "cashfd": "Cash / FD / Other",
+        "cash": "Cash / FD / Other",
+        "fd": "Cash / FD / Other",
+      };
+
+      const fieldKey = parts[0].toLowerCase();
+      const field = fieldMap[fieldKey] || parts[0];
+      const value = parts[1];
+      const month = parts[2] || "";
+
+      try {
+        const writeUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + `mode=write&field=${encodeURIComponent(field)}&value=${encodeURIComponent(value)}&month=${encodeURIComponent(month)}`;
+        const writeResp = await fetch(writeUrl, { redirect: "follow" });
+        const writeData = await writeResp.json();
+
+        if (writeData.success) {
+          dataCache = { data: null, ts: 0 };
+          await sendTelegram(chatId, `Done! ${writeData.message}`);
+        } else {
+          await sendTelegram(chatId, `Error: ${writeData.error || "Unknown error"}`);
+        }
+      } catch (err) {
+        await sendTelegram(chatId, `Write failed: ${err.message}`);
+      }
       return res.status(200).json({ ok: true });
     }
 
