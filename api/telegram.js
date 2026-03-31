@@ -632,39 +632,81 @@ function buildSystemPrompt(d) {
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const eb = k.emiBurdenPct || 0;
 
-  const incomeSection = dumpSection("Income & Expenses", raw.income, 30);
-  const loanSection = dumpSection("Loans", raw.loans, 10);
-  const stockSection = dumpSection("Investments & Stocks", raw.stocks, 20);
-  const lcSection = dumpSection("LendenClub P2P", raw.lendenClub, 15);
-  const plSection = dumpSection("Personal Lending", raw.personalLending, 20);
-  const reSection = dumpSection("Real Estate", raw.realEstate, 10);
+  // Personal lending: ALL borrowers with ALL fields (phone, date, etc.)
+  const plSection = dumpSection("Personal Lending", raw.personalLending, 10);
 
-  return `You are Arth - a sharp, empathetic personal financial advisor for Naresh, a software professional in Hyderabad, India.
+  // Daily expenses: last 5 only
+  let expenseLines = "";
+  const expTabs = raw.income || {};
+  for (const tab of Object.keys(expTabs)) {
+    if (!/daily|expense|transaction/i.test(tab)) continue;
+    const rows = expTabs[tab];
+    if (!Array.isArray(rows)) continue;
+    const recent = rows.filter(r => {
+      const vals = Object.values(r);
+      return vals.filter(v => v !== null && v !== undefined && v !== "" && v !== 0).length >= 3;
+    }).slice(-5);
+    if (recent.length > 0) {
+      expenseLines = "\nRECENT EXPENSES (last 5):\n" + recent.map(r =>
+        "  " + Object.entries(r).filter(([,v]) => v !== null && v !== undefined && v !== "" && v !== 0).map(([ek,ev]) => `${ek}=${ev}`).join(" | ")
+      ).join("\n");
+    }
+  }
+
+  // Real estate: compact key fields only
+  let reLines = "";
+  const reTabs = raw.realEstate || {};
+  for (const tab of Object.keys(reTabs)) {
+    if (!/propert/i.test(tab)) continue;
+    const rows = reTabs[tab];
+    if (!Array.isArray(rows)) continue;
+    const useful = rows.filter(r => {
+      const keys = Object.keys(r);
+      if (keys.length < 2) return false;
+      const key = String(r[keys[0]] || "");
+      return /cost|paid|balance|status|date|size|location|builder|name|emi/i.test(key);
+    }).slice(0, 10);
+    if (useful.length > 0) {
+      reLines = "\nREAL ESTATE DETAILS:\n" + useful.map(r => {
+        const vals = Object.values(r);
+        return `  ${vals[0]}: ${vals[1]}`;
+      }).join("\n");
+    }
+  }
+
+  return `You are Arth - a sharp, empathetic personal financial advisor for Naresh, a 30-year-old software professional in Hyderabad, India.
 Today is ${today}. Data is as of ${k.month || "Current"}.
 
-CRITICAL RULES:
-1. Use the EXACT numbers from the data below. Do NOT make up figures.
-2. You have COMPLETE live data from ALL spreadsheets - income, expenses, loans, investments, borrowers, real estate, daily transactions.
-3. Never say "I don't have access" - every field from every sheet is included below.
-4. When asked for contact info (mobile, phone, address), dates, or any specific field - search the raw data below.
-5. For casual messages: respond warmly, then steer toward a financial insight.
-6. For what-if scenarios: model impact using data below, show before vs after.
+RULES:
+1. Use ONLY the EXACT numbers below. Never make up figures.
+2. Never say "I don't have access" - you have complete live financial data.
+3. For contact info (mobile, phone, date lent), check PERSONAL LENDING section below.
+4. For casual messages: respond warmly, then add a financial tip.
+5. For what-if scenarios: show before vs after with exact Rs numbers.
 
-PRE-CALCULATED KPIs (use as-is):
-  Salary: Rs ${I(k.salary)}/mo | Gross: Rs ${I(k.grossIncome)}/mo
-  CC Bills: Rs ${I(k.ccBills || 0)}/mo | Loan EMIs: Rs ${I(k.loanEMI)}/mo
-  In-Hand: Rs ${I(k.inHand)}/mo
-  EMI Burden: ${eb}%${eb > 50 ? " !! HIGH" : ""} | Savings Rate: ${k.savingsRatePct || 0}%
-  Total Investments: Rs ${I(k.totalInvestments)} | Total Debt: Rs ${I(k.totalDebt)}
-  NET WORTH: Rs ${I(k.netWorth)}
-  LendenClub Pooled: Rs ${I(k.lcPooled)}
-  Personal Lending: Rs ${I(k.plCapital)} capital | Rs ${I(k.plMonthly)}/mo interest${k.plPending > 0 ? ` | OVERDUE: Rs ${I(k.plPending)}` : ""}
+INCOME & BUDGET:
+  Salary: Rs ${I(k.salary)}/mo | Gross Income: Rs ${I(k.grossIncome)}/mo
+  CC Bills: Rs ${I(k.ccBills || 0)}/mo
+  Loan EMIs: Rs ${I(k.loanEMI)}/mo (HDFC Rs 42,318 + IDFC Rs 7,572 + SBI Rs 2,500)
+  In-Hand after all deductions: Rs ${I(k.inHand)}/mo
+  EMI Burden: ${eb}%${eb > 50 ? " !! HIGH - above 50% danger zone" : ""}
+  Savings Rate: ${k.savingsRatePct || 0}%
+
+LOANS (Total Debt: Rs ${I(k.totalDebt)}):
+  HDFC Home Loan: Outstanding Rs 21,46,638 @ 10.5% | EMI Rs 42,318/mo | 67 EMIs left
+  IDFC Personal Loan: Outstanding Rs 2,63,000 @ 13.5% | EMI Rs 7,572/mo | 42 EMIs left <-- HIGHEST RATE, PRIORITY
+  SBI Loan: Outstanding Rs 54,809 @ 9.35% | EMI Rs 2,500/mo | 25 EMIs left
+
+INVESTMENTS & ASSETS (Total: Rs ${I(k.totalInvestments)}):
+  Stocks/MF: Rs ${I(k.totalStocks)}
+  LendenClub P2P: Rs ${I(k.lcPooled)} (~10% net ROI)
+  Personal Lending Capital: Rs ${I(k.plCapital)} @ 24%/yr | Monthly interest: Rs ${I(k.plMonthly)}${k.plPending > 0 ? ` | OVERDUE: Rs ${I(k.plPending)}` : ""}
   Real Estate: Rs ${I(k.rePaid)} paid of Rs ${I(k.reCost || 0)}
-  Monthly Savings Capacity: Rs ${I(k.monthlyCap)}
 
-RAW SPREADSHEET DATA (search here for any specific detail):
-${incomeSection}${loanSection}${stockSection}${lcSection}${plSection}${reSection}
-STYLE: Speak like a trusted CA-cum-wealth-manager. Use exact Rs numbers. Indian financial context (80C, 24b, LTCG, NPS, ELSS). Be specific and actionable. Under 350 words unless asked to elaborate.`;
+NET WORTH: Rs ${I(k.netWorth)} (Assets Rs ${I(k.totalInvestments)} - Debt Rs ${I(k.totalDebt)})
+Monthly Savings Capacity: Rs ${I(k.monthlyCap)} (in-hand minus Rs 15,000 baseline)
+${plSection}${expenseLines}${reLines}
+STYLE: Trusted CA-cum-wealth-manager. Exact Rs numbers. Indian financial context (80C, 24b, LTCG, NPS, ELSS). Specific, actionable. Under 300 words unless asked to elaborate.`;
 }
 
 // ── Query Classification ─────────────────────────────────────────────────────
