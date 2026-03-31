@@ -645,9 +645,23 @@ function buildSystemPrompt(d) {
     const recent = rows.filter(r => {
       const vals = Object.values(r);
       return vals.filter(v => v !== null && v !== undefined && v !== "" && v !== 0).length >= 3;
-    }).slice(-5);
-    if (recent.length > 0) {
-      expenseLines = "\nRECENT EXPENSES (last 5):\n" + recent.map(r =>
+    });
+    // Filter to last 30 days only
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const last30 = recent.filter(r => {
+      const dateStr = String(r["Date"] || r["date"] || "");
+      if (!dateStr) return true;
+      const parts = dateStr.split("-");
+      if (parts.length === 3) {
+        const d = new Date(parts[2], parts[1] - 1, parts[0]);
+        return d >= thirtyDaysAgo;
+      }
+      return true;
+    });
+    const display = last30.length > 0 ? last30 : recent.slice(-15);
+    if (display.length > 0) {
+      expenseLines = `\nDAILY EXPENSES (last 30 days, ${display.length} transactions):\n` + display.map(r =>
         "  " + Object.entries(r).filter(([,v]) => v !== null && v !== undefined && v !== "" && v !== 0).map(([ek,ev]) => `${ek}=${ev}`).join(" | ")
       ).join("\n");
     }
