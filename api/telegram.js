@@ -516,15 +516,43 @@ EMI Burden: ${k.emiBurdenPct}% of salary`;
 
 function templateExpenses(d) {
   const k = d.kpis || {};
+  const inc = k.incomeRaw || {};
   const gross = k.grossIncome || 1;
-  const totalOut = (k.loanEMI || 0);
+
+  // Show all outflow fields from the income row
+  const outflowKeys = Object.entries(inc).filter(([key, val]) => {
+    if (typeof val !== "number" || val <= 0) return false;
+    const kl = key.toLowerCase();
+    return kl.includes("emi") || kl.includes("credit") || kl.includes("cc") || kl.includes("expense") || kl.includes("daily");
+  });
+
+  const incomeKeys = Object.entries(inc).filter(([key, val]) => {
+    if (typeof val !== "number" || val <= 0) return false;
+    const kl = key.toLowerCase();
+    return kl.includes("salary") || kl.includes("tutoring") || kl.includes("lending interest") || kl.includes("other income") || kl.includes("gross");
+  });
+
+  const balanceKeys = Object.entries(inc).filter(([key, val]) => {
+    if (typeof val !== "number") return false;
+    const kl = key.toLowerCase();
+    return kl.includes("net balance") || kl.includes("in hand") || kl.includes("net income") || kl.includes("income after");
+  });
+
+  const incLines = incomeKeys.map(([k, v]) => `  ${k}: ${fmt(v)}`).join("\n") || "  No income data";
+  const outLines = outflowKeys.map(([k, v]) => `  ${k}: ${fmt(v)}  (${pct(v, gross)}% of gross)`).join("\n") || "  No outflows";
+  const balLines = balanceKeys.map(([k, v]) => `  ${k}: ${fmt(v)}`).join("\n") || "";
 
   return `EXPENSE BREAKDOWN (${k.month || "Current"})
 
-  Loan EMIs: ${fmt(k.loanEMI)}  (${pct(k.loanEMI, gross)}% of gross)
-  In-Hand: ${fmt(k.inHand)}  (${pct(k.inHand, gross)}% of gross)
+INCOME
+${incLines}
 
-Gross Income: ${fmt(k.grossIncome)}
+OUTFLOWS
+${outLines}
+
+BALANCE
+${balLines}
+
 Savings Rate: ${k.savingsRatePct}%`;
 }
 
