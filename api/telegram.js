@@ -346,17 +346,14 @@ function rowToLine(row) {
 
 function templateSummary(d) {
   const k = d.kpis || {};
+  const incLines = Object.entries(k.incomeRaw || {})
+    .filter(([,v]) => v !== null && v !== undefined && v !== "" && v !== 0 && v !== "-")
+    .map(([key, val]) => `  ${key}: ${typeof val === "number" ? fmt(val) : val}`)
+    .join("\n") || "  No income data";
   return `ARTH FINANCIAL SNAPSHOT (${k.month || "Current"})
 
-INCOME
-  Salary (in-hand): ${fmt(k.salary)}/mo
-  Gross Income: ${fmt(k.grossIncome)}
-  CC Bills: ${fmt(k.ccBills || 0)}
-  Loan EMIs: ${fmt(k.loanEMI)}
-  Total Outflow (EMIs+CC): ${fmt(k.totalEmiWithCC || 0)}
-  Daily Expenses: ${fmt(k.dailyExpenses || 0)}
-  Balance after EMIs: ${fmt(k.inHand)}
-  Net Balance (final): ${fmt(k.netBalance || 0)}
+INCOME & BUDGET
+${incLines}
 
 INVESTMENTS: ${fmt(k.totalStocks)}
 LENDENCLUB: ${fmt(k.lcPooled)}
@@ -701,16 +698,9 @@ RULES:
 4. For casual messages: respond warmly, then add a financial tip.
 5. For what-if scenarios: show before vs after with exact Rs numbers.
 
-INCOME & BUDGET:
-  Salary (in-hand): Rs ${I(k.salary)}/mo | Gross Income: Rs ${I(k.grossIncome)}/mo
-  CC Bills: Rs ${I(k.ccBills || 0)}/mo
-  Loan EMIs: Rs ${I(k.loanEMI)}/mo (HDFC Rs 42,318 + IDFC Rs 7,572 + SBI Rs 2,500)
-  Total EMIs + CC: Rs ${I(k.totalEmiWithCC || 0)}/mo
-  Daily Expenses this month: Rs ${I(k.dailyExpenses || 0)}
-  Balance after EMIs & Investments: Rs ${I(k.inHand)}/mo
-  NET BALANCE after ALL (EMIs + Expenses + Investments): Rs ${I(k.netBalance || 0)}/mo
+CURRENT MONTH INCOME & BUDGET (ALL fields from sheet, use as-is):
+${Object.entries(k.incomeRaw || {}).filter(([,v]) => v !== null && v !== undefined && v !== "").map(([key,val]) => `  ${key}: ${typeof val === "number" ? "Rs " + I(val) : val}`).join("\n")}
   EMI Burden: ${eb}%${eb > 50 ? " !! HIGH - above 50% danger zone" : ""}
-  Savings Rate: ${k.savingsRatePct || 0}%
 
 LOANS (Total Debt: Rs ${I(k.totalDebt)}):
   HDFC Home Loan: Outstanding Rs 21,46,638 @ 10.5% | EMI Rs 42,318/mo | 67 EMIs left
