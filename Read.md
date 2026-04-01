@@ -18,6 +18,8 @@ Open this URL in your browser (replace YOUR_VERCEL_DOMAIN with your actual Verce
 https://api.telegram.org/bot<TELEGRAM_TOKEN>/setWebhook?url=https://YOUR_VERCEL_DOMAIN/api/telegram
 You should see {"ok":true,"result":true,"description":"Webhook was set"}.
 
+Now type /start in bot
+
 Step 4: Stop Apps Script polling
 
 In your Apps Script editor, select function stopPolling and click Run. This removes the old polling triggers.
