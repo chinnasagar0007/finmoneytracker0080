@@ -78,9 +78,43 @@ function interestReceivedFromBorrowerRow(pr) {
   return 0;
 }
 
+/** Sum P2P interest from one tab's rows (horizontal columns or vertical "Interest received" KPI rows). */
+function sumLendenInterestFromTabRows(rows) {
+  if (!Array.isArray(rows)) return 0;
+  let total = 0;
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    let rowHit = false;
+    for (const key of Object.keys(row)) {
+      const nk = normalizeSheetHeaderKey(key);
+      if (!nk.includes("interest") || nk.includes("rate") || nk.includes("outstanding")) continue;
+      if (nk.includes("principal") && !nk.includes("recv") && !nk.includes("received")) continue;
+      if (nk.includes("accrued")) continue;
+      total += N(row[key]);
+      rowHit = true;
+    }
+    if (rowHit) continue;
+    // Vertical month tabs (label + value): e.g. { "Field": "Interest received", "Value": 150.2 }
+    for (const v of Object.values(row)) {
+      const asStr = typeof v === "string" ? v : "";
+      if (!/interest\s*received/i.test(asStr)) continue;
+      for (const v2 of Object.values(row)) {
+        if (v2 === v) continue;
+        const n = N(v2);
+        if (n > 0) {
+          total += n;
+          break;
+        }
+      }
+      break;
+    }
+  }
+  return total;
+}
+
 /**
  * Personal lending = sum of Borrowers "Interest Received" (direct loans).
- * Lenden Club = sum of Tab Summary "Interest" (P2P platform — not the same pool).
+ * Lenden Club = sum of interest across month tabs + Tab Summary (readAllSheetsRaw has NO single "Tab Summary" key — tabs are "Dec-25", etc.).
  */
 function computeInterestReceivedKpis(raw) {
   raw = raw || {};
@@ -91,21 +125,24 @@ function computeInterestReceivedKpis(raw) {
   }
 
   let lcInterestReceivedTillNow = 0;
-  const tabSummary = findSheetRows(raw.lendenClub || {}, ["tab summary"]);
-  for (const t of tabSummary) {
-    for (const key of Object.keys(t || {})) {
-      const nk = normalizeSheetHeaderKey(key);
-      const isLcInterestCol =
-        nk === "interest" ||
-        (nk.includes("interest") &&
-          (nk.includes("received") || nk.includes("recv")) &&
-          !nk.includes("rate") &&
-          !nk.includes("principal"));
-      if (isLcInterestCol) {
-        lcInterestReceivedTillNow += N(t[key]);
-        break;
-      }
-    }
+  const lcSec = raw.lendenClub || {};
+  const skipTab = (name) =>
+    /datewise|transaction\s*log|pool\s*growth|cashflow|loan\s*sample|settings|readme|summary\s*meta/i.test(
+      String(name || "").replace(/\s+/g, " ")
+    );
+
+  const monthRe = /^[A-Za-z]{3}-\d{2}$/i;
+  const allLcKeys = Object.keys(lcSec);
+  const monthTabKeys = allLcKeys.filter((k) => monthRe.test(String(k || "").trim()));
+  // If month tabs exist, sum only those (avoids double-count vs Monthly-Summary). Else use all non-skipped (Tab Summary, Monthly-Summary, etc.).
+  const lcTabKeysToSum =
+    monthTabKeys.length > 0 ? monthTabKeys : allLcKeys.filter((k) => !skipTab(k));
+
+  for (const tabKey of lcTabKeysToSum) {
+    if (monthTabKeys.length === 0 && skipTab(tabKey)) continue;
+    const rows = lcSec[tabKey];
+    if (!Array.isArray(rows) || rows.length === 0) continue;
+    lcInterestReceivedTillNow += sumLendenInterestFromTabRows(rows);
   }
 
   return { plInterestReceivedTillNow, lcInterestReceivedTillNow };
