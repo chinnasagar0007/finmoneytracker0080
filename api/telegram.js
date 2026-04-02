@@ -44,6 +44,83 @@ const monthsFromNow = (m) => {
   return d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 };
 
+/** Normalize sheet header keys (handles newlines from Google Sheets JSON). */
+function normalizeSheetHeaderKey(k) {
+  return String(k || "")
+    .replace(/[\n\r]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function findSheetRows(section, hints) {
+  if (!section || typeof section !== "object") return [];
+  for (const h of hints) {
+    const hl = h.toLowerCase();
+    for (const key of Object.keys(section)) {
+      if (key.toLowerCase().includes(hl) && Array.isArray(section[key])) return section[key];
+    }
+  }
+  for (const key of Object.keys(section)) {
+    if (Array.isArray(section[key]) && section[key].length > 0) return section[key];
+  }
+  return [];
+}
+
+function interestReceivedFromBorrowerRow(pr) {
+  if (!pr || typeof pr !== "object") return 0;
+  for (const key of Object.keys(pr)) {
+    const nk = normalizeSheetHeaderKey(key);
+    if (nk.includes("interest") && nk.includes("received") && !nk.includes("accrued") && !nk.includes("pending")) {
+      return N(pr[key]);
+    }
+  }
+  return 0;
+}
+
+/**
+ * Personal lending = sum of Borrowers "Interest Received" (direct loans).
+ * Lenden Club = sum of Tab Summary "Interest" (P2P platform — not the same pool).
+ */
+function computeInterestReceivedKpis(raw) {
+  raw = raw || {};
+  let plInterestReceivedTillNow = 0;
+  const plRows = findSheetRows(raw.personalLending || {}, ["borrower"]);
+  for (const pr of plRows) {
+    plInterestReceivedTillNow += interestReceivedFromBorrowerRow(pr);
+  }
+
+  let lcInterestReceivedTillNow = 0;
+  const tabSummary = findSheetRows(raw.lendenClub || {}, ["tab summary"]);
+  for (const t of tabSummary) {
+    for (const key of Object.keys(t || {})) {
+      const nk = normalizeSheetHeaderKey(key);
+      const isLcInterestCol =
+        nk === "interest" ||
+        (nk.includes("interest") &&
+          (nk.includes("received") || nk.includes("recv")) &&
+          !nk.includes("rate") &&
+          !nk.includes("principal"));
+      if (isLcInterestCol) {
+        lcInterestReceivedTillNow += N(t[key]);
+        break;
+      }
+    }
+  }
+
+  return { plInterestReceivedTillNow, lcInterestReceivedTillNow };
+}
+
+/** Merge computed interest KPIs (bot_v3 Apps Script kpis omit these). */
+function enrichBotPayload(botData) {
+  if (!botData || !botData.raw) return botData;
+  const extra = computeInterestReceivedKpis(botData.raw);
+  return {
+    ...botData,
+    kpis: { ...(botData.kpis || {}), ...extra },
+  };
+}
+
 // ── Telegram API ─────────────────────────────────────────────────────────────
 async function sendTelegram(chatId, text, opts = {}) {
   if (!TELEGRAM_TOKEN) {
@@ -126,8 +203,9 @@ async function getFinancialData(forTemplate = true) {
     const ms = Date.now() - t0;
     if (botData && botData._source === "bot_v3" && botData.raw && botData.kpis) {
       console.log(`[getFinancialData] Apps Script OK in ${ms}ms (_source=bot_v3)`);
-      dataCache = { data: botData, ts: Date.now() };
-      return botData;
+      const enriched = enrichBotPayload(botData);
+      dataCache = { data: enriched, ts: Date.now() };
+      return enriched;
     }
     console.log(`[getFinancialData] Unexpected payload in ${ms}ms:`, botData?._source || typeof botData);
   } catch (err) {
@@ -327,6 +405,8 @@ function buildBotSummary(p) {
   // Goals
   const monthlyCap = Math.max(0, inHand - 15000);
 
+  const intK = computeInterestReceivedKpis(p);
+
   return {
     month, age, salary, tutoring, lendingInterest: lendingInt, otherIncome: otherInc,
     grossIncome: grossTotal, creditCardBills: ccBills, loanEMI, inHand, salaryHistory,
@@ -335,6 +415,8 @@ function buildBotSummary(p) {
     lcPooled, lcDisbursed, lcInterest, lcOutstanding, lcActiveLoans: lcLoans, lcNPA,
     plTotalCapital: plCap, plMonthlyInterest: plMonthly, plOverdueCount: plOverdue,
     plPendingInt, borrowers,
+    plInterestReceivedTillNow: intK.plInterestReceivedTillNow,
+    lcInterestReceivedTillNow: intK.lcInterestReceivedTillNow,
     reName, reTotalCost, rePaid, reRemaining,
     rePct: reTotalCost > 0 ? Math.round((rePaid / reTotalCost) * 100) : 0,
     totalInvestments, totalAssets: totalInvestments, netWorth,
@@ -388,8 +470,8 @@ INCOME & BUDGET
 ${incLines}
 
 INVESTMENTS: ${fmt(k.totalStocks)}
-LENDENCLUB: ${fmt(k.lcPooled)}
-PERSONAL LENDING: ${fmt(k.plCapital)} (Rs ${I(k.plMonthly)}/mo interest)${k.plPending > 0 ? ` | OVERDUE: ${fmt(k.plPending)}` : ""}
+LENDENCLUB: ${fmt(k.lcPooled)} | interest received (LC): ${fmt(k.lcInterestReceivedTillNow || 0)}
+PERSONAL LENDING: ${fmt(k.plCapital)} (Rs ${I(k.plMonthly)}/mo) | interest received (PL): ${fmt(k.plInterestReceivedTillNow || 0)}${k.plPending > 0 ? ` | OVERDUE: ${fmt(k.plPending)}` : ""}
 REAL ESTATE: ${fmt(k.rePaid)} of ${fmt(k.reCost || 0)}
 
 TOTAL DEBT: ${fmt(k.totalDebt)}
@@ -489,6 +571,7 @@ ${lines}
 ---------------
 Total Capital: ${fmt(k.plCapital)}
 Monthly Interest: ${fmt(k.plMonthly)}/mo
+Interest received till now (personal lending only): ${fmt(k.plInterestReceivedTillNow || 0)}
 Total Overdue: ${k.plPending > 0 ? fmt(k.plPending) : "--"}`;
 }
 
@@ -758,6 +841,11 @@ RULES:
 3. For contact info (mobile, phone, date lent), check PERSONAL LENDING section below.
 4. For casual messages: respond warmly, then add a financial tip.
 5. For what-if scenarios: show before vs after with exact Rs numbers.
+6. INTEREST RECEIVED: Personal lending (direct loans to people) and Lenden Club (P2P platform) are DIFFERENT. Use kpis.plInterestReceivedTillNow for personal lending only and kpis.lcInterestReceivedTillNow for Lenden Club only — never reuse one figure for both unless the user asks you to compare and they happen to match.
+
+INTEREST RECEIVED TILL NOW (authoritative — do not interchange):
+  Personal lending (Borrowers / direct loans): Rs ${I(k.plInterestReceivedTillNow || 0)}
+  Lenden Club P2P (Tab Summary, platform loans): Rs ${I(k.lcInterestReceivedTillNow || 0)}
 
 CURRENT MONTH INCOME & BUDGET (ALL fields from sheet, use as-is):
 ${Object.entries(k.incomeRaw || {}).filter(([,v]) => v !== null && v !== undefined && v !== "").map(([key,val]) => `  ${key}: ${typeof val === "number" ? "Rs " + I(val) : val}`).join("\n")}
@@ -770,8 +858,8 @@ LOANS (Total Debt: Rs ${I(k.totalDebt)}):
 
 INVESTMENTS & ASSETS (Total: Rs ${I(k.totalInvestments)}):
   Stocks/MF: Rs ${I(k.totalStocks)}
-  LendenClub P2P: Rs ${I(k.lcPooled)} (~10% net ROI)
-  Personal Lending Capital: Rs ${I(k.plCapital)} @ 24%/yr | Monthly interest: Rs ${I(k.plMonthly)}${k.plPending > 0 ? ` | OVERDUE: Rs ${I(k.plPending)}` : ""}
+  LendenClub P2P: Rs ${I(k.lcPooled)} (~10% net ROI) | Interest received till now (LC only): Rs ${I(k.lcInterestReceivedTillNow || 0)}
+  Personal Lending Capital: Rs ${I(k.plCapital)} @ 24%/yr | Monthly interest: Rs ${I(k.plMonthly)} | Interest received till now (PL only): Rs ${I(k.plInterestReceivedTillNow || 0)}${k.plPending > 0 ? ` | OVERDUE: Rs ${I(k.plPending)}` : ""}
   Real Estate: Rs ${I(k.rePaid)} paid of Rs ${I(k.reCost || 0)}
 
 NET WORTH: Rs ${I(k.netWorth)} (Assets Rs ${I(k.totalInvestments)} - Debt Rs ${I(k.totalDebt)})
@@ -1000,12 +1088,12 @@ Example : /set salary 95000 Apr-26
 -- MONTHLY BUDGET --
 
 Format  : /budget <category> <amount>
-category: food, transport, rent, nanna, medical, entertainment, shopping, education, fuel, grooming, debt, misc
+category: food|transport|rent|nanna|medical|entertainment|shopping|education|fuel|grooming|debt|misc
 Example : /budget food 5000
 
 -- DAILY EXPENSES --
 Format: /log <amt> <category> [description] [mode] [type] [tag]
-category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, misc
+category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
 Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
@@ -1015,11 +1103,11 @@ Example: /log 500 food lunch UPI Expense Essential`;
 
 -- PERSONAL LENDING --
 Format :   /lent <amt> <name> [rate%] [months] [phone]
-name   :   Yadagiri, KishanRao
+name   :   Yadagiri|KishanRao
 Example:   /lent 100000 RamuKaka 2 12 9876543210
 
 Format :  /received <amt> <name> [interest/principal] [mode]
-name   :   Yadagiri, KishanRao
+name   :   Yadagiri|KishanRao
 Modes  :  UPI, Cash, BankTransfer
 Example:  /received 13000 Yadagiri interest UPI
 
@@ -1028,7 +1116,7 @@ Example:  /close Yadagiri
 
 -- LOANS --
 Format : /<bank> [month] paid
-bank   : hdfc, idfc, sbi
+bank   : hdfc|idfc|sbi
 Example: /hdfc Apr paid
 
 -- LENDENCLUB --
@@ -1037,7 +1125,7 @@ Example:  /invest lc 5000 salary
 
 -- STOCK MARKET --
 Format :  /invest <type> <amt> [remarks]
-type   :  equity, mf, options, crypto
+type   :  equity|mf|options|crypto
 Example:  /invest equity 10000 RELIANCE
 
 -- REAL ESTATE --
