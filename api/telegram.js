@@ -601,10 +601,10 @@ function helpMessage() {
   return `Arth - Your AI Finance Advisor v3.0
 
 View Data:
-/summary - Financial snapshot
-/loans - Loan details
-/borrowers - Who owes you what
-/expenses - Expense breakdown
+/summary      - Financial snapshot
+/loans        - Loan details
+/borrowers    - Who owes you what
+/expenses     - Expense breakdown
 /transactions - Daily expense log
 /networth | /goals | /alerts
 /compare | /projection
@@ -612,9 +612,7 @@ View Data:
 
 Enter Data:
 /write - Show ALL data entry commands
-/log 500 food lunch UPI
-/set salary 95000
-/received 13000 Yadagiri interest
+
 
 /clear - Reset cache
 /help - This menu
@@ -955,6 +953,7 @@ Format: /budget <category> <amount>
 
 -- DAILY EXPENSES --
 Format: /log <amt> <category> [desc] [mode] [type] [tag]
+category: 
 /log 500 food lunch UPI
 /log 1200 fuel petrol cash
 /log 299 entertainment Netflix auto-debit expense lifestyle
