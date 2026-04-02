@@ -16,6 +16,8 @@ Step 3: Register the webhook
 Open this URL in your browser (replace YOUR_VERCEL_DOMAIN with your actual Vercel domain):
 
 https://api.telegram.org/bot<TELEGRAM_TOKEN>/setWebhook?url=https://YOUR_VERCEL_DOMAIN/api/telegram
+
+
 You should see {"ok":true,"result":true,"description":"Webhook was set"}.
 
 Now type /start in bot
@@ -27,3 +29,11 @@ In your Apps Script editor, select function stopPolling and click Run. This remo
 Step 5: Test
 
 Send /summary on Telegram. You should get a response in 2-3 seconds with 100% consistent numbers every time.
+
+
+commands:
+
+
+To delete webhook 
+
+https://api.telegram.org/bot8635300628:AAFgOHl-0F11rl2Cr3v0z8UGWMOimgXmdnI/deleteWebhook?drop_pending_updates=true
