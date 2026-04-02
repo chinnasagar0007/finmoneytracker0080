@@ -991,73 +991,59 @@ export default async function handler(req, res) {
     if (text === "/write") {
       const writeMsg1 = `DATA ENTRY COMMANDS (1/2)
 
-Modes: UPI Cash CreditCard BankTransfer Auto-Debit Cheque
-Types: Expense Income Investment Transfer
-Tags: Essential Lifestyle Impulsive Planned Fixed
-
 -- INCOME TRACKER --
-Format: /set <field> <value> [month]
-/set salary 95000
-/set otherincome 5000
-/set tutoring 8000
-/set taxdeducted 3000
-/set taxrefunded 10000
-/set creditcard 24000
-/set cashfd 25000
-/set salary 95000 Apr-26
+
+Format  : /set <field> <value> [month]
+field   : salary, otherincome, tutoring, taxdeducted, taxrefunded, creditcard, cashfd
+Example : /set salary 95000 Apr-26
 
 -- MONTHLY BUDGET --
-Format: /budget <category> <amount>
-/budget food 5000
-/budget transport 2000
-/budget medical 1000
-/budget entertainment 500
+
+Format  : /budget <category> <amount>
+category: food|transport|rent|nanna|medical|entertainment|shopping|education|fuel|grooming|debt|misc
+Example : /budget food 5000
 
 -- DAILY EXPENSES --
-Format: /log <amt> <category> [desc] [mode] [type] [tag]
-/log 500 food lunch UPI
-/log 1200 fuel petrol cash
-/log 299 entertainment Netflix auto-debit expense lifestyle
-/log 12000 emi Land-EMI auto-debit expense fixed
-/log 95000 salary March bank income planned
-/log 5000 investment SIP auto-debit investment planned`;
+Format: /log <amt> <category> [description] [mode] [type] [tag]
+category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
+Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
+Types: Expense, Income, Investment, Transfer
+Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
+Example: /log 500 food lunch UPI Expense Essential`;
 
       const writeMsg2 = `DATA ENTRY COMMANDS (2/2)
 
 -- PERSONAL LENDING --
-Format: /lent <amt> <name> [rate%] [months] [phone]
-/lent 100000 RamuKaka 2 12 9876543210
+Format :   /lent <amt> <name> [rate%] [months] [phone]
+name   :   Yadagiri|KishanRao
+Example:   /lent 100000 RamuKaka 2 12 9876543210
 
-Format: /received <amt> <name> [interest/principal] [mode]
-/received 13000 Yadagiri interest UPI
-/received 50000 KishanRao principal cash
+Format :  /received <amt> <name> [interest/principal] [mode]
+name   :   Yadagiri|KishanRao
+Modes  :  UPI, Cash, BankTransfer
+Example:  /received 13000 Yadagiri interest UPI
 
-Format: /close <borrower>
-/close Yadagiri
+Format :  /close <borrower>
+Example:  /close Yadagiri
 
 -- LOANS --
-Format: /<bank> [month] paid
-/hdfc paid
-/hdfc Apr paid
-/idfc paid
-/sbi paid
+Format : /<bank> [month] paid
+bank   : hdfc|idfc|sbi
+Example: /hdfc Apr paid
 
 -- LENDENCLUB --
-Format: /invest lc <amt> [remarks]
-/invest lc 5000 salary
-/invest lc 13000 Yadagiri-interest
+Format :  /invest lc <amt> [remarks]
+Example:  /invest lc 5000 salary
 
 -- STOCK MARKET --
-Format: /invest <type> <amt> [remarks]
-/invest equity 10000 RELIANCE
-/invest mf 5000 Nifty50-SIP
-/invest options 2000 NIFTY-CE
-/invest crypto 3000 BTC
+Format :  /invest <type> <amt> [remarks]
+type   :  equity|mf|options|crypto
+Example:  /invest equity 10000 RELIANCE
 
 -- REAL ESTATE --
-Format: /paid re <amt> [date] [mode]
-/paid re 25000 banktransfer
-/paid re 25000 10-Mar-2026 banktransfer`;
+Format :  /paid re <amt> [date] [mode]
+mode   :  UPI, Cash, CreditCard, BankTransfer, Cheque
+Example:  /paid re 25000 10-Mar-2026 banktransfer`;
 
       await sendTelegram(chatId, writeMsg1);
       await sendTelegram(chatId, writeMsg2);
