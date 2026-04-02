@@ -1000,12 +1000,12 @@ Example : /set salary 95000 Apr-26
 -- MONTHLY BUDGET --
 
 Format  : /budget <category> <amount>
-category: food|transport|rent|nanna|medical|entertainment|shopping|education|fuel|grooming|debt|misc
+category: food, transport, rent, nanna, medical, entertainment, shopping, education, fuel, grooming, debt, misc
 Example : /budget food 5000
 
 -- DAILY EXPENSES --
 Format: /log <amt> <category> [description] [mode] [type] [tag]
-category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
+category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
 Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
@@ -1015,11 +1015,11 @@ Example: /log 500 food lunch UPI Expense Essential`;
 
 -- PERSONAL LENDING --
 Format :   /lent <amt> <name> [rate%] [months] [phone]
-name   :   Yadagiri|KishanRao
+name   :   Yadagiri, KishanRao
 Example:   /lent 100000 RamuKaka 2 12 9876543210
 
 Format :  /received <amt> <name> [interest/principal] [mode]
-name   :   Yadagiri|KishanRao
+name   :   Yadagiri, KishanRao
 Modes  :  UPI, Cash, BankTransfer
 Example:  /received 13000 Yadagiri interest UPI
 
@@ -1028,7 +1028,7 @@ Example:  /close Yadagiri
 
 -- LOANS --
 Format : /<bank> [month] paid
-bank   : hdfc|idfc|sbi
+bank   : hdfc, idfc, sbi
 Example: /hdfc Apr paid
 
 -- LENDENCLUB --
@@ -1037,7 +1037,7 @@ Example:  /invest lc 5000 salary
 
 -- STOCK MARKET --
 Format :  /invest <type> <amt> [remarks]
-type   :  equity|mf|options|crypto
+type   :  equity, mf, options, crypto
 Example:  /invest equity 10000 RELIANCE
 
 -- REAL ESTATE --
