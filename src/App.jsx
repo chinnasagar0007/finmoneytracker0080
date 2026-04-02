@@ -79,10 +79,25 @@ function hasField(row, ...candidates) {
   return value !== undefined && String(value).trim() !== "";
 }
 
+/** Repayment log "Date" only — hasField(..., "Date") also matches "Date Lent" on borrower rows (wrong sheet / merge). */
+function hasRepaymentLogDateCell(row) {
+  if (!row || typeof row !== "object") return false;
+  for (const [key, value] of Object.entries(row)) {
+    if (value === "" || value == null) continue;
+    const nk = normalizeLookupKey(key);
+    if (nk === "date" && String(value).trim() !== "") return true;
+  }
+  return false;
+}
+
 function unwrapCentralPayload(raw) {
   if (!raw || typeof raw !== "object") return raw;
   const expected = ["income", "lendenClub", "personalLending", "realEstate", "stocks", "loans"];
   if (expected.some(key => key in raw)) return raw;
+  // bot_v3 / bot envelope: { _source, raw: { income, personalLending, ... }, kpis } — mapper expects sections at top level
+  if (raw.raw && typeof raw.raw === "object" && expected.some(key => key in raw.raw)) {
+    return unwrapCentralPayload(raw.raw);
+  }
   if (raw.data && typeof raw.data === "object") return unwrapCentralPayload(raw.data);
   if (raw.result && typeof raw.result === "object") return unwrapCentralPayload(raw.result);
   if (raw.payload && typeof raw.payload === "object") return unwrapCentralPayload(raw.payload);
@@ -661,7 +676,7 @@ function getRepaymentPaymentAmount(row) {
 function mapPersonalLendingData(raw) {
   const sheets    = raw?.personalLending || {};
   const bSheet    = findSheet(sheets, ["Borrower","Personal Lending","Lending"]);
-  const repSheet  = findSheet(sheets, ["Repayment","Payment"]);
+  const repSheet  = findSheet(sheets, ["Repayment Log", "Repayment", "Payment"]);
 
   const rawBorrowers = (bSheet||[])
     .filter((r) => {
@@ -706,7 +721,7 @@ function mapPersonalLendingData(raw) {
     return acc;
   }, {});
 
-  const repaymentLog = (repSheet||[]).filter(r=>hasField(r, "Date")).map(r=>{
+  const repaymentLog = (repSheet||[]).filter(r=>hasRepaymentLogDateCell(r)).map(r=>{
     const borrower = String(getField(r, "Borrower", "Name", "Borrower Name") || "");
     const type = String(getField(r, "Type", "Payment Type") || "Interest");
     let amount = getRepaymentPaymentAmount(r);
