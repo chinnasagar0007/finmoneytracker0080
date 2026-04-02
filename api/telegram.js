@@ -770,9 +770,6 @@ View Data:
 
 Enter Data:
 /write - Show ALL data entry commands
-/log 500 food lunch UPI
-/set salary 95000
-/received 13000 Yadagiri interest
 
 /clear - Reset cache
 /help - This menu
@@ -1213,19 +1210,15 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
     // /log -- daily expense/income/investment/transfer
     if (text.startsWith("/log")) {
       const parts = rawText.replace(/^\/log(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, `Usage: /log <amount> <category> [desc] [mode] [type] [tag]
+      if (parts.length < 2) { await sendTelegram(chatId, `   --Daily Expenses ---
+      
+Usage: /log <amt> <category> [description] [mode] [type] [tag]
 
+category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
-Types: Expense (default), Income, Investment, Transfer
+Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
-
-Examples:
-/log 500 food lunch UPI
-/log 1200 fuel petrol cash
-/log 299 entertainment Netflix auto-debit expense lifestyle
-/log 95000 salary March-salary bank income planned
-/log 5000 investment SIP auto-debit investment planned
-/log 10000 transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
+Example: /log 500 food lunch UPI Expense Essential`); return res.status(200).json({ ok: true }); }
 
       const typeMap = { expense: "Expense", income: "Income", investment: "Investment", transfer: "Transfer" };
       const tagMap = { essential: "Essential", lifestyle: "Lifestyle", impulsive: "Impulsive", planned: "Planned", fixed: "Fixed" };
