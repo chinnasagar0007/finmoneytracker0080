@@ -336,13 +336,38 @@ function mapStocksData(raw) {
   return { mutualFunds:mf, equity, options, crypto, summary };
 }
 
+/** EMI counts as paid only when Status is explicitly "paid" (not "done", blank, or "unpaid"). */
+function isLoanEmiPaidStatus(status) {
+  let t = String(status || "").trim().toLowerCase();
+  if (!t) return false;
+  t = t.replace(/[\u2705\u2713✅✓🟢]/g, "").replace(/\s+/g, " ").trim();
+  if (/\bunpaid\b|\bpending\b|\boverdue\b/.test(t)) return false;
+  return t === "paid";
+}
+
+function readLoanOpeningBalance(row) {
+  if (!row || typeof row !== "object") return 0;
+  for (const [key, value] of Object.entries(row)) {
+    if (value === "" || value == null) continue;
+    const nk = normalizeLookupKey(key);
+    if (nk === "opening balance" || /^opening balance\b/.test(nk)) return num(value);
+  }
+  return 0;
+}
+
 function mapLoansData(raw) {
   function readLoan(sheetsObj, candidates) {
     const rows = findSheet(sheetsObj, candidates);
     if (!rows || rows.length === 0) return null;
-    const meta = rows[0];
-    const hasMeta = hasField(meta, "Outstanding", "EMI", "Loan Name", "Loan Amount");
-    const schedule = (hasMeta ? rows.slice(1) : rows)
+    const first = rows[0];
+    // Do not treat an EMI row as "meta" just because it has an EMI column (that broke SBI: row 1 dropped, outstanding = principal).
+    const isMetaRow =
+      rows.length >= 2 &&
+      (hasField(first, "Loan Name", "Name") || hasField(first, "EMIs Paid", "Total EMIs")) &&
+      !num(getField(first, "#", "no", "Instalment No.", "EMI No.")) &&
+      !hasField(first, "Due Date", "Date");
+    const meta = isMetaRow ? first : {};
+    const schedule = (isMetaRow ? rows.slice(1) : rows)
       .filter(r => hasField(r, "#", "no", "Date", "Due Date"))
       .map(r => ({
         no:        num(getField(r, "#", "no", "EMI No.")),
@@ -350,25 +375,33 @@ function mapLoansData(raw) {
         emi:       num(getField(r, "EMI", "EMI Amount", "Instalment Amt")),
         principal: num(getField(r, "Principal")),
         interest:  num(getField(r, "Interest")),
+        opening:   readLoanOpeningBalance(r),
         balance:   num(getField(r, "Balance", "Closing Balance", "Outstanding")),
         status:    String(getField(r, "Status") || ""),
       }));
-    const paidEmis = schedule.filter(e => /paid|done|completed/i.test(e.status));
+    const paidEmis = schedule.filter(e => isLoanEmiPaidStatus(e.status));
     const calcPrincipalPaid = paidEmis.reduce((s, e) => s + e.principal, 0);
     const calcInterestPaid  = paidEmis.reduce((s, e) => s + e.interest, 0);
     const sheetInterestPaid   = num(getField(meta, "Total Interest Paid"));
     const sheetPrincipalPaid  = num(getField(meta, "Total Principal Paid"));
     const lastPaid = paidEmis.length > 0 ? paidEmis[paidEmis.length - 1] : null;
-    const currentOutstanding = lastPaid
-      ? lastPaid.balance
-      : (schedule.length > 0 ? num(getField(schedule[0], "Opening Balance", "Opening Principal")) || num(getField(meta, "Outstanding", "Balance Outstanding", "Loan Amount", "Original Loan")) : 0);
+    let currentOutstanding = 0;
+    if (lastPaid) currentOutstanding = lastPaid.balance;
+    else if (schedule.length > 0) {
+      currentOutstanding =
+        schedule[0].opening ||
+        schedule[0].balance ||
+        num(getField(meta, "Outstanding", "Balance Outstanding", "Loan Amount", "Original Loan"));
+    }
+    if (!currentOutstanding) currentOutstanding = num(getField(meta, "Outstanding", "Balance Outstanding"));
+    const schedule0 = schedule[0];
     return {
-      name:                String(getField(meta, "Loan Name", "Name") || ""),
-      emi:                 num(getField(meta, "EMI", "Monthly EMI")),
-      outstanding:         currentOutstanding || num(getField(meta, "Outstanding", "Balance Outstanding")),
-      paid:                num(getField(meta, "EMIs Paid")) || paidEmis.length,
-      total:               num(getField(meta, "Total EMIs", "Tenure")),
-      originalLoan:        num(getField(meta, "Original Loan", "Loan Amount")),
+      name:                String(getField(meta, "Loan Name", "Name") || candidates[0] || ""),
+      emi:                 num(getField(meta, "EMI", "Monthly EMI")) || (schedule0 ? schedule0.emi : 0),
+      outstanding:         currentOutstanding,
+      paid:                paidEmis.length,
+      total:               num(getField(meta, "Total EMIs", "Tenure")) || schedule.length,
+      originalLoan:        num(getField(meta, "Original Loan", "Loan Amount")) || (schedule0 ? schedule0.opening || schedule0.balance : 0),
       interestRate:        num(getField(meta, "Interest Rate", "Rate")),
       totalPrincipalPaid:  calcPrincipalPaid > 0 ? calcPrincipalPaid : sheetPrincipalPaid,
       totalInterestPaid:   calcInterestPaid > 0 ? calcInterestPaid : sheetInterestPaid,
