@@ -619,6 +619,40 @@ function getBorrowerPrincipalLent(row) {
   return num(getField(row, "Amount Lent", "Loan Amount", "Principal Lent"));
 }
 
+/** Repayment log payment column — avoid getField(..., "Payment") matching "Mode of Payment" first (→ UPI → 0 → wrong monthly fallback). */
+function getRepaymentPaymentAmount(row) {
+  if (!row || typeof row !== "object") return 0;
+  const nk = (k) => normalizeLookupKey(k);
+  const skipKey = (kn) =>
+    /date|borrower|name|type|notes|month|balance|remaining|outstanding|status|^id$|loan|lent|principal|interest\s*accrued|pending/i.test(kn) ||
+    /mode\s*of\s*payment|payment\s*mode/i.test(kn);
+  const entries = Object.entries(row).filter(([, v]) => v !== "" && v != null);
+
+  const tryRes = (patterns) => {
+    for (const re of patterns) {
+      for (const [k, v] of entries) {
+        const kn = nk(k);
+        if (!kn || skipKey(kn)) continue;
+        if (re.test(kn)) return num(v);
+      }
+    }
+    return null;
+  };
+
+  let v =
+    tryRes([/^payment\s*amount/, /^amount\s*paid/, /^paid\s*amount/, /^received\s*amount/, /^credit\s*amount/]) ??
+    tryRes([/^amount$/]);
+  if (v != null && v > 0) return v;
+
+  for (const [k, val] of entries) {
+    const kn = nk(k);
+    if (skipKey(kn)) continue;
+    if (kn === "payment" && !/mode/i.test(k)) return num(val);
+  }
+
+  return num(getField(row, "Payment Amount", "Amount Paid", "Payment Amount (₹)"));
+}
+
 function mapPersonalLendingData(raw) {
   const sheets    = raw?.personalLending || {};
   const bSheet    = findSheet(sheets, ["Borrower","Personal Lending","Lending"]);
@@ -670,7 +704,7 @@ function mapPersonalLendingData(raw) {
   const repaymentLog = (repSheet||[]).filter(r=>hasField(r, "Date")).map(r=>{
     const borrower = String(getField(r, "Borrower", "Name", "Borrower Name") || "");
     const type = String(getField(r, "Type", "Payment Type") || "Interest");
-    let amount = num(getField(r, "Amount", "Payment", "Payment Amount", "Amount Paid", "Paid", "Interest", "Interest Amount", "Interest Paid", "Interest Received", "Received"));
+    let amount = getRepaymentPaymentAmount(r);
     if (amount <= 0 && /interest/i.test(type || "Interest")) {
       amount = num(borrowerMonthlyMap[normalizeLookupKey(borrower)]);
     }
