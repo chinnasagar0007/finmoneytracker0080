@@ -1150,7 +1150,7 @@ Example : /budget food 5000
 
 -- DAILY EXPENSES --
 Format: /log <amt> <category> [description] [mode] [type] [tag]
-category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
+category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
 Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
@@ -1214,7 +1214,7 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
       
 Usage: /log <amt> <category> [description] [mode] [type] [tag]
 
-category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
+category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
 Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
