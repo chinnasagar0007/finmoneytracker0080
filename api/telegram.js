@@ -934,15 +934,9 @@ Types: Expense Income Investment Transfer
 Tags: Essential Lifestyle Impulsive Planned Fixed
 
 -- INCOME TRACKER --
-Format: /set <field> <value> [month]
-/set salary 95000
-/set otherincome 5000
-/set tutoring 8000
-/set taxdeducted 3000
-/set taxrefunded 10000
-/set creditcard 24000
-/set cashfd 25000
-/set salary 95000 Apr-26
+Format  : /set <field> <value> [month]
+field   : salary, otherincome, tutoring, taxdeducted, taxrefunded, creditcard, cashfd 
+Example : /set salary 95000 Apr-26
 
 -- MONTHLY BUDGET --
 Format: /budget <category> <amount>
