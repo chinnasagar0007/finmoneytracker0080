@@ -46,17 +46,26 @@ const monthsFromNow = (m) => {
 
 // ── Telegram API ─────────────────────────────────────────────────────────────
 async function sendTelegram(chatId, text, opts = {}) {
+  if (!TELEGRAM_TOKEN) {
+    console.error("[sendTelegram] TELEGRAM_TOKEN missing");
+    throw new Error("TELEGRAM_TOKEN not set on server");
+  }
   const MAX_LEN = 4000;
   const chunks = [];
   for (let i = 0; i < text.length; i += MAX_LEN) chunks.push(text.slice(i, i + MAX_LEN));
   for (let i = 0; i < chunks.length; i++) {
     const body = { chat_id: chatId, text: chunks[i] };
     if (i === chunks.length - 1 && opts.reply_markup) body.reply_markup = opts.reply_markup;
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    const resp = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.ok === false) {
+      console.error("[sendTelegram] failed:", resp.status, data);
+      throw new Error(data.description || `Telegram sendMessage HTTP ${resp.status}`);
+    }
   }
 }
 
@@ -894,13 +903,25 @@ export default async function handler(req, res) {
 
   let chatId = null;
   try {
-    const update = req.body;
+    let update = req.body;
+    if (typeof update === "string") {
+      try {
+        update = JSON.parse(update);
+      } catch (e) {
+        console.error("[webhook] body is not JSON");
+        return res.status(200).json({ ok: true });
+      }
+    }
+    if (!update || typeof update !== "object") {
+      return res.status(200).json({ ok: true });
+    }
 
     // Inline keyboard button presses
     if (update.callback_query) {
       const cb = update.callback_query;
       chatId = String(cb.message.chat.id);
-      if (CHAT_ID && chatId !== CHAT_ID) {
+      const cbAllowed = !CHAT_ID || String(chatId).trim() === String(CHAT_ID).trim();
+      if (!cbAllowed) {
         await answerCallback(cb.id);
         return res.status(200).json({ ok: true });
       }
@@ -919,11 +940,25 @@ export default async function handler(req, res) {
     chatId = String(msg.chat.id);
     const rawText = msg.text.trim();
     const text = rawText.split("@")[0];
+    const firstToken = rawText.split(/\s+/)[0] || "";
+    const baseCmd = firstToken.split("@")[0].toLowerCase();
 
-    if (CHAT_ID && chatId !== CHAT_ID) return res.status(200).json({ ok: true });
+    const allowedChat = !CHAT_ID || String(chatId).trim() === String(CHAT_ID).trim();
+    if (!allowedChat) {
+      console.log(`[webhook] ignored chat ${chatId} (TELEGRAM_CHAT_ID=${CHAT_ID})`);
+      return res.status(200).json({ ok: true });
+    }
+
+    // /clear — handle early (no Apps Script, no AI); tolerate case / extra whitespace
+    if (baseCmd === "/clear") {
+      conversationMemory = [];
+      dataCache = { data: null, ts: 0 };
+      await sendTelegram(chatId, "Memory and data cache cleared.");
+      return res.status(200).json({ ok: true });
+    }
 
     // /start and /help with inline keyboard
-    if (text === "/start" || text === "/help") {
+    if (text === "/start" || text === "/help" || baseCmd === "/start" || baseCmd === "/help") {
       await sendTelegram(chatId, helpMessage(), { reply_markup: mainKeyboard });
       return res.status(200).json({ ok: true });
     }
@@ -1172,14 +1207,6 @@ Examples:
         const r = await callWrite("close_loan", { name });
         await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
-      return res.status(200).json({ ok: true });
-    }
-
-    // /clear
-    if (text === "/clear") {
-      conversationMemory = [];
-      dataCache = { data: null, ts: 0 };
-      await sendTelegram(chatId, "Memory and data cache cleared.");
       return res.status(200).json({ ok: true });
     }
 
