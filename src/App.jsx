@@ -351,8 +351,23 @@ function readLoanOpeningBalance(row) {
     if (value === "" || value == null) continue;
     const nk = normalizeLookupKey(key);
     if (nk === "opening balance" || /^opening balance\b/.test(nk)) return num(value);
+    // Apps Script normalizeLoanHeader_ maps "Opening Balance (₹)" → "Opening"
+    if (nk === "opening") return num(value);
   }
   return 0;
+}
+
+/** When no EMI is marked paid, current debt = period-1 opening (not amortized "after EMI" balance). Infer from row 1 if needed. */
+function currentLoanOutstandingNoPayments(schedule, meta) {
+  if (!schedule.length) return 0;
+  const s0 = schedule[0];
+  if (s0.opening > 0) return s0.opening;
+  const reconstructed = s0.principal > 0 && s0.balance >= 0 ? s0.balance + s0.principal : 0;
+  if (reconstructed > 0) return reconstructed;
+  return (
+    num(getField(meta, "Outstanding", "Original Loan", "Loan Amount")) ||
+    s0.balance
+  );
 }
 
 function mapLoansData(raw) {
@@ -388,10 +403,7 @@ function mapLoansData(raw) {
     let currentOutstanding = 0;
     if (lastPaid) currentOutstanding = lastPaid.balance;
     else if (schedule.length > 0) {
-      currentOutstanding =
-        schedule[0].opening ||
-        schedule[0].balance ||
-        num(getField(meta, "Outstanding", "Balance Outstanding", "Loan Amount", "Original Loan"));
+      currentOutstanding = currentLoanOutstandingNoPayments(schedule, meta);
     }
     if (!currentOutstanding) currentOutstanding = num(getField(meta, "Outstanding", "Balance Outstanding"));
     const schedule0 = schedule[0];
@@ -401,7 +413,15 @@ function mapLoansData(raw) {
       outstanding:         currentOutstanding,
       paid:                paidEmis.length,
       total:               num(getField(meta, "Total EMIs", "Tenure")) || schedule.length,
-      originalLoan:        num(getField(meta, "Original Loan", "Loan Amount")) || (schedule0 ? schedule0.opening || schedule0.balance : 0),
+      originalLoan:
+        num(getField(meta, "Original Loan", "Loan Amount")) ||
+        (schedule0
+          ? schedule0.opening > 0
+            ? schedule0.opening
+            : schedule0.principal > 0 && schedule0.balance >= 0
+              ? schedule0.balance + schedule0.principal
+              : schedule0.balance
+          : 0),
       interestRate:        num(getField(meta, "Interest Rate", "Rate")),
       totalPrincipalPaid:  calcPrincipalPaid > 0 ? calcPrincipalPaid : sheetPrincipalPaid,
       totalInterestPaid:   calcInterestPaid > 0 ? calcInterestPaid : sheetInterestPaid,
