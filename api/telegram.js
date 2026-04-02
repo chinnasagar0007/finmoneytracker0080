@@ -929,6 +929,10 @@ export default async function handler(req, res) {
     if (text === "/write") {
       const writeMsg1 = `DATA ENTRY COMMANDS (1/2)
 
+Modes: UPI Cash CreditCard BankTransfer Auto-Debit Cheque
+Types: Expense Income Investment Transfer
+Tags: Essential Lifestyle Impulsive Planned Fixed
+
 -- INCOME TRACKER --
 
 Format  : /set <field> <value> [month]
