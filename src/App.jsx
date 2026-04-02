@@ -639,10 +639,15 @@ function getRepaymentPaymentAmount(row) {
     return null;
   };
 
-  let v =
-    tryRes([/^payment\s*amount/, /^amount\s*paid/, /^paid\s*amount/, /^received\s*amount/, /^credit\s*amount/]) ??
-    tryRes([/^amount$/]);
+  let v = tryRes([/^payment\s*amount/, /^amount\s*paid/, /^paid\s*amount/, /^received\s*amount/, /^credit\s*amount/]);
   if (v != null && v > 0) return v;
+
+  // Canonical "Amount" only if numeric (Apps Script used to map "Mode of Payment" → Amount → "UPI" overwrote ₹).
+  for (const [k, val] of entries) {
+    const kn = nk(k);
+    if (skipKey(kn)) continue;
+    if (kn === "amount" && num(val) > 0) return num(val);
+  }
 
   for (const [k, val] of entries) {
     const kn = nk(k);
