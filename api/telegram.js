@@ -114,7 +114,8 @@ function sumLendenInterestFromTabRows(rows) {
 
 /**
  * Personal lending = sum of Borrowers "Interest Received" (direct loans).
- * Lenden Club = sum of interest across month tabs + Tab Summary (readAllSheetsRaw has NO single "Tab Summary" key — tabs are "Dec-25", etc.).
+ * Lenden Club: prefer "Tab Summary" (same rows as dashboard getLendenClubData_) when Apps Script merges it;
+ * else sum month tabs / other sheets (legacy readAllSheetsRaw-only payloads).
  */
 function computeInterestReceivedKpis(raw) {
   raw = raw || {};
@@ -126,6 +127,11 @@ function computeInterestReceivedKpis(raw) {
 
   let lcInterestReceivedTillNow = 0;
   const lcSec = raw.lendenClub || {};
+  const tabSummaryRows = lcSec["Tab Summary"];
+  if (Array.isArray(tabSummaryRows) && tabSummaryRows.length > 0) {
+    lcInterestReceivedTillNow = sumLendenInterestFromTabRows(tabSummaryRows);
+    return { plInterestReceivedTillNow, lcInterestReceivedTillNow };
+  }
   const skipTab = (name) =>
     /datewise|transaction\s*log|pool\s*growth|cashflow|loan\s*sample|settings|readme|summary\s*meta/i.test(
       String(name || "").replace(/\s+/g, " ")
