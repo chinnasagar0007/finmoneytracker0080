@@ -585,14 +585,57 @@ function mapLendenClubData(raw) {
   };
 }
 
+/** Principal lent for dashboard totals — must NOT use loose getField(..., "Amount") (matches "Amount Paid", "Principal Received", etc.). */
+function getBorrowerPrincipalLent(row) {
+  if (!row || typeof row !== "object") return 0;
+  const nk = (k) => normalizeLookupKey(k);
+  const rejectKey = (keyNorm) =>
+    /received|repayment|repaid|paid|payment|refund|emi|interest\s*accrued|interest\s*received|pending|cumulative|total\s*received|principal\s*received|amount\s*paid|total\s*paid|balance\s*remaining|outstanding|closing|opening/i.test(
+      keyNorm
+    );
+  const entries = Object.entries(row).filter(([, v]) => v !== "" && v != null);
+
+  const tryPatterns = (patterns) => {
+    for (const re of patterns) {
+      for (const [k, v] of entries) {
+        const keyNorm = nk(k);
+        if (!keyNorm || rejectKey(keyNorm)) continue;
+        if (re.test(keyNorm)) return num(v);
+      }
+    }
+    return null;
+  };
+
+  let v =
+    tryPatterns([/^amount\s*lent/, /^loan\s*amount/, /^principal\s*lent/, /^principal$/]) ??
+    tryPatterns([/amount\s*lent/, /loan\s*amount/]);
+  if (v != null && v > 0) return v;
+
+  for (const [k, val] of entries) {
+    const keyNorm = nk(k);
+    if (keyNorm === "amount" && !rejectKey(keyNorm)) return num(val);
+  }
+
+  return num(getField(row, "Amount Lent", "Loan Amount", "Principal Lent"));
+}
+
 function mapPersonalLendingData(raw) {
   const sheets    = raw?.personalLending || {};
   const bSheet    = findSheet(sheets, ["Borrower","Personal Lending","Lending"]);
   const repSheet  = findSheet(sheets, ["Repayment","Payment"]);
 
-  const rawBorrowers = (bSheet||[]).filter(r=>hasField(r, "Name", "Borrower Name")).map(r=>{
+  const rawBorrowers = (bSheet||[])
+    .filter((r) => {
+      if (!hasField(r, "Name", "Borrower Name")) return false;
+      const name = String(getField(r, "Name", "Borrower Name") || "").trim();
+      if (!name) return false;
+      if (/^(total|totals|grand|sum|subtotal)\b/i.test(name)) return false;
+      if (/^how\s+to|^step\s*\d|^borrower\s*quick/i.test(name)) return false;
+      return true;
+    })
+    .map((r) => {
     const name    = String(getField(r, "Name", "Borrower Name") || "");
-    const amount  = num(getField(r, "Amount", "Loan Amount", "Amount Lent"));
+    const amount  = getBorrowerPrincipalLent(r);
     let   rate    = num(getField(r, "Rate", "Rate/Mo"));
     if (rate > 0 && rate <= 1) rate = +(rate*100).toFixed(2);
     const rateD   = rate/100;
