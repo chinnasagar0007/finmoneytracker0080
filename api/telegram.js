@@ -1053,11 +1053,28 @@ export default async function handler(req, res) {
 
     // ── WRITE COMMANDS ──────────────────────────────────────────────────────
     // Universal write helper
+    function formatWriteReply(r) {
+      if (!r || typeof r !== "object")
+        return "Error: Invalid response from server (not JSON). Check DASHBOARD_URL and web app deployment.";
+      if (r._parseError)
+        return "Error: Response was not valid JSON (web app may have returned HTML). Check deployment URL and Executions.";
+      if (r.income != null && r.loans != null && r.success == null && r.error == null) {
+        return "Error: Server returned full dashboard JSON instead of a write result. Redeploy Apps Script: code.js doGet must route mode=write to doGetWrite (FinanceBot.gs).";
+      }
+      if (r.success) return `Done! ${r.message || ""}`.trim();
+      return `Error: ${r.error != null && r.error !== "" ? r.error : r.message || "unknown — check Apps Script Execution log"}`;
+    }
+
     async function callWrite(action, data) {
       const payload = encodeURIComponent(JSON.stringify(data));
       const writeUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + `mode=write&action=${action}&data=${payload}`;
       const resp = await fetch(writeUrl, { redirect: "follow" });
-      const result = await resp.json();
+      let result = {};
+      try {
+        result = await resp.json();
+      } catch (_) {
+        result = { _parseError: true };
+      }
       dataCache = { data: null, ts: 0 };
       return result;
     }
@@ -1145,7 +1162,7 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
       const field = FIELD_MAP[parts[0].toLowerCase()] || parts[0];
       try {
         const r = await callWrite("set", { field, value: parts[1], month: parts[2] || "" });
-        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+        await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       return res.status(200).json({ ok: true });
     }
@@ -1184,7 +1201,7 @@ Examples:
           tag: userTag || autoTag,
           notes: parts.slice(6).join(" ")
         });
-        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+        await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       return res.status(200).json({ ok: true });
     }
@@ -1195,7 +1212,7 @@ Examples:
       if (parts.length < 2) { await sendTelegram(chatId, "Usage: /budget <category> <amount>\nCategories: food, transport, utilities, medical, entertainment, shopping, education, fuel, grooming, misc\nExample: /budget food 5000"); return res.status(200).json({ ok: true }); }
       try {
         const r = await callWrite("budget", { category: parts[0], value: parts[1], month: parts[2] || "" });
-        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+        await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       return res.status(200).json({ ok: true });
     }
@@ -1206,7 +1223,7 @@ Examples:
       if (parts.length < 2) { await sendTelegram(chatId, "Usage: /received <amount> <borrower> [interest/principal] [mode]\nModes: UPI, Cash, CreditCard, Bank Transfer, Cheque\nExample: /received 13000 Yadagiri interest UPI"); return res.status(200).json({ ok: true }); }
       try {
         const r = await callWrite("received", { amount: parts[0], borrower: parts[1] || "", type: parts[2] || "Interest", mode: parseMode(parts[3]), notes: parts.slice(4).join(" ") });
-        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+        await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       return res.status(200).json({ ok: true });
     }
@@ -1217,7 +1234,7 @@ Examples:
       if (parts.length < 2) { await sendTelegram(chatId, "Usage: /lent <amount> <name> [rate%] [months] [phone]\nExample: /lent 100000 RamuKaka 2 12 9876543210"); return res.status(200).json({ ok: true }); }
       try {
         const r = await callWrite("lent", { amount: parts[0], name: parts[1] || "", rate: parts[2] || "2", duration: parts[3] || "12", phone: parts[4] || "", notes: parts.slice(5).join(" ") });
-        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+        await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       return res.status(200).json({ ok: true });
     }
@@ -1234,7 +1251,7 @@ Examples:
         const payload = { amount: parts[1], remarks: parts.slice(2).join(" ") };
         if (action === "invest_stock") payload.type = stockTypes[invType] || "Equity";
         const r = await callWrite(action, payload);
-        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+        await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       return res.status(200).json({ ok: true });
     }
@@ -1252,7 +1269,7 @@ Examples:
         }
         try {
           const r = await callWrite("paid_re", { amount: amt, date: date, mode: parseMode(mode) });
-          await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+          await sendTelegram(chatId, formatWriteReply(r));
         } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       }
       return res.status(200).json({ ok: true });
@@ -1267,7 +1284,7 @@ Examples:
         const month = arg1 !== "paid" ? match[2] || "" : "";
         try {
           const r = await callWrite("loan_paid", { loan, month });
-          await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+          await sendTelegram(chatId, formatWriteReply(r));
         } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       }
       return res.status(200).json({ ok: true });
@@ -1279,7 +1296,7 @@ Examples:
       if (!name) { await sendTelegram(chatId, "Usage: /close <borrower name>\nExample: /close Yadagiri"); return res.status(200).json({ ok: true }); }
       try {
         const r = await callWrite("close_loan", { name });
-        await sendTelegram(chatId, r.success ? `Done! ${r.message}` : `Error: ${r.error}`);
+        await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       return res.status(200).json({ ok: true });
     }
