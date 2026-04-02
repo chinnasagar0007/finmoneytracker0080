@@ -10,8 +10,10 @@ const DASHBOARD_URL  = process.env.DASHBOARD_URL;
 const GROQ_MODEL      = "llama-3.3-70b-versatile";
 const GROQ_MODEL_FAST = "llama-3.1-8b-instant";
 const MAX_TOKENS      = 2048;
-const CACHE_TTL_TEMPLATE = 30 * 60 * 1000;
-const CACHE_TTL_CHAT     = 15 * 60 * 1000;
+// In-process cache only — applies to THIS serverless instance. New/cold instances start empty,
+// so most requests still hit Apps Script. Real speedup for repeat traffic is Apps Script CacheService (bot_v3).
+const CACHE_TTL_TEMPLATE = 10 * 60 * 1000; // align ~with DATA_CACHE_SECONDS on Apps Script
+const CACHE_TTL_CHAT     = 10 * 60 * 1000;
 
 let dataCache = { data: null, ts: 0 };
 let conversationMemory = [];
@@ -86,21 +88,42 @@ const mainKeyboard = {
   ],
 };
 
-// ── Data Fetcher with Smart Cache ────────────────────────────────────────────
+// ── Data Fetcher (two layers) ────────────────────────────────────────────────
+// 1) Vercel: dataCache above — fast only if same instance + within TTL; cleared on every /log, /set, /invest, etc.
+// 2) Apps Script doGetBot: CacheService "bot_v3" — shared across all callers; miss runs readAllSheetsRaw() (slow).
+// Slowness after a write or cold start = layer 2 miss. Slowness on every free-text message = Groq/Gemini (callAI), not this cache.
 async function getFinancialData(forTemplate = true) {
   const ttl = forTemplate ? CACHE_TTL_TEMPLATE : CACHE_TTL_CHAT;
-  if (dataCache.data && Date.now() - dataCache.ts < ttl) return dataCache.data;
+  const mode = forTemplate ? "template" : "chat";
+  if (dataCache.data && Date.now() - dataCache.ts < ttl) {
+    console.log(`[getFinancialData] Vercel cache HIT (${mode}) age=${Math.round((Date.now() - dataCache.ts) / 1000)}s`);
+    return dataCache.data;
+  }
+  console.log(`[getFinancialData] Vercel cache MISS (${mode}) — calling Apps Script...`);
 
   // Strategy 1: Try ?mode=bot (universal raw data + KPIs from Apps Script v3)
+  const t0 = Date.now();
   try {
     const botUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + "mode=bot";
     const botResp = await fetch(botUrl, { redirect: "follow" });
-    const botData = await botResp.json();
+    const text = await botResp.text();
+    let botData;
+    try {
+      botData = JSON.parse(text);
+    } catch (e) {
+      console.error(`[getFinancialData] Non-JSON from Apps Script (${botResp.status}):`, text.slice(0, 200));
+      throw e;
+    }
+    const ms = Date.now() - t0;
     if (botData && botData._source === "bot_v3" && botData.raw && botData.kpis) {
+      console.log(`[getFinancialData] Apps Script OK in ${ms}ms (_source=bot_v3)`);
       dataCache = { data: botData, ts: Date.now() };
       return botData;
     }
-  } catch (_) { /* fallback below */ }
+    console.log(`[getFinancialData] Unexpected payload in ${ms}ms:`, botData?._source || typeof botData);
+  } catch (err) {
+    console.error(`[getFinancialData] mode=bot failed after ${Date.now() - t0}ms:`, err.message);
+  }
 
   // Strategy 2: Fallback to old dashboard endpoint
   try {
@@ -601,10 +624,10 @@ function helpMessage() {
   return `Arth - Your AI Finance Advisor v3.0
 
 View Data:
-/summary      - Financial snapshot
-/loans        - Loan details
-/borrowers    - Who owes you what
-/expenses     - Expense breakdown
+/summary - Financial snapshot
+/loans - Loan details
+/borrowers - Who owes you what
+/expenses - Expense breakdown
 /transactions - Daily expense log
 /networth | /goals | /alerts
 /compare | /projection
@@ -612,7 +635,9 @@ View Data:
 
 Enter Data:
 /write - Show ALL data entry commands
-
+/log 500 food lunch UPI
+/set salary 95000
+/received 13000 Yadagiri interest
 
 /clear - Reset cache
 /help - This menu
@@ -814,10 +839,12 @@ async function callAI(d, userMessage, forceModel) {
 
   if (GROQ_API_KEY) {
     try {
+      const ai0 = Date.now();
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       const reply = await callGroqInternal(messages, controller.signal, model);
       clearTimeout(timer);
+      console.log(`[callAI] Groq ${model} done in ${Date.now() - ai0}ms (queryType=${queryType})`);
       updateMemory(userMessage, reply);
       return reply;
     } catch (err) {
@@ -934,58 +961,68 @@ Types: Expense Income Investment Transfer
 Tags: Essential Lifestyle Impulsive Planned Fixed
 
 -- INCOME TRACKER --
-
-Format  : /set <field> <value> [month]
-field   : salary, otherincome, tutoring, taxdeducted, taxrefunded, creditcard, cashfd 
-Example : /set salary 95000 Apr-26
+Format: /set <field> <value> [month]
+/set salary 95000
+/set otherincome 5000
+/set tutoring 8000
+/set taxdeducted 3000
+/set taxrefunded 10000
+/set creditcard 24000
+/set cashfd 25000
+/set salary 95000 Apr-26
 
 -- MONTHLY BUDGET --
-
-Format  : /budget <category> <amount>
-category: food|transport|rent|nanna|medical|entertainment|shopping|education|fuel|grooming|debt|misc
-Example : /budget food 5000
+Format: /budget <category> <amount>
+/budget food 5000
+/budget transport 2000
+/budget medical 1000
+/budget entertainment 500
 
 -- DAILY EXPENSES --
-Format: /log <amt> <category> [description] [mode] [type] [tag]
-category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
-Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
-Types: Expense, Income, Investment, Transfer
-Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
-Example: /log 500 food lunch UPI Expense Essential
+Format: /log <amt> <category> [desc] [mode] [type] [tag]
+/log 500 food lunch UPI
+/log 1200 fuel petrol cash
+/log 299 entertainment Netflix auto-debit expense lifestyle
+/log 12000 emi Land-EMI auto-debit expense fixed
+/log 95000 salary March bank income planned
+/log 5000 investment SIP auto-debit investment planned`;
 
       const writeMsg2 = `DATA ENTRY COMMANDS (2/2)
 
 -- PERSONAL LENDING --
-Format :   /lent <amt> <name> [rate%] [months] [phone]
-name   :   Yadagiri|KishanRao
-Example:   /lent 100000 RamuKaka 2 12 9876543210
+Format: /lent <amt> <name> [rate%] [months] [phone]
+/lent 100000 RamuKaka 2 12 9876543210
 
-Format :  /received <amt> <name> [interest/principal] [mode]
-name   :   Yadagiri|KishanRao
-Modes  :  UPI, Cash, BankTransfer
-Example:  /received 13000 Yadagiri interest UPI
+Format: /received <amt> <name> [interest/principal] [mode]
+/received 13000 Yadagiri interest UPI
+/received 50000 KishanRao principal cash
 
-Format :  /close <borrower>
-Example:  /close Yadagiri
+Format: /close <borrower>
+/close Yadagiri
 
 -- LOANS --
-Format : /<bank> [month] paid
-bank   : hdfc|idfc|sbi
-Example: /hdfc Apr paid
+Format: /<bank> [month] paid
+/hdfc paid
+/hdfc Apr paid
+/idfc paid
+/sbi paid
 
 -- LENDENCLUB --
-Format :  /invest lc <amt> [remarks]
-Example:  /invest lc 5000 salary
+Format: /invest lc <amt> [remarks]
+/invest lc 5000 salary
+/invest lc 13000 Yadagiri-interest
 
 -- STOCK MARKET --
-Format :  /invest <type> <amt> [remarks]
-type   :  equity|mf|options|crypto
-Example:  /invest equity 10000 RELIANCE
+Format: /invest <type> <amt> [remarks]
+/invest equity 10000 RELIANCE
+/invest mf 5000 Nifty50-SIP
+/invest options 2000 NIFTY-CE
+/invest crypto 3000 BTC
 
 -- REAL ESTATE --
-Format :  /paid re <amt> [date] [mode]
-mode   :  UPI, Cash, CreditCard, BankTransfer, Cheque
-Example:  /paid re 25000 10-Mar-2026 banktransfer
+Format: /paid re <amt> [date] [mode]
+/paid re 25000 banktransfer
+/paid re 25000 10-Mar-2026 banktransfer`;
 
       await sendTelegram(chatId, writeMsg1);
       await sendTelegram(chatId, writeMsg2);
