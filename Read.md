@@ -37,3 +37,7 @@ commands:
 To delete webhook 
 
 https://api.telegram.org/bot8635300628:AAFgOHl-0F11rl2Cr3v0z8UGWMOimgXmdnI/deleteWebhook?drop_pending_updates=true
+
+To clear cache in appsscripts
+
+https://script.googleusercontent.com/macros/echo?user_content_key=AWDtjMVsE6Y0fG8X4upmRbctB6K8rhtx5G8NUOzCDbT1qNKQa8UPrMlBNWkXEMHeU2y37J6Z4sJ11BQicr_vIA3r_exma3wOHX32NomemSdFSBrFAT7OKCbYMyEV8Br-GYB84evMCLPfpN4HYCrZ-MDQU-gqzsT0wx4Y_RTfWHYTVkfT4w5vCrW5DiRhT3mQ3iGr6pxSUlBjYidRSi5R9ONv_86EX7lxqts-Yr1KLsU_K_L3-5sU0HHySBcGuLy1eyOaoa2JQQXuN_ef4aW-ANXkDrswkCQuU-vPHhgaXsw_k5doCbRWrr0&lib=MPg9o1bCE8Go4UQAp3Aw9dfut1y-0J1iD
