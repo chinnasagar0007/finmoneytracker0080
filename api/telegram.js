@@ -1114,9 +1114,13 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
     }
 
     async function callWrite(action, data) {
-      const payload = encodeURIComponent(JSON.stringify(data));
-      const writeUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + `mode=write&action=${action}&data=${payload}`;
-      const resp = await fetch(writeUrl, { redirect: "follow" });
+      const baseUrl = DASHBOARD_URL.replace(/\?.*$/, "");
+      const resp = await fetch(baseUrl, {
+        method: "POST",
+        redirect: "follow",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "write", action, data }),
+      });
       const bodyText = await resp.text();
       let result = {};
       try {
