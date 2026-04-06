@@ -1099,8 +1099,13 @@ export default async function handler(req, res) {
     function formatWriteReply(r) {
       if (!r || typeof r !== "object")
         return "Error: Invalid response from server (not JSON). Check DASHBOARD_URL and web app deployment.";
-      if (r._parseError)
-        return "Error: Response was not valid JSON (web app may have returned HTML). Check deployment URL and Executions.";
+      if (r._parseError) {
+        const hint = r._httpStatus != null ? ` HTTP ${r._httpStatus}.` : "";
+        const prev = r._bodyPreview ? `\nFirst bytes: ${r._bodyPreview}` : "";
+        return `Error: Response was not valid JSON (web app may have returned HTML).${hint}${prev}
+
+Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL (script.google.com/.../exec), not the React site. Deploy: Execute as **Me**, access **Anyone**.`;
+      }
       if (r.income != null && r.loans != null && r.success == null && r.error == null) {
         return "Error: Server returned full dashboard JSON instead of a write result. Redeploy Apps Script: code.js doGet must route mode=write to doGetWrite (FinanceBot.gs).";
       }
@@ -1112,11 +1117,17 @@ export default async function handler(req, res) {
       const payload = encodeURIComponent(JSON.stringify(data));
       const writeUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + `mode=write&action=${action}&data=${payload}`;
       const resp = await fetch(writeUrl, { redirect: "follow" });
+      const bodyText = await resp.text();
       let result = {};
       try {
-        result = await resp.json();
+        result = JSON.parse(bodyText);
       } catch (_) {
-        result = { _parseError: true };
+        const prev = bodyText.replace(/\s+/g, " ").trim().slice(0, 280);
+        result = {
+          _parseError: true,
+          _httpStatus: resp.status,
+          _bodyPreview: prev || "(empty body)",
+        };
       }
       dataCache = { data: null, ts: 0 };
       return result;
@@ -1233,8 +1244,8 @@ Examples:
 /log 5000 AMC investment SIP auto-debit investment planned
 /log 10000 Self transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
 
-      const typeMap = { expense: "Expense", income: "Income", investment: "Investment", transfer: "Transfer" };
-      const tagMap = { essential: "Essential", lifestyle: "Lifestyle", impulsive: "Impulsive", planned: "Planned", fixed: "Fixed" };
+      const typeMap = { expense: "Expense", income: "Income", investment: "Investment", invest: "Investment", transfer: "Transfer" };
+      const tagMap = { essential: "Essential", lifestyle: "Lifestyle", lyfe: "Lifestyle", impulsive: "Impulsive", planned: "Planned", fixed: "Fixed" };
       const catTags = { food: "Essential", groceries: "Essential", transport: "Essential", fuel: "Essential", medical: "Fixed", health: "Fixed", insurance: "Fixed", utilities: "Fixed", electricity: "Fixed", emi: "Fixed", loan: "Fixed", rent: "Fixed", entertainment: "Lifestyle", shopping: "Lifestyle", education: "Essential", grooming: "Lifestyle", salary: "Planned", investment: "Planned", transfer: "Planned", misc: "Lifestyle" };
       const knownCategory = new Set([
         ...Object.keys(catTags),
