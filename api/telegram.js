@@ -770,7 +770,7 @@ View Data:
 
 Enter Data:
 /write - Show ALL data entry commands
-/log 500 food lunch UPI
+/log 500 Swiggy food lunch UPI
 /set salary 95000
 /received 13000 Yadagiri interest
 
@@ -1153,13 +1153,13 @@ Example : /budget food 5000
 
 -- DAILY TRANSACTIONS (sheet cols A–J) --
 A Date, B Day, C Entity, D Category, E Description, F Amount, G Mode, H Type, I Tag, J Notes
-/log leaves C Entity blank; set Entity in the sheet when needed (e.g. borrower, LendenClub).
-Format: /log <amt> <category> [description] [mode] [type] [tag]
+Format: /log <amt> <entity> <category> [description] [mode] [type] [tag]
+Use - or na for blank entity. Legacy: /log <amt> <category> (Entity stays blank)
 category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
 Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
-Example: /log 500 food lunch UPI Expense Essential`;
+Example: /log 500 Swiggy food lunch UPI Expense Essential`;
 
       const writeMsg2 = `DATA ENTRY COMMANDS (2/2)
 
@@ -1213,38 +1213,79 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
     }
 
     // /log -- daily expense/income/investment/transfer
+    // Sheet: A Date, B Day (auto), C Entity, D Category, ... — pass entity after amount when using 3+ tokens.
     if (text.startsWith("/log")) {
       const parts = rawText.replace(/^\/log(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, `Usage: /log <amount> <category> [desc] [mode] [type] [tag]
+      if (parts.length < 2) { await sendTelegram(chatId, `Usage: /log <amount> <entity> <category> [desc] [mode] [type] [tag]
+Legacy (no entity): /log <amount> <category> [desc] [mode] [type] [tag]
+Use - or na for blank entity.
 
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
 Types: Expense (default), Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
 
 Examples:
-/log 500 food lunch UPI
-/log 1200 fuel petrol cash
-/log 299 entertainment Netflix auto-debit expense lifestyle
-/log 95000 salary March-salary bank income planned
-/log 5000 investment SIP auto-debit investment planned
-/log 10000 transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
+/log 500 Swiggy food lunch UPI
+/log 500 - food lunch UPI
+/log 1200 Shell fuel petrol cash
+/log 299 Netflix entertainment Netflix auto-debit expense lifestyle
+/log 95000 Employer salary March-salary bank income planned
+/log 5000 AMC investment SIP auto-debit investment planned
+/log 10000 Self transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
 
       const typeMap = { expense: "Expense", income: "Income", investment: "Investment", transfer: "Transfer" };
       const tagMap = { essential: "Essential", lifestyle: "Lifestyle", impulsive: "Impulsive", planned: "Planned", fixed: "Fixed" };
       const catTags = { food: "Essential", groceries: "Essential", transport: "Essential", fuel: "Essential", medical: "Fixed", health: "Fixed", insurance: "Fixed", utilities: "Fixed", electricity: "Fixed", emi: "Fixed", loan: "Fixed", rent: "Fixed", entertainment: "Lifestyle", shopping: "Lifestyle", education: "Essential", grooming: "Lifestyle", salary: "Planned", investment: "Planned", transfer: "Planned", misc: "Lifestyle" };
+      const knownCategory = new Set([
+        ...Object.keys(catTags),
+        "nanna", "gifts", "debt", "creditcard", "cc", "cashfd", "cash", "fd",
+      ]);
 
-      const cat = parts[1] || "Misc";
-      const userType = typeMap[(parts[4] || "").toLowerCase()];
-      const userTag = tagMap[(parts[5] || "").toLowerCase()];
+      let entity = "";
+      let cat = "Misc";
+      let desc = "";
+      let modePart = "";
+      let typePart = "";
+      let tagPart = "";
+      let notesParts = [];
+
+      const second = (parts[1] || "").trim();
+      const secondIsBlankEntity = /^[-_.]$|^na$/i.test(second);
+      const secondIsKnownCategory = knownCategory.has(second.toLowerCase());
+      // Legacy: /log <amt> <category> ... when only 2 tokens, or when 2nd token is a known category (e.g. /log 500 food lunch UPI)
+      const useLegacy = parts.length === 2 || (secondIsKnownCategory && !secondIsBlankEntity);
+
+      if (useLegacy) {
+        cat = parts[1] || "Misc";
+        desc = parts[2] || "";
+        modePart = parts[3];
+        typePart = parts[4];
+        tagPart = parts[5];
+        notesParts = parts.slice(6);
+      } else {
+        entity = secondIsBlankEntity ? "" : second;
+        cat = parts[2] || "Misc";
+        desc = parts[3] || "";
+        modePart = parts[4];
+        typePart = parts[5];
+        tagPart = parts[6];
+        notesParts = parts.slice(7);
+      }
+
+      const userType = typeMap[(typePart || "").toLowerCase()];
+      const userTag = tagMap[(tagPart || "").toLowerCase()];
       const autoTag = catTags[cat.toLowerCase()] || "Lifestyle";
 
       try {
         const r = await callWrite("log", {
-          amount: parts[0], category: cat, description: parts[2] || "",
-          mode: parseMode(parts[3]),
+          amount: parts[0],
+          entity,
+          category: cat,
+          description: desc,
+          mode: parseMode(modePart),
           type: userType || "Expense",
           tag: userTag || autoTag,
-          notes: parts.slice(6).join(" ")
+          notes: notesParts.join(" ")
         });
         await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
