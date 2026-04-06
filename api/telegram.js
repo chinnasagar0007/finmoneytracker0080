@@ -1169,8 +1169,8 @@ Example : /budget food 5000
 -- DAILY TRANSACTIONS (sheet cols A–J) --
 A Date, B Day, C Entity, D Category, E Description, F Amount, G Mode, H Type, I Tag, J Notes
 Format: /log <amt> <entity> <category> [description] [mode] [type] [tag]
-Use - or na for blank entity. Legacy: /log <amt> <category> (Entity stays blank)
-category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
+entity: Kore, LendenClub, BorrowerName, HDFC, IDFC, SBI, RealEstate
+category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, Investment, Lent, Principal, Interest, EMI/Loan, Salary, misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
 Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
@@ -1231,12 +1231,11 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
     // Sheet: A Date, B Day (auto), C Entity, D Category, ... — pass entity after amount when using 3+ tokens.
     if (text.startsWith("/log")) {
       const parts = rawText.replace(/^\/log(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, `Usage: /log <amount> <entity> <category> [desc] [mode] [type] [tag]
-Legacy (no entity): /log <amount> <category> [desc] [mode] [type] [tag]
-Use - or na for blank entity.
-
+      if (parts.length < 2) { await sendTelegram(chatId, `Format: /log <amt> <entity> <category> [description] [mode] [type] [tag]
+entity: Kore, LendenClub, BorrowerName, HDFC, IDFC, SBI, RealEstate
+category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, Investment, Lent, Principal, Interest, EMI/Loan, Salary, misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
-Types: Expense (default), Income, Investment, Transfer
+Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
 
 Examples:
