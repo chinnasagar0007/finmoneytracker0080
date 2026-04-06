@@ -165,10 +165,10 @@ function findSheet(sheetsObj, candidates) {
 }
 
 function mapIncomeData(raw) {
-  // raw.income → { "Income Tracker": [...], "Monthly Budget": [...], "Daily Expenses": [...], "Tax Log": [...] }
+  // raw.income → { ..., "Daily Transactions" | "Daily Expenses", ... }
   const incomeSheet = findSheet(raw?.income, ["Income Tracker"]);
   const budgetSheet = findSheet(raw?.income, ["Monthly Budget"]);
-  const expSheet    = findSheet(raw?.income, ["Daily Expenses"]);
+  const expSheet    = findSheet(raw?.income, ["Daily Transactions", "Daily Expenses"]);
   const taxSheet    = findSheet(raw?.income, ["Tax Log"]);
 
   // Current month row = last row that has a Salary value
@@ -216,16 +216,19 @@ function mapIncomeData(raw) {
     }
   });
 
-  // Daily Expenses
+  // Daily Transactions (ledger)
   const dailyExpenses = (expSheet || [])
     .filter(r => r["Date"] || r["date"])
     .map(r => ({
       date:     String(r["Date"]     || r["date"]     || ""),
+      entity:   String(r["Entity"]   || r["entity"]   || ""),
       category: String(r["Category"]|| r["category"] || ""),
       desc:     String(r["Description"] || r["desc"] || r["Desc"] || ""),
       amount:   num(r["Amount"]      || r["amount"]),
       mode:     String(r["Mode"]     || r["mode"]     || ""),
+      type:     String(r["Type"]     || r["type"]     || ""),
       tag:      String(r["Tag"]      || r["tag"]      || ""),
+      notes:    String(r["Notes"]    || r["notes"]    || ""),
     }));
 
   // Tax Log
@@ -3766,7 +3769,7 @@ function APISettings({ apiUrl, setApiUrl, onSyncNow }) {
         <SectionHead title="How data is mapped" icon="🗺" color={P.muted}/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10}}>
           {[
-            { key:"income",          icon:"💰", label:"Income (sheet1)",          sheets:"Income Tracker, Monthly Budget, Daily Expenses, Tax Log" },
+            { key:"income",          icon:"💰", label:"Income (sheet1)",          sheets:"Income Tracker, Monthly Budget, Daily Transactions, Tax Log" },
             { key:"lendenClub",      icon:"🏛", label:"LendenClub (sheet2)",       sheets:"LC Summary, Tab Summary, LC Transactions, Loan Samples" },
             { key:"personalLending", icon:"🤝", label:"Personal Lending (sheet3)", sheets:"Borrowers, Repayment Log" },
             { key:"realEstate",      icon:"🏡", label:"Real Estate (sheet4)",      sheets:"Property Details, EMI Schedule, Valuation" },
@@ -3974,7 +3977,7 @@ const TABS = [
   { id:"overview",    label:"Overview",         icon:"🏠" },
   { id:"income",      label:"Income & Budget",  icon:"💰" },
   { id:"salary",      label:"Salary Tracker",   icon:"📊" },
-  { id:"expenses",    label:"Daily Expenses",   icon:"🧾" },
+  { id:"expenses",    label:"Daily Transactions",   icon:"🧾" },
   { id:"stocks",      label:"Stocks & Crypto",  icon:"📈" },
   { id:"loans",       label:"Loans / EMIs",     icon:"🏦" },
   { id:"lending",     label:"Personal Lending", icon:"🤝" },
