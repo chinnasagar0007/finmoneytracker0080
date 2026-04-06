@@ -745,11 +745,11 @@ ${lines.join("\n\n")}`;
 }
 
 function templateTransactions(d) {
-  const txnRows = rawRows(d, "income", ["Daily", "Expense", "Transaction"]);
-  if (txnRows.length === 0) return "No daily expense data available.";
+  const txnRows = rawRows(d, "income", ["Daily Transactions", "Daily", "Expense", "Transaction"]);
+  if (txnRows.length === 0) return "No Daily Transactions data available.";
   const recent = txnRows.slice(-20);
   const lines = recent.map(r => "  " + rowToLine(r)).join("\n");
-  return `DAILY EXPENSES (last ${recent.length} of ${txnRows.length} transactions)
+  return `DAILY TRANSACTIONS (last ${recent.length} of ${txnRows.length} rows)
 
 ${lines}`;
 }
@@ -763,13 +763,16 @@ View Data:
 /loans - Loan details
 /borrowers - Who owes you what
 /expenses - Expense breakdown
-/transactions - Daily expense log
+/transactions - Daily Transactions log
 /networth | /goals | /alerts
 /compare | /projection
 /whatif <scenario>
 
 Enter Data:
 /write - Show ALL data entry commands
+/log 500 food lunch UPI
+/set salary 95000
+/received 13000 Yadagiri interest
 
 /clear - Reset cache
 /help - This menu
@@ -845,7 +848,7 @@ function buildSystemPrompt(d) {
     });
     const display = last30.length > 0 ? last30 : recent.slice(-15);
     if (display.length > 0) {
-      expenseLines = `\nDAILY EXPENSES (last 30 days, ${display.length} transactions):\n` + display.map(r =>
+      expenseLines = `\nDAILY TRANSACTIONS (last 30 days, ${display.length} rows):\n` + display.map(r =>
         "  " + Object.entries(r).filter(([,v]) => v !== null && v !== undefined && v !== "" && v !== 0).map(([ek,ev]) => `${ek}=${ev}`).join(" | ")
       ).join("\n");
     }
@@ -1148,9 +1151,11 @@ Format  : /budget <category> <amount>
 category: food|transport|rent|nanna|medical|entertainment|shopping|education|fuel|grooming|debt|misc
 Example : /budget food 5000
 
--- DAILY EXPENSES --
+-- DAILY TRANSACTIONS (sheet cols A–J) --
+A Date, B Day, C Entity, D Category, E Description, F Amount, G Mode, H Type, I Tag, J Notes
+/log leaves C Entity blank; set Entity in the sheet when needed (e.g. borrower, LendenClub).
 Format: /log <amt> <category> [description] [mode] [type] [tag]
-category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, misc
+category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
 Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
@@ -1210,15 +1215,19 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
     // /log -- daily expense/income/investment/transfer
     if (text.startsWith("/log")) {
       const parts = rawText.replace(/^\/log(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, `   --Daily Expenses ---
-      
-Usage: /log <amt> <category> [description] [mode] [type] [tag]
+      if (parts.length < 2) { await sendTelegram(chatId, `Usage: /log <amount> <category> [desc] [mode] [type] [tag]
 
-category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
-Types: Expense, Income, Investment, Transfer
+Types: Expense (default), Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
-Example: /log 500 food lunch UPI Expense Essential`); return res.status(200).json({ ok: true }); }
+
+Examples:
+/log 500 food lunch UPI
+/log 1200 fuel petrol cash
+/log 299 entertainment Netflix auto-debit expense lifestyle
+/log 95000 salary March-salary bank income planned
+/log 5000 investment SIP auto-debit investment planned
+/log 10000 transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
 
       const typeMap = { expense: "Expense", income: "Income", investment: "Investment", transfer: "Transfer" };
       const tagMap = { essential: "Essential", lifestyle: "Lifestyle", impulsive: "Impulsive", planned: "Planned", fixed: "Fixed" };
