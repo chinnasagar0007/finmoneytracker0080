@@ -1239,13 +1239,14 @@ Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
 
 Examples:
-/log 500 Swiggy food lunch UPI
-/log 500 - food lunch UPI
-/log 1200 Shell fuel petrol cash
-/log 299 Netflix entertainment Netflix auto-debit expense lifestyle
-/log 95000 Employer salary March-salary bank income planned
-/log 5000 AMC investment SIP auto-debit investment planned
-/log 10000 Self transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
+/log 95000 Kore Salary March-salary BankTransfer income planned
+/log 10000 LendenClub Investment From-Salary UPI Investment planned
+/log 10000 Yadagiri Lent Lent-10000 UPI Incvestment planned
+/log 10000 Yadagiri Principal Prinicpal-Paid UPI Income planned
+/log 10000 Yadagiri Interest Prinicpal-Paid UPI Income planned
+/log 10000 HDFC EMI/Loan EMI-Paid Auto-Debit Expense planned
+/log 10000 RealEstate Investment From-CreditCard CreditCard Investment planned
+/log 299 Netflix entertainment Netflix auto-debit expense lifestyle`); return res.status(200).json({ ok: true }); }
 
       const typeMap = { expense: "Expense", income: "Income", investment: "Investment", invest: "Investment", transfer: "Transfer" };
       const tagMap = { essential: "Essential", lifestyle: "Lifestyle", lyfe: "Lifestyle", impulsive: "Impulsive", planned: "Planned", fixed: "Fixed" };
