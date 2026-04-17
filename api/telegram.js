@@ -1027,6 +1027,11 @@ function normalizeCommandLine(raw) {
   return String(raw || "").trim().replace(/^\/([A-Za-z0-9_]+)@[A-Za-z0-9_]+/, "/$1");
 }
 
+/** Telegram/iOS often send Unicode minus/en-dash instead of ASCII `-` for blank entity — breaks /log field positions. */
+function normalizeLogDashes(s) {
+  return String(s || "").replace(/[\u2212\u2010\u2011\u2012\u2013\u2014\u2015\uFE58\uFE63\uFF0D]/g, "-");
+}
+
 function parseWriteResponse(bodyText, httpStatus) {
   try {
     return JSON.parse(bodyText);
@@ -1038,6 +1043,41 @@ function parseWriteResponse(bodyText, httpStatus) {
       _bodyPreview: prev || "(empty body)",
     };
   }
+}
+
+/** Vercel/Node often omits or buffers req.body — read JSON reliably or Telegram updates are dropped with no reply. */
+async function readTelegramWebhookJson(req) {
+  let b = req.body;
+  if (Buffer.isBuffer(b)) {
+    try {
+      return JSON.parse(b.toString("utf8"));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof b === "string" && b.length) {
+    try {
+      return JSON.parse(b);
+    } catch {
+      return null;
+    }
+  }
+  if (b && typeof b === "object" && !Array.isArray(b)) {
+    const keys = Object.keys(b);
+    if (keys.length > 0) return b;
+  }
+  if (req.readable && typeof req.read === "function") {
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (!raw || !raw.trim()) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      console.error("[webhook] body stream read failed:", e.message);
+    }
+  }
+  return null;
 }
 
 // ── Webhook Handler ──────────────────────────────────────────────────────────
@@ -1052,16 +1092,9 @@ export default async function handler(req, res) {
 
   let chatId = null;
   try {
-    let update = req.body;
-    if (typeof update === "string") {
-      try {
-        update = JSON.parse(update);
-      } catch (e) {
-        console.error("[webhook] body is not JSON");
-        return res.status(200).json({ ok: true });
-      }
-    }
+    let update = await readTelegramWebhookJson(req);
     if (!update || typeof update !== "object") {
+      console.error("[webhook] missing JSON body — set webhook URL to https://YOUR_DEPLOYMENT.vercel.app/api/telegram and redeploy.");
       return res.status(200).json({ ok: true });
     }
 
@@ -1268,7 +1301,10 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
     // /log -- daily expense/income/investment/transfer
     // Sheet: A Date, B Day (auto), C Entity, D Category, ... — pass entity after amount when using 3+ tokens.
     if (/^\/log(\s|$)/i.test(text)) {
-      const parts = text.replace(/^\/log\s*/i, "").trim().split(/\s+/);
+      const parts = normalizeLogDashes(text)
+        .replace(/^\/log\s*/i, "")
+        .trim()
+        .split(/\s+/);
       if (parts.length < 2) { await sendTelegram(chatId, `Usage: /log <amount> <entity> <category> [desc] [mode] [type] [tag]
 Legacy (no entity): /log <amount> <category> [desc] [mode] [type] [tag]
 Use - or na for blank entity.
