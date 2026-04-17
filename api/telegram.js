@@ -1259,7 +1259,15 @@ Examples:
 /log 5000 AMC investment SIP auto-debit investment planned
 /log 10000 Self transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
 
-      const typeMap = { expense: "Expense", income: "Income", investment: "Investment", invest: "Investment", transfer: "Transfer" };
+      const typeMap = {
+        expense: "Expense",
+        income: "Income",
+        investment: "Investment",
+        invest: "Investment",
+        transfer: "Transfer",
+        creditcardexpense: "CreditCardExpense",
+        cc_expense: "CreditCardExpense",
+      };
       const tagMap = { essential: "Essential", lifestyle: "Lifestyle", lyfe: "Lifestyle", impulsive: "Impulsive", planned: "Planned", fixed: "Fixed" };
       const catTags = { food: "Essential", groceries: "Essential", transport: "Essential", fuel: "Essential", medical: "Fixed", health: "Fixed", insurance: "Fixed", utilities: "Fixed", electricity: "Fixed", emi: "Fixed", loan: "Fixed", rent: "Fixed", entertainment: "Lifestyle", shopping: "Lifestyle", education: "Essential", grooming: "Lifestyle", salary: "Planned", investment: "Planned", transfer: "Planned", misc: "Lifestyle" };
       const knownCategory = new Set([
