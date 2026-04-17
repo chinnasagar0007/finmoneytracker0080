@@ -1077,6 +1077,17 @@ export default async function handler(req, res) {
     const allowedChat = !CHAT_ID || String(chatId).trim() === String(CHAT_ID).trim();
     if (!allowedChat) {
       console.log(`[webhook] ignored chat ${chatId} (TELEGRAM_CHAT_ID=${CHAT_ID})`);
+      // Without this, Telegram shows no reply — users think the bot is broken. Tell them how to fix env.
+      if (TELEGRAM_TOKEN) {
+        try {
+          await sendTelegram(
+            chatId,
+            `This bot only accepts your configured chat.\n\nYour chat id: ${chatId}\nVercel TELEGRAM_CHAT_ID: ${CHAT_ID}\n\nUpdate TELEGRAM_CHAT_ID to the id above, or remove TELEGRAM_CHAT_ID to allow any chat (less secure).`
+          );
+        } catch (e) {
+          console.error("[webhook] denied-chat notify failed:", e.message);
+        }
+      }
       return res.status(200).json({ ok: true });
     }
 
@@ -1169,8 +1180,8 @@ Example : /budget food 5000
 -- DAILY TRANSACTIONS (sheet cols A–J) --
 A Date, B Day, C Entity, D Category, E Description, F Amount, G Mode, H Type, I Tag, J Notes
 Format: /log <amt> <entity> <category> [description] [mode] [type] [tag]
-entity: Kore, LendenClub, BorrowerName, HDFC, IDFC, SBI, RealEstate
-category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, Investment, Lent, Principal, Interest, EMI/Loan, Salary, misc
+Use - or na for blank entity. Legacy: /log <amt> <category> (Entity stays blank)
+category: food|transport|rent|nanna|medical|emi|entertainment|shopping|education|fuel|grooming|gifts|insurance|debt|misc
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
 Types: Expense, Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
@@ -1231,22 +1242,22 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
     // Sheet: A Date, B Day (auto), C Entity, D Category, ... — pass entity after amount when using 3+ tokens.
     if (text.startsWith("/log")) {
       const parts = rawText.replace(/^\/log(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, `Format: /log <amt> <entity> <category> [description] [mode] [type] [tag]
-entity: Kore, LendenClub, BorrowerName, HDFC, IDFC, SBI, RealEstate
-category: food, transport, rent, nanna, medical, emi, entertainment, shopping, education, fuel, grooming, gifts, insurance, debt, Investment, Lent, Principal, Interest, EMI/Loan, Salary, misc
+      if (parts.length < 2) { await sendTelegram(chatId, `Usage: /log <amount> <entity> <category> [desc] [mode] [type] [tag]
+Legacy (no entity): /log <amount> <category> [desc] [mode] [type] [tag]
+Use - or na for blank entity.
+
 Modes: UPI, Cash, CreditCard, BankTransfer, Auto-Debit, Cheque
-Types: Expense, Income, Investment, Transfer
+Types: Expense (default), Income, Investment, Transfer
 Tags: Essential, Lifestyle, Impulsive, Planned, Fixed
 
 Examples:
-/log 95000 Kore Salary March-salary BankTransfer income planned
-/log 10000 LendenClub Investment From-Salary UPI Investment planned
-/log 10000 Yadagiri Lent Lent-10000 UPI Incvestment planned
-/log 10000 Yadagiri Principal Prinicpal-Paid UPI Income planned
-/log 10000 Yadagiri Interest Prinicpal-Paid UPI Income planned
-/log 10000 HDFC EMI/Loan EMI-Paid Auto-Debit Expense planned
-/log 10000 RealEstate Investment From-CreditCard CreditCard Investment planned
-/log 299 Netflix entertainment Netflix auto-debit expense lifestyle`); return res.status(200).json({ ok: true }); }
+/log 500 Swiggy food lunch UPI
+/log 500 - food lunch UPI
+/log 1200 Shell fuel petrol cash
+/log 299 Netflix entertainment Netflix auto-debit expense lifestyle
+/log 95000 Employer salary March-salary bank income planned
+/log 5000 AMC investment SIP auto-debit investment planned
+/log 10000 Self transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
 
       const typeMap = { expense: "Expense", income: "Income", investment: "Investment", invest: "Investment", transfer: "Transfer" };
       const tagMap = { essential: "Essential", lifestyle: "Lifestyle", lyfe: "Lifestyle", impulsive: "Impulsive", planned: "Planned", fixed: "Fixed" };
