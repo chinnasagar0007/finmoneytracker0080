@@ -1022,6 +1022,24 @@ function getCommandResponse(cmd, d) {
   }
 }
 
+/** Strip `/cmd@BotName` prefix only (Telegram). Never split on `@` elsewhere — it breaks args with @ in text. */
+function normalizeCommandLine(raw) {
+  return String(raw || "").trim().replace(/^\/([A-Za-z0-9_]+)@[A-Za-z0-9_]+/, "/$1");
+}
+
+function parseWriteResponse(bodyText, httpStatus) {
+  try {
+    return JSON.parse(bodyText);
+  } catch (_) {
+    const prev = String(bodyText || "").replace(/\s+/g, " ").trim().slice(0, 280);
+    return {
+      _parseError: true,
+      _httpStatus: httpStatus,
+      _bodyPreview: prev || "(empty body)",
+    };
+  }
+}
+
 // ── Webhook Handler ──────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -1070,8 +1088,8 @@ export default async function handler(req, res) {
 
     chatId = String(msg.chat.id);
     const rawText = msg.text.trim();
-    const text = rawText.split("@")[0];
-    const firstToken = rawText.split(/\s+/)[0] || "";
+    const text = normalizeCommandLine(rawText);
+    const firstToken = text.split(/\s+/)[0] || "";
     const baseCmd = firstToken.split("@")[0].toLowerCase();
 
     const allowedChat = !CHAT_ID || String(chatId).trim() === String(CHAT_ID).trim();
@@ -1125,24 +1143,33 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
     }
 
     async function callWrite(action, data) {
-      const baseUrl = DASHBOARD_URL.replace(/\?.*$/, "");
-      const resp = await fetch(baseUrl, {
+      const dash = DASHBOARD_URL && String(DASHBOARD_URL).trim();
+      if (!dash) {
+        return { success: false, error: "DASHBOARD_URL is not set in Vercel env (Google Apps Script /exec URL)." };
+      }
+      const baseUrl = dash.replace(/\?.*$/, "").replace(/\/$/, "");
+      const payload = JSON.stringify({ mode: "write", action, data });
+      let resp = await fetch(baseUrl, {
         method: "POST",
         redirect: "follow",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "write", action, data }),
+        body: payload,
       });
-      const bodyText = await resp.text();
-      let result = {};
-      try {
-        result = JSON.parse(bodyText);
-      } catch (_) {
-        const prev = bodyText.replace(/\s+/g, " ").trim().slice(0, 280);
-        result = {
-          _parseError: true,
-          _httpStatus: resp.status,
-          _bodyPreview: prev || "(empty body)",
-        };
+      let bodyText = await resp.text();
+      let result = parseWriteResponse(bodyText, resp.status);
+      // POST sometimes returns HTML (login/wrapper). doGet ?mode=write works when POST body is dropped.
+      if (result._parseError) {
+        const sep = baseUrl.includes("?") ? "&" : "?";
+        const getUrl =
+          baseUrl +
+          sep +
+          "mode=write&action=" +
+          encodeURIComponent(String(action)) +
+          "&data=" +
+          encodeURIComponent(JSON.stringify(data));
+        resp = await fetch(getUrl, { method: "GET", redirect: "follow" });
+        bodyText = await resp.text();
+        result = parseWriteResponse(bodyText, resp.status);
       }
       dataCache = { data: null, ts: 0 };
       return result;
@@ -1240,8 +1267,8 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
 
     // /log -- daily expense/income/investment/transfer
     // Sheet: A Date, B Day (auto), C Entity, D Category, ... — pass entity after amount when using 3+ tokens.
-    if (text.startsWith("/log")) {
-      const parts = rawText.replace(/^\/log(@\w+)?\s*/i, "").trim().split(/\s+/);
+    if (/^\/log(\s|$)/i.test(text)) {
+      const parts = text.replace(/^\/log\s*/i, "").trim().split(/\s+/);
       if (parts.length < 2) { await sendTelegram(chatId, `Usage: /log <amount> <entity> <category> [desc] [mode] [type] [tag]
 Legacy (no entity): /log <amount> <category> [desc] [mode] [type] [tag]
 Use - or na for blank entity.
