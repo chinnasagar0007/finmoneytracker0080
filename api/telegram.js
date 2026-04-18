@@ -1338,6 +1338,46 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
         return { success: false, error: "DASHBOARD_URL is not set in Vercel env (Google Apps Script /exec URL)." };
       }
       const baseUrl = dash.replace(/\?.*$/, "").replace(/\/$/, "");
+      const sep = baseUrl.includes("?") ? "&" : "?";
+      const getUrl =
+        baseUrl +
+        sep +
+        "mode=write&action=" +
+        encodeURIComponent(String(action)) +
+        "&data=" +
+        encodeURIComponent(JSON.stringify(data));
+      /** Node can use long URLs; stay under this so GAS GET ?data= is reliable. */
+      const MAX_GET_WRITE_URL_LEN = 7200;
+      let triedGetFirst = false;
+
+      // POST often 405 + huge latency; GET ?mode=write works but ran second → total time > ~60s Telegram webhook window → retries → duplicate rows.
+      if (getUrl.length <= MAX_GET_WRITE_URL_LEN) {
+        triedGetFirst = true;
+        const tG1 = Date.now();
+        whDebug("callWrite_GET_first", { action, urlLen: getUrl.length });
+        let resp = await fetchGoogleAppsScriptWebApp(getUrl, { method: "GET" });
+        let bodyText = await resp.text();
+        let result = parseWriteResponse(bodyText, resp.status);
+        whDebug("callWrite_GET_result", {
+          action,
+          http: resp.status,
+          ms: Date.now() - tG1,
+          parseError: Boolean(result._parseError),
+          success: result.success,
+          bodyLen: bodyText.length,
+          bodyHead: bodyText.slice(0, 120).replace(/\s+/g, " "),
+        });
+        const getOk =
+          !result._parseError &&
+          resp.status >= 200 &&
+          resp.status < 400 &&
+          result.success === true;
+        if (getOk) {
+          dataCache = { data: null, ts: 0 };
+          return result;
+        }
+      }
+
       const payload = JSON.stringify({ mode: "write", action, data });
       const tWrite = Date.now();
       whDebug("callWrite_POST", { action, payloadLen: payload.length });
@@ -1359,22 +1399,13 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
         bodyHead: bodyText.slice(0, 120).replace(/\s+/g, " "),
       });
 
-      // POST sometimes returns HTML (login/wrapper) or 405 (wrong host / missing doPost). GET ?mode=write still works.
       const postUnusable = Boolean(result._parseError) || resp.status === 405;
       if (postUnusable && resp.status === 405) {
         console.warn(
-          "[callWrite] POST 405 — redeploy Apps Script with doPost (code.js), and set DASHBOARD_URL to the Web App /exec URL. Trying GET fallback."
+          "[callWrite] POST 405 — redeploy Apps Script with doPost (code.js). Using GET for writes avoids this; GET fallback runs only when needed."
         );
       }
-      if (postUnusable) {
-        const sep = baseUrl.includes("?") ? "&" : "?";
-        const getUrl =
-          baseUrl +
-          sep +
-          "mode=write&action=" +
-          encodeURIComponent(String(action)) +
-          "&data=" +
-          encodeURIComponent(JSON.stringify(data));
+      if (postUnusable && !(triedGetFirst && getUrl.length <= MAX_GET_WRITE_URL_LEN)) {
         whDebug("callWrite_GET_fallback", { action, urlLen: getUrl.length });
         const tGet = Date.now();
         resp = await fetchGoogleAppsScriptWebApp(getUrl, { method: "GET" });
@@ -1388,6 +1419,8 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
           success: result.success,
           bodyHead: bodyText.slice(0, 120).replace(/\s+/g, " "),
         });
+      } else if (postUnusable && triedGetFirst) {
+        whDebug("callWrite_skip_GET_fallback_already_tried", { action });
       }
       dataCache = { data: null, ts: 0 };
       return result;
