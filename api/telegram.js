@@ -1,5 +1,3 @@
-import { waitUntil } from "@vercel/functions";
-
 // ── Vercel Serverless Telegram Bot for Arth Finance Advisor (v2.0) ───────────
 // 10 template commands, AI chat with Gemini fallback, inline keyboards,
 // smart caching, progress bars, month-over-month comparison.
@@ -20,6 +18,25 @@ const CACHE_TTL_CHAT     = 10 * 60 * 1000;
 let dataCache = { data: null, ts: 0 };
 let conversationMemory = [];
 const MAX_MEMORY = 10;
+
+/** Set `TELEGRAM_WEBHOOK_DEBUG=1` in Vercel env for verbose webhook + Apps Script write logs. */
+const TELEGRAM_WEBHOOK_DEBUG =
+  process.env.TELEGRAM_WEBHOOK_DEBUG === "1" || String(process.env.TELEGRAM_WEBHOOK_DEBUG || "").toLowerCase() === "true";
+
+function whDebug(label, data) {
+  if (!TELEGRAM_WEBHOOK_DEBUG) return;
+  try {
+    const s =
+      data === undefined
+        ? ""
+        : typeof data === "string"
+          ? data
+          : JSON.stringify(data);
+    console.log("[telegram-wh-debug]", label, s.length > 1200 ? s.slice(0, 1200) + "…" : s);
+  } catch (_) {
+    console.log("[telegram-wh-debug]", label, String(data));
+  }
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const N = (v) => typeof v === "number" ? v : parseFloat(String(v || "0").replace(/[^0-9.\-]/g, "")) || 0;
@@ -185,10 +202,11 @@ async function sendTelegram(chatId, text, opts = {}) {
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || data.ok === false) {
-      console.error("[sendTelegram] failed:", resp.status, data);
+      console.error("[telegram-wh] sendMessage_failed", { chatId, http: resp.status, telegram: data });
       throw new Error(data.description || `Telegram sendMessage HTTP ${resp.status}`);
     }
   }
+  whDebug("sendMessage_ok", { chatId, chunks: chunks.length, textLen: text.length });
 }
 
 async function answerCallback(id) {
@@ -1169,7 +1187,8 @@ export default async function handler(req, res) {
         dashboardUrl: dashboardUrlHint(),
         chatIdFilter: CHAT_ID ? `set (only chat ${String(CHAT_ID).trim()})` : "not set — all chats allowed",
         node: typeof process !== "undefined" ? process.version : "",
-        hint: "If telegramTokenSet is false, the bot cannot reply. If chatIdFilter blocks you, unset TELEGRAM_CHAT_ID in Vercel or set it to your Telegram user id. Webhook URL must be https://YOUR_PROJECT.vercel.app/api/telegram",
+        telegramWebhookDebug: TELEGRAM_WEBHOOK_DEBUG,
+        hint: "Set TELEGRAM_WEBHOOK_DEBUG=1 in Vercel for verbose /api/telegram logs. If telegramTokenSet is false, the bot cannot reply. Webhook URL must be https://YOUR_PROJECT.vercel.app/api/telegram",
       });
     }
     return res.status(200).json({ ok: true, message: "Arth bot v2.1 active", tip: "Add ?debug=1 to see env checks (no secrets)." });
@@ -1182,21 +1201,24 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // Reply to Telegram immediately. If we wait for Google Apps Script + sendMessage first, Telegram
-    // retries the webhook → duplicate /log rows and a "stuck" bot with no visible reply.
-    waitUntil(
-      (async () => {
-        try {
-          await processTelegramUpdate(update);
-        } catch (bgErr) {
-          console.error("[webhook] background error:", bgErr);
-        }
-      })()
-    );
+    const t0 = Date.now();
+    whDebug("incoming_update", {
+      update_id: update.update_id,
+      callback: Boolean(update.callback_query),
+      has_text: Boolean(update.message?.text || update.edited_message?.text),
+    });
 
+    // Must await processing before HTTP 200. `waitUntil` + classic `handler(req, res)` often drops
+    // background work after `res.json()` — sheet can update but `sendTelegram` never runs (no "Done!").
+    await processTelegramUpdate(update);
+
+    console.log("[telegram-wh] webhook_handler_done", {
+      update_id: update.update_id,
+      ms: Date.now() - t0,
+    });
     return res.status(200).json({ ok: true });
   } catch (fatal) {
-    console.error("[webhook] fatal:", fatal);
+    console.error("[telegram-wh] webhook_handler_fatal", fatal && fatal.message ? fatal.message : fatal);
     return res.status(200).json({ ok: true });
   }
 }
@@ -1204,7 +1226,11 @@ export default async function handler(req, res) {
 async function processTelegramUpdate(update) {
   let chatId = null;
   try {
-    console.log("[webhook] parsed update_id=", update.update_id, "has_message=", Boolean(update.message), "has_callback=", Boolean(update.callback_query));
+    console.log("[telegram-wh] process_update", {
+      update_id: update.update_id,
+      has_message: Boolean(update.message),
+      has_callback: Boolean(update.callback_query),
+    });
 
     // Inline keyboard button presses
     if (update.callback_query) {
@@ -1232,6 +1258,12 @@ async function processTelegramUpdate(update) {
     const text = normalizeCommandLine(rawText);
     const firstToken = text.split(/\s+/)[0] || "";
     const baseCmd = firstToken.split("@")[0].toLowerCase();
+
+    whDebug("message", {
+      chatId,
+      baseCmd,
+      preview: text.length > 160 ? text.slice(0, 160) + "…" : text,
+    });
 
     const allowedChat = !CHAT_ID || String(chatId).trim() === String(CHAT_ID).trim();
     if (!allowedChat) {
@@ -1286,10 +1318,14 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
     async function callWrite(action, data) {
       const dash = DASHBOARD_URL && String(DASHBOARD_URL).trim();
       if (!dash) {
+        whDebug("callWrite_skip", { reason: "no DASHBOARD_URL" });
         return { success: false, error: "DASHBOARD_URL is not set in Vercel env (Google Apps Script /exec URL)." };
       }
       const baseUrl = dash.replace(/\?.*$/, "").replace(/\/$/, "");
       const payload = JSON.stringify({ mode: "write", action, data });
+      const tWrite = Date.now();
+      whDebug("callWrite_POST", { action, payloadLen: payload.length });
+
       let resp = await fetchGoogleAppsScriptWebApp(baseUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1297,6 +1333,16 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
       });
       let bodyText = await resp.text();
       let result = parseWriteResponse(bodyText, resp.status);
+      whDebug("callWrite_POST_result", {
+        action,
+        http: resp.status,
+        ms: Date.now() - tWrite,
+        parseError: Boolean(result._parseError),
+        success: result.success,
+        bodyLen: bodyText.length,
+        bodyHead: bodyText.slice(0, 120).replace(/\s+/g, " "),
+      });
+
       // POST sometimes returns HTML (login/wrapper). doGet ?mode=write works when POST body is dropped.
       if (result._parseError) {
         const sep = baseUrl.includes("?") ? "&" : "?";
@@ -1307,9 +1353,19 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
           encodeURIComponent(String(action)) +
           "&data=" +
           encodeURIComponent(JSON.stringify(data));
+        whDebug("callWrite_GET_fallback", { action, urlLen: getUrl.length });
+        const tGet = Date.now();
         resp = await fetchGoogleAppsScriptWebApp(getUrl, { method: "GET" });
         bodyText = await resp.text();
         result = parseWriteResponse(bodyText, resp.status);
+        whDebug("callWrite_GET_result", {
+          action,
+          http: resp.status,
+          ms: Date.now() - tGet,
+          parseError: Boolean(result._parseError),
+          success: result.success,
+          bodyHead: bodyText.slice(0, 120).replace(/\s+/g, " "),
+        });
       }
       dataCache = { data: null, ts: 0 };
       return result;
@@ -1644,9 +1700,18 @@ Examples:
     await sendTelegram(chatId, reply);
     return;
   } catch (err) {
-    console.error("Webhook error:", err);
+    console.error("[telegram-wh] process_update_error", {
+      update_id: update && update.update_id,
+      chatId,
+      message: err && err.message ? err.message : String(err),
+      stack: TELEGRAM_WEBHOOK_DEBUG && err && err.stack ? String(err.stack).slice(0, 500) : undefined,
+    });
     if (chatId) {
-      try { await sendTelegram(chatId, "Something went wrong. Please try again in a moment."); } catch (_) {}
+      try {
+        await sendTelegram(chatId, "Something went wrong. Please try again in a moment.");
+      } catch (sendErr) {
+        console.error("[telegram-wh] error_reply_failed", sendErr && sendErr.message ? sendErr.message : sendErr);
+      }
     }
     return;
   }
