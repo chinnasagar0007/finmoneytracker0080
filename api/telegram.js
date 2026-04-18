@@ -19,6 +19,9 @@ let dataCache = { data: null, ts: 0 };
 let conversationMemory = [];
 const MAX_MEMORY = 10;
 
+/** Same Telegram update_id retried while a request is still running (slow GAS) — skip to avoid duplicate /log rows. */
+const inFlightWebhookUpdates = new Set();
+
 /** Set `TELEGRAM_WEBHOOK_DEBUG=1` in Vercel env for verbose webhook + Apps Script write logs. */
 const TELEGRAM_WEBHOOK_DEBUG =
   process.env.TELEGRAM_WEBHOOK_DEBUG === "1" || String(process.env.TELEGRAM_WEBHOOK_DEBUG || "").toLowerCase() === "true";
@@ -287,8 +290,10 @@ async function fetchGoogleAppsScriptWebApp(urlString, options = {}) {
       return resp;
     }
 
+    // Never POST JSON to docs.google.com / drive — that returns 405 + HTML ("Web word processing…") and burns time.
     if (!isGoogleAppsScriptHost(nextHost)) {
-      return fetch(nextUrl, { method, headers, body: sendBody ? body : undefined, redirect: "follow" });
+      console.warn("[GAS-fetch] abort redirect to non-Apps-Script host (refusing to POST elsewhere):", nextUrl.slice(0, 96));
+      return resp;
     }
 
     current = nextUrl;
@@ -1201,6 +1206,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
+    const uid = update.update_id;
+    if (typeof uid === "number" && inFlightWebhookUpdates.has(uid)) {
+      console.log("[telegram-wh] skip_inflight_retry_same_update_id", { update_id: uid });
+      return res.status(200).json({ ok: true });
+    }
+    if (typeof uid === "number") inFlightWebhookUpdates.add(uid);
+
     const t0 = Date.now();
     whDebug("incoming_update", {
       update_id: update.update_id,
@@ -1208,9 +1220,13 @@ export default async function handler(req, res) {
       has_text: Boolean(update.message?.text || update.edited_message?.text),
     });
 
-    // Must await processing before HTTP 200. `waitUntil` + classic `handler(req, res)` often drops
-    // background work after `res.json()` — sheet can update but `sendTelegram` never runs (no "Done!").
-    await processTelegramUpdate(update);
+    try {
+      // Must await processing before HTTP 200. `waitUntil` + classic `handler(req, res)` often drops
+      // background work after `res.json()` — sheet can update but `sendTelegram` never runs (no "Done!").
+      await processTelegramUpdate(update);
+    } finally {
+      if (typeof uid === "number") inFlightWebhookUpdates.delete(uid);
+    }
 
     console.log("[telegram-wh] webhook_handler_done", {
       update_id: update.update_id,
@@ -1343,8 +1359,14 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
         bodyHead: bodyText.slice(0, 120).replace(/\s+/g, " "),
       });
 
-      // POST sometimes returns HTML (login/wrapper). doGet ?mode=write works when POST body is dropped.
-      if (result._parseError) {
+      // POST sometimes returns HTML (login/wrapper) or 405 (wrong host / missing doPost). GET ?mode=write still works.
+      const postUnusable = Boolean(result._parseError) || resp.status === 405;
+      if (postUnusable && resp.status === 405) {
+        console.warn(
+          "[callWrite] POST 405 — redeploy Apps Script with doPost (code.js), and set DASHBOARD_URL to the Web App /exec URL. Trying GET fallback."
+        );
+      }
+      if (postUnusable) {
         const sep = baseUrl.includes("?") ? "&" : "?";
         const getUrl =
           baseUrl +
