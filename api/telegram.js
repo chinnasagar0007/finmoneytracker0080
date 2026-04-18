@@ -217,6 +217,66 @@ const mainKeyboard = {
   ],
 };
 
+/** Hosts used by deployed Apps Script web apps (302 from script.google.com → script.googleusercontent.com). */
+function isGoogleAppsScriptHost(hostname) {
+  return hostname === "script.google.com" || hostname.endsWith(".googleusercontent.com");
+}
+
+/**
+ * Call a Google Apps Script /exec URL. Default fetch + redirect breaks POST writes: a 302 replays as GET,
+ * drops the JSON body, and Apps Script returns an HTML error page (often still HTTP 200).
+ * We follow redirects manually and re-send the same method + body to Google's next hop.
+ */
+async function fetchGoogleAppsScriptWebApp(urlString, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const body = options.body;
+  const headers = options.headers;
+
+  let current = urlString;
+  const maxHops = 10;
+  const sendBody = method !== "GET" && method !== "HEAD" && body !== undefined;
+
+  for (let hop = 0; hop < maxHops; hop++) {
+    const resp = await fetch(current, {
+      method,
+      headers,
+      body: sendBody ? body : undefined,
+      redirect: "manual",
+    });
+
+    if (resp.status < 300 || resp.status >= 400) {
+      return resp;
+    }
+
+    const loc = resp.headers.get("location") || resp.headers.get("Location");
+    if (!loc) {
+      return resp;
+    }
+
+    let nextUrl;
+    try {
+      nextUrl = new URL(loc, current).href;
+    } catch {
+      return resp;
+    }
+
+    let nextHost;
+    try {
+      nextHost = new URL(nextUrl).hostname;
+    } catch {
+      return resp;
+    }
+
+    if (!isGoogleAppsScriptHost(nextHost)) {
+      return fetch(nextUrl, { method, headers, body: sendBody ? body : undefined, redirect: "follow" });
+    }
+
+    current = nextUrl;
+  }
+
+  return fetch(current, { method, headers, body: sendBody ? body : undefined, redirect: "follow" });
+}
+
 // ── Data Fetcher (two layers) ────────────────────────────────────────────────
 // 1) Vercel: dataCache above — fast only if same instance + within TTL; cleared on every /log, /set, /invest, etc.
 // 2) Apps Script doGetBot: CacheService "bot_v3" — shared across all callers; miss runs readAllSheetsRaw() (slow).
@@ -234,7 +294,7 @@ async function getFinancialData(forTemplate = true) {
   const t0 = Date.now();
   try {
     const botUrl = DASHBOARD_URL + (DASHBOARD_URL.includes("?") ? "&" : "?") + "mode=bot";
-    const botResp = await fetch(botUrl, { redirect: "follow" });
+    const botResp = await fetchGoogleAppsScriptWebApp(botUrl, { method: "GET" });
     const text = await botResp.text();
     let botData;
     try {
@@ -257,7 +317,7 @@ async function getFinancialData(forTemplate = true) {
 
   // Strategy 2: Fallback to old dashboard endpoint
   try {
-    const resp = await fetch(DASHBOARD_URL, { redirect: "follow" });
+    const resp = await fetchGoogleAppsScriptWebApp(DASHBOARD_URL, { method: "GET" });
     let raw = await resp.json();
     if (raw?.data) raw = raw.data;
     const summary = buildBotSummary(raw);
@@ -1080,6 +1140,18 @@ async function readTelegramWebhookJson(req) {
   return null;
 }
 
+/** Safe hint for ?debug=1 (no tokens). */
+function dashboardUrlHint() {
+  const u = DASHBOARD_URL && String(DASHBOARD_URL).trim();
+  if (!u) return "(DASHBOARD_URL empty — /log will not write)";
+  try {
+    const x = new URL(u);
+    return `${x.hostname}${x.pathname.slice(0, 48)}${x.pathname.length > 48 ? "…" : ""}`;
+  } catch {
+    return "(DASHBOARD_URL not a valid URL)";
+  }
+}
+
 // ── Webhook Handler ──────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -1087,7 +1159,18 @@ export default async function handler(req, res) {
       try { await getFinancialData(true); } catch (_) {}
       return res.status(200).json({ ok: true, warm: true, ts: Date.now() });
     }
-    return res.status(200).json({ ok: true, message: "Arth bot v2.1 active" });
+    if (req.query?.debug === "1" || req.query?.debug === "true") {
+      return res.status(200).json({
+        ok: true,
+        probe: "vercel-env",
+        telegramTokenSet: Boolean(TELEGRAM_TOKEN && String(TELEGRAM_TOKEN).trim()),
+        dashboardUrl: dashboardUrlHint(),
+        chatIdFilter: CHAT_ID ? `set (only chat ${String(CHAT_ID).trim()})` : "not set — all chats allowed",
+        node: typeof process !== "undefined" ? process.version : "",
+        hint: "If telegramTokenSet is false, the bot cannot reply. If chatIdFilter blocks you, unset TELEGRAM_CHAT_ID in Vercel or set it to your Telegram user id. Webhook URL must be https://YOUR_PROJECT.vercel.app/api/telegram",
+      });
+    }
+    return res.status(200).json({ ok: true, message: "Arth bot v2.1 active", tip: "Add ?debug=1 to see env checks (no secrets)." });
   }
 
   let chatId = null;
@@ -1097,6 +1180,7 @@ export default async function handler(req, res) {
       console.error("[webhook] missing JSON body — set webhook URL to https://YOUR_DEPLOYMENT.vercel.app/api/telegram and redeploy.");
       return res.status(200).json({ ok: true });
     }
+    console.log("[webhook] parsed update_id=", update.update_id, "has_message=", Boolean(update.message), "has_callback=", Boolean(update.callback_query));
 
     // Inline keyboard button presses
     if (update.callback_query) {
@@ -1182,9 +1266,8 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
       }
       const baseUrl = dash.replace(/\?.*$/, "").replace(/\/$/, "");
       const payload = JSON.stringify({ mode: "write", action, data });
-      let resp = await fetch(baseUrl, {
+      let resp = await fetchGoogleAppsScriptWebApp(baseUrl, {
         method: "POST",
-        redirect: "follow",
         headers: { "Content-Type": "application/json" },
         body: payload,
       });
@@ -1200,7 +1283,7 @@ Check: Vercel env DASHBOARD_URL must be your **Google Apps Script Web App** URL 
           encodeURIComponent(String(action)) +
           "&data=" +
           encodeURIComponent(JSON.stringify(data));
-        resp = await fetch(getUrl, { method: "GET", redirect: "follow" });
+        resp = await fetchGoogleAppsScriptWebApp(getUrl, { method: "GET" });
         bodyText = await resp.text();
         result = parseWriteResponse(bodyText, resp.status);
       }
@@ -1487,7 +1570,7 @@ Examples:
     // Debug: show raw field names from API
     if (text === "/raw") {
       try {
-        const resp = await fetch(DASHBOARD_URL, { redirect: "follow" });
+        const resp = await fetchGoogleAppsScriptWebApp(DASHBOARD_URL, { method: "GET" });
         let raw = await resp.json();
         if (raw?.data) raw = raw.data;
         const incSection = raw?.income || {};
