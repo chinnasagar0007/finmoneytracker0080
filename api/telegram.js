@@ -1567,7 +1567,9 @@ Examples:
           mode: parseMode(modePart),
           type: userType || "Expense",
           tag: userTag || autoTag,
-          notes: notesParts.join(" ")
+          notes: notesParts.join(" "),
+          // Apps Script dedupes Telegram webhook retries (same update_id) so the sheet does not get duplicate rows.
+          telegram_update_id: typeof update.update_id === "number" ? update.update_id : undefined,
         });
         await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
