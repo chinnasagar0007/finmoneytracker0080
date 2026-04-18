@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/telegram.js": {
-      "maxDuration": 120
+      "maxDuration": 30
     }
   }
 }
