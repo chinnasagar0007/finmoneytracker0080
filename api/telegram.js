@@ -1,3 +1,5 @@
+import { waitUntil } from "@vercel/functions";
+
 // ── Vercel Serverless Telegram Bot for Arth Finance Advisor (v2.0) ───────────
 // 10 template commands, AI chat with Gemini fallback, inline keyboards,
 // smart caching, progress bars, month-over-month comparison.
@@ -1173,14 +1175,35 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, message: "Arth bot v2.1 active", tip: "Add ?debug=1 to see env checks (no secrets)." });
   }
 
-  let chatId = null;
   try {
-    let update = await readTelegramWebhookJson(req);
+    const update = await readTelegramWebhookJson(req);
     if (!update || typeof update !== "object") {
       console.error("[webhook] missing JSON body — set webhook URL to https://YOUR_DEPLOYMENT.vercel.app/api/telegram and redeploy.");
       return res.status(200).json({ ok: true });
     }
 
+    // Reply to Telegram immediately. If we wait for Google Apps Script + sendMessage first, Telegram
+    // retries the webhook → duplicate /log rows and a "stuck" bot with no visible reply.
+    waitUntil(
+      (async () => {
+        try {
+          await processTelegramUpdate(update);
+        } catch (bgErr) {
+          console.error("[webhook] background error:", bgErr);
+        }
+      })()
+    );
+
+    return res.status(200).json({ ok: true });
+  } catch (fatal) {
+    console.error("[webhook] fatal:", fatal);
+    return res.status(200).json({ ok: true });
+  }
+}
+
+async function processTelegramUpdate(update) {
+  let chatId = null;
+  try {
     console.log("[webhook] parsed update_id=", update.update_id, "has_message=", Boolean(update.message), "has_callback=", Boolean(update.callback_query));
 
     // Inline keyboard button presses
@@ -1190,19 +1213,19 @@ export default async function handler(req, res) {
       const cbAllowed = !CHAT_ID || String(chatId).trim() === String(CHAT_ID).trim();
       if (!cbAllowed) {
         await answerCallback(cb.id);
-        return res.status(200).json({ ok: true });
+        return;
       }
       await answerCallback(cb.id);
       const cmd = cb.data;
       const d = await getFinancialData(true);
       const reply = getCommandResponse(cmd, d);
       if (reply) await sendTelegram(chatId, reply);
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // Regular messages
     const msg = update?.message || update?.edited_message;
-    if (!msg?.text) return res.status(200).json({ ok: true });
+    if (!msg?.text) return;
 
     chatId = String(msg.chat.id);
     const rawText = msg.text.trim();
@@ -1224,7 +1247,7 @@ export default async function handler(req, res) {
           console.error("[webhook] denied-chat notify failed:", e.message);
         }
       }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /clear — handle early (no Apps Script, no AI); tolerate case / extra whitespace
@@ -1232,13 +1255,13 @@ export default async function handler(req, res) {
       conversationMemory = [];
       dataCache = { data: null, ts: 0 };
       await sendTelegram(chatId, "Memory and data cache cleared.");
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /start and /help with inline keyboard
     if (text === "/start" || text === "/help" || baseCmd === "/start" || baseCmd === "/help") {
       await sendTelegram(chatId, helpMessage(), { reply_markup: mainKeyboard });
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // ── WRITE COMMANDS ──────────────────────────────────────────────────────
@@ -1367,19 +1390,19 @@ Example:  /paid re 25000 10-Mar-2026 banktransfer`;
 
       await sendTelegram(chatId, writeMsg1);
       await sendTelegram(chatId, writeMsg2);
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /set -- update IncomeTracker field
     if (text.startsWith("/set")) {
       const parts = rawText.replace(/^\/set(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /set <field> <value> [month]\nType /write for all commands"); return res.status(200).json({ ok: true }); }
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /set <field> <value> [month]\nType /write for all commands"); return; }
       const field = FIELD_MAP[parts[0].toLowerCase()] || parts[0];
       try {
         const r = await callWrite("set", { field, value: parts[1], month: parts[2] || "" });
         await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /log -- daily expense/income/investment/transfer
@@ -1404,7 +1427,7 @@ Examples:
 /log 299 Netflix entertainment Netflix auto-debit expense lifestyle
 /log 95000 Employer salary March-salary bank income planned
 /log 5000 AMC investment SIP auto-debit investment planned
-/log 10000 Self transfer sent-to-savings UPI transfer`); return res.status(200).json({ ok: true }); }
+/log 10000 Self transfer sent-to-savings UPI transfer`); return; }
 
       const typeMap = {
         expense: "Expense",
@@ -1470,46 +1493,46 @@ Examples:
         });
         await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /budget -- set monthly budget (BUDGET PER CATEGORY section only)
     if (text.startsWith("/budget")) {
       const parts = rawText.replace(/^\/budget(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /budget <category> <amount>\nCategories: food, transport, utilities, medical, entertainment, shopping, education, fuel, grooming, misc\nExample: /budget food 5000"); return res.status(200).json({ ok: true }); }
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /budget <category> <amount>\nCategories: food, transport, utilities, medical, entertainment, shopping, education, fuel, grooming, misc\nExample: /budget food 5000"); return; }
       try {
         const r = await callWrite("budget", { category: parts[0], value: parts[1], month: parts[2] || "" });
         await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /received -- lending repayment
     if (text.startsWith("/received")) {
       const parts = rawText.replace(/^\/received(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /received <amount> <borrower> [interest/principal] [mode]\nModes: UPI, Cash, CreditCard, Bank Transfer, Cheque\nExample: /received 13000 Yadagiri interest UPI"); return res.status(200).json({ ok: true }); }
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /received <amount> <borrower> [interest/principal] [mode]\nModes: UPI, Cash, CreditCard, Bank Transfer, Cheque\nExample: /received 13000 Yadagiri interest UPI"); return; }
       try {
         const r = await callWrite("received", { amount: parts[0], borrower: parts[1] || "", type: parts[2] || "Interest", mode: parseMode(parts[3]), notes: parts.slice(4).join(" ") });
         await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /lent -- new borrower
     if (text.startsWith("/lent")) {
       const parts = rawText.replace(/^\/lent(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /lent <amount> <name> [rate%] [months] [phone]\nExample: /lent 100000 RamuKaka 2 12 9876543210"); return res.status(200).json({ ok: true }); }
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage: /lent <amount> <name> [rate%] [months] [phone]\nExample: /lent 100000 RamuKaka 2 12 9876543210"); return; }
       try {
         const r = await callWrite("lent", { amount: parts[0], name: parts[1] || "", rate: parts[2] || "2", duration: parts[3] || "12", phone: parts[4] || "", notes: parts.slice(5).join(" ") });
         await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /invest -- LC or Stock market
     if (text.startsWith("/invest")) {
       const parts = rawText.replace(/^\/invest(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, "Usage:\n/invest lc <amount> [remarks]\n/invest equity <amount> [remarks]\n/invest mf <amount> [remarks]\n/invest options <amount> [remarks]\n/invest crypto <amount> [remarks]"); return res.status(200).json({ ok: true }); }
+      if (parts.length < 2) { await sendTelegram(chatId, "Usage:\n/invest lc <amount> [remarks]\n/invest equity <amount> [remarks]\n/invest mf <amount> [remarks]\n/invest options <amount> [remarks]\n/invest crypto <amount> [remarks]"); return; }
       const typeMap = { lc: "invest_lc", lendenclub: "invest_lc", equity: "invest_stock", mf: "invest_stock", mutualfunds: "invest_stock", options: "invest_stock", crypto: "invest_stock" };
       const stockTypes = { equity: "Equity", mf: "MutualFunds", mutualfunds: "MutualFunds", options: "Options", crypto: "Crypto" };
       const invType = parts[0].toLowerCase();
@@ -1520,13 +1543,13 @@ Examples:
         const r = await callWrite(action, payload);
         await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /paid -- Real Estate EMI
     if (text.startsWith("/paid")) {
       const parts = rawText.replace(/^\/paid(@\w+)?\s*/i, "").trim().split(/\s+/);
-      if (parts.length < 2) { await sendTelegram(chatId, "Format: /paid re <amount> [date] [mode]\nExample: /paid re 25000 10-Mar-2026 banktransfer\nExample: /paid re 25000 UPI"); return res.status(200).json({ ok: true }); }
+      if (parts.length < 2) { await sendTelegram(chatId, "Format: /paid re <amount> [date] [mode]\nExample: /paid re 25000 10-Mar-2026 banktransfer\nExample: /paid re 25000 UPI"); return; }
       if (parts[0].toLowerCase() === "re") {
         const amt = parts[1] || "25000";
         let date = "", mode = "";
@@ -1539,7 +1562,7 @@ Examples:
           await sendTelegram(chatId, formatWriteReply(r));
         } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /hdfc, /idfc, /sbi -- mark loan EMI as paid (with optional month)
@@ -1554,18 +1577,18 @@ Examples:
           await sendTelegram(chatId, formatWriteReply(r));
         } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
       }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /close -- mark borrower loan as Closed
     if (text.startsWith("/close")) {
       const name = rawText.replace(/^\/close(@\w+)?\s*/i, "").trim();
-      if (!name) { await sendTelegram(chatId, "Usage: /close <borrower name>\nExample: /close Yadagiri"); return res.status(200).json({ ok: true }); }
+      if (!name) { await sendTelegram(chatId, "Usage: /close <borrower name>\nExample: /close Yadagiri"); return; }
       try {
         const r = await callWrite("close_loan", { name });
         await sendTelegram(chatId, formatWriteReply(r));
       } catch (e) { await sendTelegram(chatId, `Failed: ${e.message}`); }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // Debug: show raw field names from API
@@ -1590,7 +1613,7 @@ Examples:
       } catch (e) {
         await sendTelegram(chatId, `Debug error: ${e.message}`);
       }
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // Template commands (fast, no AI)
@@ -1599,7 +1622,7 @@ Examples:
       const d = await getFinancialData(true);
       const reply = getCommandResponse(text, d);
       if (reply) await sendTelegram(chatId, reply);
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // /whatif -- AI-powered scenario analysis
@@ -1607,24 +1630,24 @@ Examples:
       const scenario = rawText.replace(/^\/whatif(@\w+)?\s*/i, "").trim();
       if (!scenario) {
         await sendTelegram(chatId, "Usage: /whatif <scenario>\n\nExamples:\n/whatif prepay IDFC 50000\n/whatif start SIP 5000 monthly\n/whatif quit tutoring\n/whatif salary hike 20%\n/whatif close all personal lending");
-        return res.status(200).json({ ok: true });
+        return;
       }
       const d = await getFinancialData(false);
       const reply = await callAI(d, `WHAT-IF ANALYSIS REQUEST: ${scenario}\n\nAnalyze this scenario using my current financial data. Show before vs after impact on relevant metrics (EMI burden, savings rate, net worth, goal timelines). Be specific with Rs numbers and give your recommendation.`, "analysis");
       await sendTelegram(chatId, reply);
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // Free-form AI chat
     const d = await getFinancialData(false);
     const reply = await callAI(d, text);
     await sendTelegram(chatId, reply);
-    return res.status(200).json({ ok: true });
+    return;
   } catch (err) {
     console.error("Webhook error:", err);
     if (chatId) {
       try { await sendTelegram(chatId, "Something went wrong. Please try again in a moment."); } catch (_) {}
     }
-    return res.status(200).json({ ok: true });
+    return;
   }
 }
